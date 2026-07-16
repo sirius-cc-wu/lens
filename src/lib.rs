@@ -1311,8 +1311,18 @@ mod tests {
                     break;
                 }
                 request.extend_from_slice(&buffer[..size]);
-                if request.windows(4).any(|window| window == b"\r\n\r\n") {
-                    break;
+                if let Some(header_end) =
+                    request.windows(4).position(|window| window == b"\r\n\r\n")
+                {
+                    let header = String::from_utf8_lossy(&request[..header_end]);
+                    let content_length = header
+                        .lines()
+                        .find_map(|line| line.strip_prefix("Content-Length:"))
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= header_end + 4 + content_length {
+                        break;
+                    }
                 }
             }
             let header = format!(
@@ -1506,7 +1516,10 @@ mod tests {
         assert_eq!(diagram.content_type, "image/svg+xml");
         assert!(diagram.body.ends_with(b"<svg></svg>"));
         let request = join.join().unwrap();
-        assert!(String::from_utf8_lossy(&request).contains("Content-Type: text/plain"));
+        let request = String::from_utf8_lossy(&request);
+        assert!(request.contains("Content-Type: text/plain"));
+        assert!(request.contains("@startuml\nAlice -> Bob\n@enduml"));
+        assert!(!request.contains("README.md"));
     }
 
     #[test]

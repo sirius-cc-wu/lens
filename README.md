@@ -49,3 +49,9 @@ cargo test --locked
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo package --locked --no-verify
 ```
+
+Release archives and checksums can be created with:
+
+```bash
+bash scripts/package-release.sh x86_64-unknown-linux-gnu dist
+```

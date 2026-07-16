@@ -1,6 +1,6 @@
 # Lens Viewer
 
-Status: E5 release-readiness baseline
+Status: E6 release-validation baseline
 
 Lens is a CLI that starts a local browser-based viewer for source code and
 Markdown documentation in a codebase. It renders PlantUML fenced blocks found
@@ -275,6 +275,17 @@ Rules and questions:
 - Release verification includes cross-platform CI, release builds, and crate
   packaging with the compiled browser asset.
 
+## E6 Release Validation Decisions
+
+- The release line uses SemVer and remains `0.1.x` while CLI and browser
+  contracts stabilize.
+- Release archives contain the native binary and `README.md`, with a SHA-256
+  sidecar checksum.
+- CI verifies Linux, macOS, and Windows builds; Ubuntu additionally runs a
+  Chrome headless smoke test against the release binary.
+- Security checks cover traversal, symlink boundaries, ignored-file reads,
+  safe browser links, and renderer upload scope.
+
 ## MVP Boundary
 
 ### Workspace Startup
@@ -354,4 +365,5 @@ packaging details.
   records runtime evidence; [E3: Workspace usability](../iterations/e3-workspace-usability.md)
   records scale and browser evidence; [E4: Document fidelity](../iterations/e4-document-fidelity.md)
   records file policy and privacy evidence; [E5: Release readiness](../iterations/e5-release-readiness.md)
-  records compatibility and packaging evidence.
+  records compatibility and packaging evidence; [E6: Release validation](../iterations/e6-release-validation.md)
+  records release and security evidence.
