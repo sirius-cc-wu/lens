@@ -1,6 +1,6 @@
 # Lens Viewer
 
-Status: E2 elaboration baseline
+Status: E3 elaboration baseline
 
 Lens is a CLI that starts a local browser-based viewer for source code and
 Markdown documentation in a codebase. It renders PlantUML fenced blocks found
@@ -78,6 +78,9 @@ Main success scenario:
 2. Lens returns the corresponding content or directory listing.
 3. The browser displays the content with enough context to continue exploring.
 
+The workspace lists directories on demand; Lens does not build a complete
+repository index at startup.
+
 Extensions:
 
 - 1a. The path is outside the workspace: Lens rejects the request.
@@ -99,7 +102,7 @@ Main success scenario:
   renderer.
 3. The renderer returns a diagram representation.
 4. Lens displays the diagram in the document context and preserves the source
-  block for inspection.
+  block for inspection through a source/diagram toggle.
 
 Extensions:
 
@@ -107,6 +110,8 @@ Extensions:
   document readable and shows an actionable rendering error.
 - 2b. The Markdown contains an empty or malformed block: Lens identifies the
   block issue without preventing the rest of the document from being viewed.
+- 4a. Diagram rendering fails: Lens displays the source block and an actionable
+  error in the document context.
 
 ## System Sequence Summaries
 
@@ -226,6 +231,29 @@ Rules and questions:
 - The production model still needs an explicit policy for ignored/generated
   files in large repositories.
 
+## E3 Workspace Decisions
+
+- Directory enumeration remains lazy: each directory is read only when the
+  browser requests it.
+- The default listing skips `.git`, `target`, `node_modules`, `.venv`,
+  `__pycache__`, `dist`, and `build` directories. This policy is applied while
+  listing and does not scan their contents.
+- The browser client is a standalone static asset at `assets/index.html`,
+  embedded at compile time instead of being maintained as a Rust string.
+- Markdown documents are displayed in source order. PlantUML blocks become
+  cards with diagram/source toggles, line ranges, and source-preserving render
+  errors.
+
+## Renderer Configuration And Privacy
+
+- `--renderer-url URL` and `LENS_RENDERER_URL` select the PlantUML POST
+  endpoint; the command-line option takes precedence.
+- The default endpoint is `https://kroki.io/plantuml/svg`.
+- Lens sends only the selected PlantUML block source to the configured endpoint
+  and does not send repository listings, file paths, or telemetry.
+- Use a local or private endpoint when diagram source must not leave the
+  machine.
+
 ## MVP Boundary
 
 ### Workspace Startup
@@ -302,4 +330,5 @@ packaging details.
 - `DM-01` -> `Workspace`, `Document`, `PlantUML Block`, and `Diagram` concepts
 - [E1: Lens inception](../iterations/e1-lens-inception.md) records the current
   inception objective; [E2: Runtime hardening](../iterations/e2-runtime-hardening.md)
-  records the elaboration evidence.
+  records runtime evidence; [E3: Workspace usability](../iterations/e3-workspace-usability.md)
+  records scale and browser evidence.

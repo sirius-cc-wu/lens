@@ -20,6 +20,15 @@ const MAX_RENDER_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CONNECTIONS: usize = 32;
 const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(5);
 const RENDER_TIMEOUT: Duration = Duration::from_secs(20);
+const IGNORED_DIRECTORY_NAMES: &[&str] = &[
+    ".git",
+    "target",
+    "node_modules",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "build",
+];
 
 #[derive(Debug)]
 pub enum LensError {
@@ -229,6 +238,9 @@ impl Workspace {
                 Err(_) => continue,
             };
             let name = entry.file_name().to_string_lossy().into_owned();
+            if metadata.is_dir() && IGNORED_DIRECTORY_NAMES.contains(&name.as_str()) {
+                continue;
+            }
             entries.push(WorkspaceEntry {
                 name,
                 path: self.relative_api_path(&canonical),
@@ -287,6 +299,7 @@ pub struct PlantUmlBlock {
     pub source: String,
     pub start_line: usize,
     pub end_line: usize,
+    pub closed: bool,
 }
 
 pub fn extract_plantuml_blocks(markdown: &str) -> Vec<PlantUmlBlock> {
@@ -301,6 +314,7 @@ pub fn extract_plantuml_blocks(markdown: &str) -> Vec<PlantUmlBlock> {
                     source: lines.join("\n"),
                     start_line: *start_line,
                     end_line: line_number,
+                    closed: true,
                 });
                 content = None;
             } else {
@@ -324,6 +338,7 @@ pub fn extract_plantuml_blocks(markdown: &str) -> Vec<PlantUmlBlock> {
             source: lines.join("\n"),
             start_line,
             end_line: markdown.lines().count(),
+            closed: false,
         });
     }
 
@@ -701,8 +716,8 @@ fn file_response(workspace: &Workspace, requested: &str) -> LensResult<HttpRespo
         .iter()
         .map(|block| {
             format!(
-                "{{\"startLine\":{},\"endLine\":{}}}",
-                block.start_line, block.end_line
+                "{{\"startLine\":{},\"endLine\":{},\"closed\":{}}}",
+                block.start_line, block.end_line, block.closed
             )
         })
         .collect::<Vec<_>>()
@@ -873,65 +888,7 @@ pub fn open_browser(_url: &str) -> io::Result<()> {
     ))
 }
 
-const INDEX_HTML: &str = r###"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lens</title>
-  <style>
-    :root { color-scheme: light dark; font: 15px system-ui, sans-serif; }
-    body { margin: 0; display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
-    aside { padding: 1rem; border-right: 1px solid #8885; overflow: auto; }
-    main { padding: 1rem 2rem; overflow: auto; }
-    button { display: block; border: 0; background: transparent; color: inherit; padding: .35rem; text-align: left; cursor: pointer; }
-    button:hover { background: #8883; }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-    img { max-width: 100%; background: white; }
-    .directory { font-weight: 700; }
-    .error { color: #d66; }
-    @media (max-width: 720px) { body { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid #8885; max-height: 35vh; } }
-  </style>
-</head>
-<body>
-  <aside><h1>Lens</h1><div id="tree">Loading...</div></aside>
-  <main><h2 id="title">Select a file</h2><div id="content"></div></main>
-  <script>
-    const tree = document.querySelector('#tree');
-    const title = document.querySelector('#title');
-    const content = document.querySelector('#content');
-    async function loadTree(path = '') {
-      const response = await fetch('/api/tree?path=' + encodeURIComponent(path));
-      const entries = await response.json();
-      tree.replaceChildren();
-      for (const entry of entries) {
-        const button = document.createElement('button');
-        button.textContent = (entry.directory ? '[dir] ' : '[file] ') + entry.name;
-        button.className = entry.directory ? 'directory' : '';
-        button.onclick = () => entry.directory ? loadTree(entry.path) : loadFile(entry.path);
-        tree.append(button);
-      }
-    }
-    async function loadFile(path) {
-      const response = await fetch('/api/file?path=' + encodeURIComponent(path));
-      const file = await response.json();
-      title.textContent = file.path;
-      content.replaceChildren();
-      const source = document.createElement('pre');
-      source.textContent = file.content;
-      content.append(source);
-      for (let index = 0; index < file.plantumlBlocks.length; index++) {
-        const image = document.createElement('img');
-        image.alt = 'PlantUML diagram';
-        image.src = '/api/render?path=' + encodeURIComponent(path) + '&block=' + index;
-        image.onerror = () => image.replaceWith(document.createTextNode('Diagram render failed.'));
-        content.append(image);
-      }
-    }
-    loadTree().catch(error => { tree.textContent = error; });
-  </script>
-</body>
-</html>"###;
+const INDEX_HTML: &str = include_str!("../assets/index.html");
 
 #[cfg(test)]
 mod tests {
@@ -1082,6 +1039,21 @@ mod tests {
     }
 
     #[test]
+    fn skips_common_generated_and_vendor_directories_without_indexing_them() {
+        let directory = fixture();
+        for name in ["target", "node_modules", "dist", "build", ".venv"] {
+            fs::create_dir(directory.0.join(name)).unwrap();
+            fs::write(directory.0.join(name).join("generated.txt"), "generated").unwrap();
+        }
+        let workspace = Workspace::from_arg(None, &directory.0).unwrap();
+        let entries = workspace.list("").unwrap();
+        assert!(entries.iter().any(|entry| entry.name == "src"));
+        assert!(!entries.iter().any(|entry| entry.name == "target"));
+        assert!(!entries.iter().any(|entry| entry.name == "node_modules"));
+        assert!(!entries.iter().any(|entry| entry.name == "dist"));
+    }
+
+    #[test]
     fn extracts_closed_and_unclosed_plantuml_blocks() {
         let blocks = extract_plantuml_blocks(
             "before\n```plantuml |500\nAlice -> Bob\n```\nafter\n```plantuml\nsecond\n",
@@ -1089,7 +1061,9 @@ mod tests {
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].source, "Alice -> Bob");
         assert_eq!(blocks[0].start_line, 2);
+        assert!(blocks[0].closed);
         assert_eq!(blocks[1].source, "second");
+        assert!(!blocks[1].closed);
     }
 
     #[test]
@@ -1109,9 +1083,21 @@ mod tests {
         let workspace = Workspace::from_arg(None, &directory.0).unwrap();
         let mut server = WorkspaceServer::start(workspace, Arc::new(StubRenderer), 0).unwrap();
 
+        let root = http_request(
+            server.address(),
+            "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        assert!(root.starts_with("HTTP/1.1 200 OK"));
+        assert!(root.contains("<title>Lens</title>"));
+
+        let file = http_request(
+            server.address(),
+            "GET /api/file?path=README.md HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        assert!(file.contains("\"closed\":true"));
+
         for request in [
             "GET /api/tree?path= HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-            "GET /api/file?path=README.md HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
             "GET /api/render?path=README.md&block=0 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         ] {
             let response = http_request(server.address(), request);

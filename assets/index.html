@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lens</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font: 15px/1.5 system-ui, sans-serif;
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --ink: #20252b;
+      --muted: #6f7780;
+      --line: #dfe3e8;
+      --accent: #1769aa;
+      --accent-soft: #e5f1fb;
+      --code: #f0f2f4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #17191c;
+        --panel: #202328;
+        --ink: #edf0f2;
+        --muted: #a3abb4;
+        --line: #3a4047;
+        --accent: #7bb8e8;
+        --accent-soft: #263d51;
+        --code: #2a2e33;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; grid-template-columns: 300px 1fr; background: var(--bg); color: var(--ink); }
+    button { font: inherit; color: inherit; }
+    .sidebar { padding: 1.25rem 1rem; border-right: 1px solid var(--line); background: var(--panel); overflow: auto; }
+    .brand { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; margin-bottom: 1.25rem; }
+    .brand h1 { margin: .1rem 0 0; font-size: 1.55rem; letter-spacing: -.03em; }
+    .eyebrow { margin: 0; color: var(--muted); font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .icon-button, .secondary-button { border: 1px solid var(--line); border-radius: .45rem; background: transparent; cursor: pointer; }
+    .icon-button { padding: .3rem .5rem; color: var(--muted); font-size: .8rem; }
+    .icon-button:hover, .secondary-button:hover { border-color: var(--accent); color: var(--accent); }
+    .breadcrumbs { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem; min-height: 1.8rem; margin-bottom: .65rem; color: var(--muted); font-size: .78rem; }
+    .crumb { border: 0; padding: .15rem .2rem; background: transparent; color: inherit; cursor: pointer; }
+    .crumb:hover { color: var(--accent); }
+    .crumb-separator { color: var(--line); }
+    .tree-status { min-height: 1.3rem; margin-bottom: .35rem; color: var(--muted); font-size: .78rem; }
+    .tree-entry { display: flex; width: 100%; border: 0; border-radius: .4rem; padding: .42rem .5rem; background: transparent; text-align: left; cursor: pointer; }
+    .tree-entry:hover { background: var(--bg); }
+    .tree-entry.is-selected { background: var(--accent-soft); color: var(--accent); }
+    .tree-entry.is-directory { font-weight: 650; }
+    .tree-entry-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tree-entry-kind { width: 2.9rem; flex: 0 0 2.9rem; color: var(--muted); font-size: .68rem; text-transform: uppercase; }
+    .main { min-width: 0; padding: clamp(1rem, 3vw, 3rem); }
+    .document-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; max-width: 1000px; margin: 0 auto 1.5rem; }
+    .document-header h2 { margin: .2rem 0 0; overflow-wrap: anywhere; font-size: clamp(1.35rem, 2.2vw, 2rem); letter-spacing: -.025em; }
+    .selection-status { color: var(--muted); font-size: .8rem; }
+    .content { max-width: 1000px; margin: 0 auto; }
+    .empty { padding: 4rem 1rem; border: 1px dashed var(--line); border-radius: .7rem; color: var(--muted); text-align: center; }
+    .raw-source, .block-source { margin: 0 0 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: .55rem; background: var(--code); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: .88rem/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .diagram-card { margin: 1rem 0 1.35rem; padding: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--panel); }
+    .diagram-card-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .8rem; }
+    .diagram-card-label { color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .secondary-button { padding: .3rem .6rem; font-size: .78rem; }
+    .diagram { display: block; width: 100%; max-height: 70vh; object-fit: contain; background: #fff; }
+    .diagram-error { margin: 0; color: #b24141; font-size: .85rem; }
+    [hidden] { display: none !important; }
+    @media (max-width: 760px) {
+      body { grid-template-columns: 1fr; }
+      .sidebar { max-height: 43vh; border-right: 0; border-bottom: 1px solid var(--line); }
+      .main { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div><p class="eyebrow">Local workspace</p><h1>Lens</h1></div>
+      <button id="root-button" class="icon-button" type="button">Root</button>
+    </div>
+    <div id="breadcrumbs" class="breadcrumbs" aria-label="Current directory"></div>
+    <div id="tree-status" class="tree-status">Loading...</div>
+    <nav id="tree" aria-label="Workspace files"></nav>
+  </aside>
+  <main class="main">
+    <header class="document-header">
+      <div><p id="document-kind" class="eyebrow">Document</p><h2 id="title">Select a file</h2></div>
+      <div id="selection-status" class="selection-status"></div>
+    </header>
+    <section id="content" class="content"><div class="empty">Choose a file from the workspace.</div></section>
+  </main>
+  <script>
+    const tree = document.querySelector('#tree');
+    const treeStatus = document.querySelector('#tree-status');
+    const breadcrumbs = document.querySelector('#breadcrumbs');
+    const title = document.querySelector('#title');
+    const documentKind = document.querySelector('#document-kind');
+    const selectionStatus = document.querySelector('#selection-status');
+    const content = document.querySelector('#content');
+    const state = { directory: '', selectedPath: '' };
+
+    async function fetchJson(url) {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Request failed (${response.status})`);
+      }
+      return response.json();
+    }
+
+    function parentPath(path) {
+      const parts = path.split('/').filter(Boolean);
+      parts.pop();
+      return parts.join('/');
+    }
+
+    function clearDocument() {
+      title.textContent = 'Select a file';
+      documentKind.textContent = 'Document';
+      selectionStatus.textContent = '';
+      content.replaceChildren();
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'Choose a file from the workspace.';
+      content.append(empty);
+    }
+
+    function renderBreadcrumbs(path) {
+      breadcrumbs.replaceChildren();
+      const parts = path.split('/').filter(Boolean);
+      const root = document.createElement('button');
+      root.className = 'crumb';
+      root.type = 'button';
+      root.textContent = 'root';
+      root.onclick = () => openDirectory('');
+      breadcrumbs.append(root);
+      let accumulated = '';
+      for (const part of parts) {
+        const separator = document.createElement('span');
+        separator.className = 'crumb-separator';
+        separator.textContent = '/';
+        breadcrumbs.append(separator);
+        accumulated = accumulated ? `${accumulated}/${part}` : part;
+        const crumb = document.createElement('button');
+        crumb.className = 'crumb';
+        crumb.type = 'button';
+        crumb.textContent = part;
+        const pathForClick = accumulated;
+        crumb.onclick = () => openDirectory(pathForClick);
+        breadcrumbs.append(crumb);
+      }
+    }
+
+    function createTreeEntry(entry) {
+      const button = document.createElement('button');
+      button.className = 'tree-entry' + (entry.directory ? ' is-directory' : '');
+      button.type = 'button';
+      button.dataset.path = entry.path;
+      if (!entry.directory && entry.path === state.selectedPath) {
+        button.classList.add('is-selected');
+        button.setAttribute('aria-current', 'page');
+      }
+      const kind = document.createElement('span');
+      kind.className = 'tree-entry-kind';
+      kind.textContent = entry.directory ? 'dir' : 'file';
+      const label = document.createElement('span');
+      label.className = 'tree-entry-label';
+      label.textContent = entry.name;
+      button.append(kind, label);
+      button.onclick = () => entry.directory ? openDirectory(entry.path) : loadFile(entry.path);
+      return button;
+    }
+
+    async function loadTree(path = '') {
+      state.directory = path;
+      renderBreadcrumbs(path);
+      treeStatus.textContent = 'Loading...';
+      tree.replaceChildren();
+      try {
+        const entries = await fetchJson('/api/tree?path=' + encodeURIComponent(path));
+        if (path) {
+          const up = document.createElement('button');
+          up.className = 'tree-entry';
+          up.type = 'button';
+          up.textContent = '..';
+          up.onclick = () => openDirectory(parentPath(path));
+          tree.append(up);
+        }
+        for (const entry of entries) tree.append(createTreeEntry(entry));
+        treeStatus.textContent = `${entries.length} entries`;
+      } catch (error) {
+        treeStatus.textContent = 'Unable to list directory';
+        const message = document.createElement('p');
+        message.className = 'diagram-error';
+        message.textContent = error instanceof Error ? error.message : String(error);
+        tree.append(message);
+      }
+    }
+
+    function openDirectory(path) {
+      state.selectedPath = '';
+      clearDocument();
+      loadTree(path);
+    }
+
+    function appendSource(text) {
+      if (!text) return;
+      const source = document.createElement('pre');
+      source.className = 'raw-source';
+      source.textContent = text;
+      content.append(source);
+    }
+
+    function appendDiagramCard(path, block, source, index) {
+      const card = document.createElement('article');
+      card.className = 'diagram-card';
+      const header = document.createElement('div');
+      header.className = 'diagram-card-header';
+      const label = document.createElement('span');
+      label.className = 'diagram-card-label';
+      label.textContent = `PlantUML block ${index + 1} / lines ${block.startLine}-${block.endLine}${block.closed ? '' : ' / incomplete'}`;
+      const toggle = document.createElement('button');
+      toggle.className = 'secondary-button';
+      toggle.type = 'button';
+      toggle.textContent = 'View source';
+      header.append(label, toggle);
+      const image = document.createElement('img');
+      image.className = 'diagram';
+      image.alt = 'Rendered PlantUML diagram';
+      image.src = '/api/render?path=' + encodeURIComponent(path) + '&block=' + index;
+      const sourceView = document.createElement('pre');
+      sourceView.className = 'block-source';
+      sourceView.textContent = source;
+      sourceView.hidden = true;
+      const error = document.createElement('p');
+      error.className = 'diagram-error';
+      error.textContent = 'Diagram render failed. The source remains available.';
+      error.hidden = true;
+      image.onerror = () => {
+        image.hidden = true;
+        error.hidden = false;
+      };
+      let showingSource = false;
+      toggle.onclick = () => {
+        showingSource = !showingSource;
+        image.hidden = showingSource || !error.hidden;
+        sourceView.hidden = !showingSource;
+        toggle.textContent = showingSource ? 'View diagram' : 'View source';
+      };
+      card.append(header, image, sourceView, error);
+      content.append(card);
+    }
+
+    function renderMarkdown(file, path) {
+      const lines = file.content.split('\n');
+      if (!file.plantumlBlocks.length) {
+        appendSource(file.content);
+        return;
+      }
+      let cursor = 0;
+      file.plantumlBlocks.forEach((block, index) => {
+        appendSource(lines.slice(cursor, block.startLine - 1).join('\n'));
+        const endExclusive = block.closed ? Math.max(block.startLine, block.endLine - 1) : lines.length;
+        const blockSource = lines.slice(block.startLine, endExclusive).join('\n');
+        appendDiagramCard(path, block, blockSource, index);
+        cursor = block.closed ? Math.max(cursor, block.endLine) : lines.length;
+      });
+      appendSource(lines.slice(cursor).join('\n'));
+    }
+
+    async function loadFile(path) {
+      state.selectedPath = path;
+      title.textContent = path;
+      documentKind.textContent = /\.md(?:own)?$/i.test(path) ? 'Markdown document' : 'Source file';
+      selectionStatus.textContent = 'Loading...';
+      content.replaceChildren();
+      try {
+        const file = await fetchJson('/api/file?path=' + encodeURIComponent(path));
+        selectionStatus.textContent = `${file.plantumlBlocks.length} PlantUML block${file.plantumlBlocks.length === 1 ? '' : 's'}`;
+        if (/\.md(?:own)?$/i.test(path)) renderMarkdown(file, path);
+        else appendSource(file.content);
+        await loadTree(state.directory);
+      } catch (error) {
+        selectionStatus.textContent = 'Unable to read file';
+        const message = document.createElement('p');
+        message.className = 'diagram-error';
+        message.textContent = error instanceof Error ? error.message : String(error);
+        content.append(message);
+      }
+    }
+
+    document.querySelector('#root-button').onclick = () => openDirectory('');
+    loadTree();
+  </script>
+</body>
+</html>
