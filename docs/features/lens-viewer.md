@@ -1,6 +1,6 @@
 # Lens Viewer
 
-Status: E6 release-validation baseline
+Status: E7 release-candidate baseline
 
 Lens is a CLI that starts a local browser-based viewer for source code and
 Markdown documentation in a codebase. It renders PlantUML fenced blocks found
@@ -285,6 +285,10 @@ Rules and questions:
   Chrome headless smoke test against the release binary.
 - Security checks cover traversal, symlink boundaries, ignored-file reads,
   safe browser links, and renderer upload scope.
+- Release archives are smoke-tested after extraction, including binary startup
+  and graceful shutdown.
+- The release candidate uses a deterministic fixture for browser interaction
+  and archive installation checks.
 
 ## MVP Boundary
 
@@ -366,4 +370,5 @@ packaging details.
   records scale and browser evidence; [E4: Document fidelity](../iterations/e4-document-fidelity.md)
   records file policy and privacy evidence; [E5: Release readiness](../iterations/e5-release-readiness.md)
   records compatibility and packaging evidence; [E6: Release validation](../iterations/e6-release-validation.md)
-  records release and security evidence.
+  records release and security evidence; [E7: Release candidate](../iterations/e7-release-candidate.md)
+  records archive and interaction evidence.

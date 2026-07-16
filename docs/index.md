@@ -12,6 +12,7 @@
 - [E4: Document fidelity](iterations/e4-document-fidelity.md)
 - [E5: Release readiness](iterations/e5-release-readiness.md)
 - [E6: Release validation](iterations/e6-release-validation.md)
+- [E7: Release candidate](iterations/e7-release-candidate.md)
 
 ## Decisions
 

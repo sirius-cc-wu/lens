@@ -31,5 +31,7 @@ builds Linux GNU, macOS ARM64, and Windows MSVC targets.
 - Run `cargo build --locked --release`.
 - Run `cargo package --locked --allow-dirty --no-verify` locally.
 - Run `node scripts/asset-check.mjs`.
-- Run the Chrome smoke test against a running local workspace.
+- Run the Chrome shell and interaction tests against a running local fixture
+  workspace.
+- Run `bash scripts/install-smoke.sh ARCHIVE` for each release archive.
 - Verify each archive checksum before publishing.

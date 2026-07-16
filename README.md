@@ -55,3 +55,9 @@ Release archives and checksums can be created with:
 ```bash
 bash scripts/package-release.sh x86_64-unknown-linux-gnu dist
 ```
+
+The release archive can be checked with:
+
+```bash
+bash scripts/install-smoke.sh dist/lens-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+```

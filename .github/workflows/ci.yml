@@ -59,7 +59,7 @@ jobs:
 
       - name: Start Lens
         run: |
-          target/release/lens --no-open --port 39126 > lens-browser.log 2>&1 &
+          target/release/lens --no-open --port 39126 tests/fixtures/browser-repo > lens-browser.log 2>&1 &
           echo $! > lens-browser.pid
           for attempt in $(seq 1 30); do
             if curl --fail --silent --output /dev/null http://127.0.0.1:39126/; then exit 0; fi
@@ -70,6 +70,9 @@ jobs:
 
       - name: Run Chrome smoke test
         run: node scripts/browser-smoke.mjs http://127.0.0.1:39126/
+
+      - name: Run browser interaction test
+        run: node scripts/browser-interaction.mjs http://127.0.0.1:39126/
 
       - name: Stop Lens
         if: always()
@@ -102,6 +105,11 @@ jobs:
       - name: Build release archive
         shell: bash
         run: bash scripts/package-release.sh "${{ matrix.target }}" dist
+
+      - name: Run archive installation smoke test
+        shell: bash
+        run: |
+          for archive in dist/*.tar.gz; do bash scripts/install-smoke.sh "$archive"; done
 
       - name: Upload release archive
         uses: actions/upload-artifact@v4
