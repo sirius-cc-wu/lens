@@ -1,3 +1,4 @@
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
@@ -92,19 +93,21 @@ impl IgnoreRules {
                 .filter_map(|pattern| IgnorePattern::parse(pattern))
                 .collect(),
         };
-        let ignore_path = root.join(".lensignore");
-        match fs::read_to_string(&ignore_path) {
-            Ok(contents) => {
-                rules
-                    .patterns
-                    .extend(contents.lines().filter_map(IgnorePattern::parse));
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(LensError::InvalidTarget(format!(
-                    "cannot read {}: {error}",
-                    ignore_path.display()
-                )))
+        for file_name in [".gitignore", ".lensignore"] {
+            let ignore_path = root.join(file_name);
+            match fs::read_to_string(&ignore_path) {
+                Ok(contents) => {
+                    rules
+                        .patterns
+                        .extend(contents.lines().filter_map(IgnorePattern::parse));
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(LensError::InvalidTarget(format!(
+                        "cannot read {}: {error}",
+                        ignore_path.display()
+                    )))
+                }
             }
         }
         Ok(rules)
@@ -518,12 +521,12 @@ pub struct PlantUmlBlock {
 
 pub fn extract_plantuml_blocks(markdown: &str) -> Vec<PlantUmlBlock> {
     let mut blocks = Vec::new();
-    let mut content: Option<(usize, Vec<String>)> = None;
+    let mut content: Option<(usize, char, usize, Vec<String>)> = None;
 
     for (index, line) in markdown.lines().enumerate() {
         let line_number = index + 1;
-        if let Some((start_line, lines)) = content.as_mut() {
-            if line.trim() == "```" {
+        if let Some((start_line, fence_char, fence_length, lines)) = content.as_mut() {
+            if is_fence_close(line, *fence_char, *fence_length) {
                 blocks.push(PlantUmlBlock {
                     source: lines.join("\n"),
                     start_line: *start_line,
@@ -537,17 +540,15 @@ pub fn extract_plantuml_blocks(markdown: &str) -> Vec<PlantUmlBlock> {
             continue;
         }
 
-        let trimmed = line.trim();
-        let Some(info) = trimmed.strip_prefix("```") else {
+        let Some((fence_char, fence_length, info)) = parse_fence_start(line) else {
             continue;
         };
-        let info = info.trim();
         if info == "plantuml" || info.starts_with("plantuml |") {
-            content = Some((line_number, Vec::new()));
+            content = Some((line_number, fence_char, fence_length, Vec::new()));
         }
     }
 
-    if let Some((start_line, lines)) = content {
+    if let Some((start_line, _, _, lines)) = content {
         blocks.push(PlantUmlBlock {
             source: lines.join("\n"),
             start_line,
@@ -557,6 +558,59 @@ pub fn extract_plantuml_blocks(markdown: &str) -> Vec<PlantUmlBlock> {
     }
 
     blocks
+}
+
+fn parse_fence_start(line: &str) -> Option<(char, usize, &str)> {
+    let trimmed = line.trim_start();
+    let fence_char = trimmed.chars().next()?;
+    if fence_char != '`' && fence_char != '~' {
+        return None;
+    }
+    let fence_length = trimmed
+        .chars()
+        .take_while(|character| *character == fence_char)
+        .count();
+    if fence_length < 3 {
+        return None;
+    }
+    let info = trimmed[fence_length..].trim();
+    Some((fence_char, fence_length, info))
+}
+
+fn is_fence_close(line: &str, fence_char: char, fence_length: usize) -> bool {
+    let trimmed = line.trim();
+    let length = trimmed
+        .chars()
+        .take_while(|character| *character == fence_char)
+        .count();
+    length >= fence_length && trimmed[length..].trim().is_empty()
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MarkdownAnalysis {
+    pub code_fence_count: usize,
+    pub heading_count: usize,
+    pub link_count: usize,
+    pub plantuml_fence_count: usize,
+}
+
+pub fn analyze_markdown(markdown: &str) -> MarkdownAnalysis {
+    let mut analysis = MarkdownAnalysis::default();
+    for event in Parser::new_ext(markdown, Options::all()) {
+        match event {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(language))) => {
+                analysis.code_fence_count += 1;
+                let language = language.trim();
+                if language == "plantuml" || language.starts_with("plantuml |") {
+                    analysis.plantuml_fence_count += 1;
+                }
+            }
+            Event::Start(Tag::Heading(..)) => analysis.heading_count += 1,
+            Event::Start(Tag::Link(..)) => analysis.link_count += 1,
+            _ => {}
+        }
+    }
+    analysis
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -970,13 +1024,26 @@ fn file_response(
         })
         .collect::<Vec<_>>()
         .join(",");
+    let markdown_analysis = if is_markdown_path(requested) {
+        let analysis = analyze_markdown(&content);
+        format!(
+            "{{\"codeFences\":{},\"headings\":{},\"links\":{},\"plantumlFences\":{}}}",
+            analysis.code_fence_count,
+            analysis.heading_count,
+            analysis.link_count,
+            analysis.plantuml_fence_count
+        )
+    } else {
+        "null".to_string()
+    };
     let body = format!(
-        "{{\"path\":{},\"content\":{},\"partial\":false,\"startLine\":1,\"endLine\":{},\"totalBytes\":{},\"hasMore\":false,\"plantumlBlocks\":[{}]}}",
+        "{{\"path\":{},\"content\":{},\"partial\":false,\"startLine\":1,\"endLine\":{},\"totalBytes\":{},\"hasMore\":false,\"plantumlBlocks\":[{}],\"markdownAnalysis\":{}}}",
         json_string(requested),
         json_string(&content),
         content.lines().count(),
         content.len(),
-        blocks
+        blocks,
+        markdown_analysis
     );
     Ok(HttpResponse::ok(
         "application/json; charset=utf-8",
@@ -986,7 +1053,7 @@ fn file_response(
 
 fn file_chunk_response(requested: &str, chunk: FileChunk) -> HttpResponse {
     let body = format!(
-        "{{\"path\":{},\"content\":{},\"partial\":true,\"startLine\":{},\"endLine\":{},\"totalBytes\":{},\"hasMore\":{},\"plantumlBlocks\":[]}}",
+        "{{\"path\":{},\"content\":{},\"partial\":true,\"startLine\":{},\"endLine\":{},\"totalBytes\":{},\"hasMore\":{},\"plantumlBlocks\":[],\"markdownAnalysis\":null}}",
         json_string(requested),
         json_string(&chunk.content),
         chunk.start_line,
@@ -995,6 +1062,10 @@ fn file_chunk_response(requested: &str, chunk: FileChunk) -> HttpResponse {
         chunk.has_more
     );
     HttpResponse::ok("application/json; charset=utf-8", body.into_bytes())
+}
+
+fn is_markdown_path(path: &str) -> bool {
+    path.ends_with(".md") || path.ends_with(".markdown") || path.ends_with(".mdown")
 }
 
 fn render_response(
@@ -1333,7 +1404,8 @@ mod tests {
         fs::create_dir(directory.0.join("private")).unwrap();
         fs::write(directory.0.join("private/notes.md"), "private").unwrap();
         fs::write(directory.0.join("credentials.secret"), "secret").unwrap();
-        fs::write(directory.0.join(".lensignore"), "private/\n*.secret\n").unwrap();
+        fs::write(directory.0.join(".lensignore"), "private/\n").unwrap();
+        fs::write(directory.0.join(".gitignore"), "*.secret\n").unwrap();
 
         let workspace = Workspace::from_arg(None, &directory.0).unwrap();
         let entries = workspace.list("").unwrap();
@@ -1348,14 +1420,27 @@ mod tests {
     #[test]
     fn extracts_closed_and_unclosed_plantuml_blocks() {
         let blocks = extract_plantuml_blocks(
-            "before\n```plantuml |500\nAlice -> Bob\n```\nafter\n```plantuml\nsecond\n",
+            "before\n```plantuml |500\nAlice -> Bob\n```\nafter\n~~~plantuml\nsecond\n~~~\n```plantuml\nthird\n",
         );
-        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0].source, "Alice -> Bob");
         assert_eq!(blocks[0].start_line, 2);
         assert!(blocks[0].closed);
         assert_eq!(blocks[1].source, "second");
-        assert!(!blocks[1].closed);
+        assert!(blocks[1].closed);
+        assert_eq!(blocks[2].source, "third");
+        assert!(!blocks[2].closed);
+    }
+
+    #[test]
+    fn analyzes_commonmark_structure() {
+        let analysis = analyze_markdown(
+            "# Title\n\nSee [Lens](https://example.com).\n\n```plantuml\nAlice -> Bob\n```\n",
+        );
+        assert_eq!(analysis.code_fence_count, 1);
+        assert_eq!(analysis.heading_count, 1);
+        assert_eq!(analysis.link_count, 1);
+        assert_eq!(analysis.plantuml_fence_count, 1);
     }
 
     #[test]
@@ -1387,6 +1472,7 @@ mod tests {
             "GET /api/file?path=README.md HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         );
         assert!(file.contains("\"closed\":true"));
+        assert!(file.contains("\"markdownAnalysis\":{"));
 
         for request in [
             "GET /api/tree?path= HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
@@ -1490,6 +1576,11 @@ mod tests {
         );
         assert!(large_response.contains("\"partial\":true"));
         assert!(large_response.len() < 300_000);
+        let continued_response = http_request(
+            address,
+            "GET /api/file?path=large.md&startLine=1000&lineCount=10 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        assert!(continued_response.contains("\"startLine\":1001"));
         let responses = thread::scope(|scope| {
             let handles = (0..8)
                 .map(|_| scope.spawn(|| http_request(address, "GET / HTTP/1.1\r\n\r\n")))

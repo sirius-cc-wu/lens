@@ -64,6 +64,8 @@
     .markdown-fragment p { max-width: 75ch; margin: .65rem 0; }
     .markdown-fragment a { color: var(--accent); }
     .markdown-code { margin: .8rem 0; }
+    .chunk-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .8rem 0 1.2rem; }
+    .line-input { width: 7rem; border: 1px solid var(--line); border-radius: .4rem; padding: .3rem .45rem; background: var(--panel); color: var(--ink); }
     .raw-source, .block-source { margin: 0 0 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: .55rem; background: var(--code); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: .88rem/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
     .diagram-card { margin: 1rem 0 1.35rem; padding: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--panel); }
     .diagram-card-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .8rem; }
@@ -299,14 +301,41 @@
       notice.textContent = `Showing lines ${file.startLine}-${file.endLine} of a large file (${file.totalBytes} bytes).`;
       content.append(notice);
       appendSource(file.content);
+      const controls = document.createElement('div');
+      controls.className = 'chunk-controls';
+      if (file.startLine > 1) {
+        const previous = document.createElement('button');
+        previous.className = 'secondary-button';
+        previous.type = 'button';
+        previous.textContent = 'Previous lines';
+        previous.onclick = () => loadFile(path, Math.max(0, file.startLine - 1 - 1000));
+        controls.append(previous);
+      }
       if (file.hasMore) {
         const next = document.createElement('button');
         next.className = 'secondary-button';
         next.type = 'button';
         next.textContent = 'Load next lines';
         next.onclick = () => loadFile(path, file.endLine);
-        content.append(next);
+        controls.append(next);
       }
+      const lineLabel = document.createElement('label');
+      lineLabel.textContent = 'Go to line';
+      const lineInput = document.createElement('input');
+      lineInput.className = 'line-input';
+      lineInput.type = 'number';
+      lineInput.min = '1';
+      lineInput.value = String(file.startLine);
+      const go = document.createElement('button');
+      go.className = 'secondary-button';
+      go.type = 'button';
+      go.textContent = 'Go';
+      go.onclick = () => {
+        const line = Math.max(1, Number.parseInt(lineInput.value, 10) || 1);
+        loadFile(path, line - 1);
+      };
+      controls.append(lineLabel, lineInput, go);
+      content.append(controls);
     }
 
     function appendDiagramCard(path, block, source, index) {
@@ -371,7 +400,7 @@
       title.textContent = path;
       documentKind.textContent = startLine !== null
         ? 'Large source file'
-        : (/\.md(?:own)?$/i.test(path) ? 'Markdown document' : 'Source file');
+        : (/\.(?:md|markdown|mdown)$/i.test(path) ? 'Markdown document' : 'Source file');
       selectionStatus.textContent = 'Loading...';
       content.replaceChildren();
       try {
@@ -383,7 +412,7 @@
           appendPartial(file, path);
         } else {
           selectionStatus.textContent = `${file.plantumlBlocks.length} PlantUML block${file.plantumlBlocks.length === 1 ? '' : 's'}`;
-          if (/\.md(?:own)?$/i.test(path)) renderMarkdown(file, path);
+          if (/\.(?:md|markdown|mdown)$/i.test(path)) renderMarkdown(file, path);
           else appendSource(file.content);
         }
         await loadTree(state.directory);

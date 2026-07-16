@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "A local browser viewer for code and Markdown PlantUML blocks"
 license = "MIT"
+readme = "README.md"
 
 [lib]
 path = "src/lib.rs"
@@ -15,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 ctrlc = "=3.4.5"
 # Keep the transitive TLS graph compatible with the supported Rust 1.75 toolchain.
+pulldown-cmark = "=0.9.6"
 ureq = { version = "=2.9.7", default-features = false, features = ["tls"] }
 url = "=2.4.1"
 zeroize = "=1.8.1"

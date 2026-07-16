@@ -10,6 +10,7 @@
 - [E2: Runtime hardening](iterations/e2-runtime-hardening.md)
 - [E3: Workspace usability](iterations/e3-workspace-usability.md)
 - [E4: Document fidelity](iterations/e4-document-fidelity.md)
+- [E5: Release readiness](iterations/e5-release-readiness.md)
 
 ## Decisions
 

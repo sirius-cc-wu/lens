@@ -1,6 +1,6 @@
 # Lens Viewer
 
-Status: E4 elaboration baseline
+Status: E5 release-readiness baseline
 
 Lens is a CLI that starts a local browser-based viewer for source code and
 Markdown documentation in a codebase. It renders PlantUML fenced blocks found
@@ -269,7 +269,11 @@ Rules and questions:
 - Files larger than the whole-file response limit are exposed through bounded
   line ranges, with the browser requesting continuation explicitly.
 - `.lensignore` is the first project-specific filtering mechanism; support for
-  importing `.gitignore` rules remains deferred.
+  `.gitignore` rules is also supported, with `.lensignore` applied last.
+- CommonMark parsing supplies Markdown structure metadata and recognizes fenced
+  PlantUML blocks; the browser keeps safe DOM rendering for the presentation.
+- Release verification includes cross-platform CI, release builds, and crate
+  packaging with the compiled browser asset.
 
 ## MVP Boundary
 
@@ -349,4 +353,5 @@ packaging details.
   inception objective; [E2: Runtime hardening](../iterations/e2-runtime-hardening.md)
   records runtime evidence; [E3: Workspace usability](../iterations/e3-workspace-usability.md)
   records scale and browser evidence; [E4: Document fidelity](../iterations/e4-document-fidelity.md)
-  records file policy and privacy evidence.
+  records file policy and privacy evidence; [E5: Release readiness](../iterations/e5-release-readiness.md)
+  records compatibility and packaging evidence.
