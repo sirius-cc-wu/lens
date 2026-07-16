@@ -9,6 +9,7 @@
 - [E1: Lens inception](iterations/e1-lens-inception.md)
 - [E2: Runtime hardening](iterations/e2-runtime-hardening.md)
 - [E3: Workspace usability](iterations/e3-workspace-usability.md)
+- [E4: Document fidelity](iterations/e4-document-fidelity.md)
 
 ## Decisions
 

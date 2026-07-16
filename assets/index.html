@@ -56,6 +56,14 @@
     .selection-status { color: var(--muted); font-size: .8rem; }
     .content { max-width: 1000px; margin: 0 auto; }
     .empty { padding: 4rem 1rem; border: 1px dashed var(--line); border-radius: .7rem; color: var(--muted); text-align: center; }
+    .markdown-fragment { margin: 0 0 1rem; }
+    .markdown-fragment h1, .markdown-fragment h2, .markdown-fragment h3, .markdown-fragment h4, .markdown-fragment h5, .markdown-fragment h6 { margin: 1.35rem 0 .45rem; line-height: 1.2; letter-spacing: -.02em; }
+    .markdown-fragment h1 { font-size: 1.8rem; }
+    .markdown-fragment h2 { font-size: 1.45rem; }
+    .markdown-fragment h3 { font-size: 1.2rem; }
+    .markdown-fragment p { max-width: 75ch; margin: .65rem 0; }
+    .markdown-fragment a { color: var(--accent); }
+    .markdown-code { margin: .8rem 0; }
     .raw-source, .block-source { margin: 0 0 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: .55rem; background: var(--code); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: .88rem/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
     .diagram-card { margin: 1rem 0 1.35rem; padding: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--panel); }
     .diagram-card-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .8rem; }
@@ -210,6 +218,97 @@
       content.append(source);
     }
 
+    function appendInlineText(parent, text) {
+      const linkPattern = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+      let cursor = 0;
+      let match;
+      while ((match = linkPattern.exec(text)) !== null) {
+        parent.append(document.createTextNode(text.slice(cursor, match.index)));
+        const href = match[2];
+        const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(href);
+        if (hasScheme && !/^(?:https?|mailto):/i.test(href)) {
+          parent.append(document.createTextNode(match[0]));
+        } else {
+          const link = document.createElement('a');
+          link.href = href;
+          link.textContent = match[1];
+          if (/^https?:/i.test(href)) {
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+          }
+          parent.append(link);
+        }
+        cursor = match.index + match[0].length;
+      }
+      parent.append(document.createTextNode(text.slice(cursor)));
+    }
+
+    function appendMarkdownText(text) {
+      if (!text) return;
+      const fragment = document.createElement('div');
+      fragment.className = 'markdown-fragment';
+      const lines = text.split('\n');
+      let paragraph = [];
+      let code = null;
+      const flushParagraph = () => {
+        if (!paragraph.length) return;
+        const element = document.createElement('p');
+        appendInlineText(element, paragraph.join(' '));
+        fragment.append(element);
+        paragraph = [];
+      };
+      const flushCode = () => {
+        if (code === null) return;
+        const element = document.createElement('pre');
+        element.className = 'raw-source markdown-code';
+        element.textContent = code.join('\n');
+        fragment.append(element);
+        code = null;
+      };
+      for (const line of lines) {
+        if (code !== null) {
+          if (/^\s*```/.test(line)) flushCode();
+          else code.push(line);
+          continue;
+        }
+        if (/^\s*```/.test(line)) {
+          flushParagraph();
+          code = [];
+          continue;
+        }
+        const heading = line.match(/^(#{1,6})\s+(.+)$/);
+        if (heading) {
+          flushParagraph();
+          const element = document.createElement(`h${heading[1].length}`);
+          appendInlineText(element, heading[2]);
+          fragment.append(element);
+        } else if (line.trim()) {
+          paragraph.push(line.trim());
+        } else {
+          flushParagraph();
+        }
+      }
+      flushParagraph();
+      flushCode();
+      content.append(fragment);
+    }
+
+    function appendPartial(file, path) {
+      const notice = document.createElement('p');
+      notice.className = 'selection-status';
+      notice.textContent = `Showing lines ${file.startLine}-${file.endLine} of a large file (${file.totalBytes} bytes).`;
+      content.append(notice);
+      appendSource(file.content);
+      if (file.hasMore) {
+        const next = document.createElement('button');
+        next.className = 'secondary-button';
+        next.type = 'button';
+        next.textContent = 'Load next lines';
+        next.onclick = () => loadFile(path, file.endLine);
+        content.append(next);
+      }
+    }
+
     function appendDiagramCard(path, block, source, index) {
       const card = document.createElement('article');
       card.className = 'diagram-card';
@@ -253,31 +352,40 @@
     function renderMarkdown(file, path) {
       const lines = file.content.split('\n');
       if (!file.plantumlBlocks.length) {
-        appendSource(file.content);
+        appendMarkdownText(file.content);
         return;
       }
       let cursor = 0;
       file.plantumlBlocks.forEach((block, index) => {
-        appendSource(lines.slice(cursor, block.startLine - 1).join('\n'));
+        appendMarkdownText(lines.slice(cursor, block.startLine - 1).join('\n'));
         const endExclusive = block.closed ? Math.max(block.startLine, block.endLine - 1) : lines.length;
         const blockSource = lines.slice(block.startLine, endExclusive).join('\n');
         appendDiagramCard(path, block, blockSource, index);
         cursor = block.closed ? Math.max(cursor, block.endLine) : lines.length;
       });
-      appendSource(lines.slice(cursor).join('\n'));
+      appendMarkdownText(lines.slice(cursor).join('\n'));
     }
 
-    async function loadFile(path) {
+    async function loadFile(path, startLine = null) {
       state.selectedPath = path;
       title.textContent = path;
-      documentKind.textContent = /\.md(?:own)?$/i.test(path) ? 'Markdown document' : 'Source file';
+      documentKind.textContent = startLine !== null
+        ? 'Large source file'
+        : (/\.md(?:own)?$/i.test(path) ? 'Markdown document' : 'Source file');
       selectionStatus.textContent = 'Loading...';
       content.replaceChildren();
       try {
-        const file = await fetchJson('/api/file?path=' + encodeURIComponent(path));
-        selectionStatus.textContent = `${file.plantumlBlocks.length} PlantUML block${file.plantumlBlocks.length === 1 ? '' : 's'}`;
-        if (/\.md(?:own)?$/i.test(path)) renderMarkdown(file, path);
-        else appendSource(file.content);
+        let url = '/api/file?path=' + encodeURIComponent(path);
+        if (startLine !== null) url += '&startLine=' + startLine + '&lineCount=1000';
+        const file = await fetchJson(url);
+        if (file.partial) {
+          selectionStatus.textContent = 'Chunked file view';
+          appendPartial(file, path);
+        } else {
+          selectionStatus.textContent = `${file.plantumlBlocks.length} PlantUML block${file.plantumlBlocks.length === 1 ? '' : 's'}`;
+          if (/\.md(?:own)?$/i.test(path)) renderMarkdown(file, path);
+          else appendSource(file.content);
+        }
         await loadTree(state.directory);
       } catch (error) {
         selectionStatus.textContent = 'Unable to read file';

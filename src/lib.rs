@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -16,18 +17,20 @@ pub type LensResult<T> = Result<T, LensError>;
 
 const MAX_HTTP_REQUEST_BYTES: usize = 16 * 1024;
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_FILE_CHUNK_BYTES: usize = 256 * 1024;
+const MAX_FILE_CHUNK_LINES: usize = 1000;
 const MAX_RENDER_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CONNECTIONS: usize = 32;
 const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(5);
 const RENDER_TIMEOUT: Duration = Duration::from_secs(20);
-const IGNORED_DIRECTORY_NAMES: &[&str] = &[
+const DEFAULT_IGNORE_PATTERNS: &[&str] = &[
     ".git",
-    "target",
-    "node_modules",
-    ".venv",
-    "__pycache__",
-    "dist",
-    "build",
+    "target/",
+    "node_modules/",
+    ".venv/",
+    "__pycache__/",
+    "dist/",
+    "build/",
 ];
 
 #[derive(Debug)]
@@ -69,11 +72,119 @@ pub enum TargetKind {
     Directory,
 }
 
+#[derive(Clone, Debug, Default)]
+struct IgnoreRules {
+    patterns: Vec<IgnorePattern>,
+}
+
+#[derive(Clone, Debug)]
+struct IgnorePattern {
+    pattern: String,
+    negated: bool,
+    directory_only: bool,
+}
+
+impl IgnoreRules {
+    fn load(root: &Path) -> LensResult<Self> {
+        let mut rules = Self {
+            patterns: DEFAULT_IGNORE_PATTERNS
+                .iter()
+                .filter_map(|pattern| IgnorePattern::parse(pattern))
+                .collect(),
+        };
+        let ignore_path = root.join(".lensignore");
+        match fs::read_to_string(&ignore_path) {
+            Ok(contents) => {
+                rules
+                    .patterns
+                    .extend(contents.lines().filter_map(IgnorePattern::parse));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(LensError::InvalidTarget(format!(
+                    "cannot read {}: {error}",
+                    ignore_path.display()
+                )))
+            }
+        }
+        Ok(rules)
+    }
+
+    fn is_ignored(&self, relative_path: &str, is_directory: bool) -> bool {
+        let mut ignored = false;
+        for rule in &self.patterns {
+            if rule.directory_only && !is_directory {
+                continue;
+            }
+            if rule.matches(relative_path) {
+                ignored = !rule.negated;
+            }
+        }
+        ignored
+    }
+}
+
+impl IgnorePattern {
+    fn parse(line: &str) -> Option<Self> {
+        let mut pattern = line.trim();
+        if pattern.is_empty() || pattern.starts_with('#') {
+            return None;
+        }
+        let negated = pattern.starts_with('!');
+        if negated {
+            pattern = &pattern[1..];
+        }
+        let directory_only = pattern.ends_with('/');
+        pattern = pattern.trim_start_matches('/').trim_end_matches('/');
+        if pattern.is_empty() {
+            return None;
+        }
+        Some(Self {
+            pattern: pattern.to_string(),
+            negated,
+            directory_only,
+        })
+    }
+
+    fn matches(&self, relative_path: &str) -> bool {
+        if self.pattern.contains('/') {
+            glob_matches(&self.pattern, relative_path)
+        } else {
+            relative_path
+                .split('/')
+                .any(|component| glob_matches(&self.pattern, component))
+        }
+    }
+}
+
+fn glob_matches(pattern: &str, value: &str) -> bool {
+    fn matches(pattern: &[u8], value: &[u8]) -> bool {
+        if pattern.is_empty() {
+            return value.is_empty();
+        }
+        if pattern[0] == b'*' {
+            if pattern.len() > 1 && pattern[1] == b'*' {
+                return matches(&pattern[2..], value)
+                    || (!value.is_empty() && matches(pattern, &value[1..]));
+            }
+            return matches(&pattern[1..], value)
+                || (!value.is_empty() && value[0] != b'/' && matches(pattern, &value[1..]));
+        }
+        if pattern[0] == b'?' {
+            return !value.is_empty() && value[0] != b'/' && matches(&pattern[1..], &value[1..]);
+        }
+        !value.is_empty() && pattern[0] == value[0] && matches(&pattern[1..], &value[1..])
+    }
+
+    matches(pattern.as_bytes(), value.as_bytes())
+}
+
 #[derive(Clone, Debug)]
 pub struct Workspace {
     root: PathBuf,
     target: PathBuf,
     kind: TargetKind,
+    ignore_rules: IgnoreRules,
 }
 
 impl Workspace {
@@ -100,10 +211,12 @@ impl Workspace {
         })?;
 
         if metadata.is_dir() {
+            let ignore_rules = IgnoreRules::load(&target)?;
             return Ok(Self {
                 root: target.clone(),
                 target,
                 kind: TargetKind::Directory,
+                ignore_rules,
             });
         }
 
@@ -111,10 +224,12 @@ impl Workspace {
             let root = target.parent().ok_or_else(|| {
                 LensError::InvalidTarget("target file has no parent directory".to_string())
             })?;
+            let ignore_rules = IgnoreRules::load(root)?;
             return Ok(Self {
                 root: root.to_path_buf(),
                 target,
                 kind: TargetKind::File,
+                ignore_rules,
             });
         }
 
@@ -204,6 +319,63 @@ impl Workspace {
         })
     }
 
+    pub fn read_file_chunk(
+        &self,
+        requested: &str,
+        start_line: usize,
+        line_count: usize,
+    ) -> LensResult<FileChunk> {
+        if line_count == 0 || line_count > MAX_FILE_CHUNK_LINES {
+            return Err(LensError::BadRequest(format!(
+                "line count must be between 1 and {MAX_FILE_CHUNK_LINES}"
+            )));
+        }
+        let path = self.resolve_relative(requested)?;
+        if !path.is_file() {
+            return Err(LensError::BadRequest(format!(
+                "workspace path is not a file: {requested}"
+            )));
+        }
+        let total_bytes = fs::metadata(&path)?.len();
+        let mut reader = BufReader::new(File::open(&path)?);
+        let mut line_number = 0;
+        while line_number < start_line {
+            if read_limited_line(&mut reader)?.is_none() {
+                return Ok(FileChunk {
+                    content: String::new(),
+                    start_line: start_line + 1,
+                    end_line: start_line,
+                    total_bytes,
+                    has_more: false,
+                });
+            }
+            line_number += 1;
+        }
+
+        let first_line = line_number + 1;
+        let mut content = String::new();
+        let mut lines_read = 0;
+        while lines_read < line_count {
+            let Some(line) = read_limited_line(&mut reader)? else {
+                break;
+            };
+            if content.len() + line.len() > MAX_FILE_CHUNK_BYTES {
+                break;
+            }
+            content.push_str(&line);
+            lines_read += 1;
+            line_number += 1;
+        }
+        let has_more = read_limited_line(&mut reader)?.is_some();
+        Ok(FileChunk {
+            content,
+            start_line: first_line,
+            end_line: line_number,
+            total_bytes,
+            has_more,
+        })
+    }
+
     pub fn list(&self, requested: &str) -> LensResult<Vec<WorkspaceEntry>> {
         let path = self.resolve_relative(requested)?;
         if self.kind == TargetKind::File {
@@ -237,13 +409,17 @@ impl Workspace {
                 Ok(metadata) => metadata,
                 Err(_) => continue,
             };
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if metadata.is_dir() && IGNORED_DIRECTORY_NAMES.contains(&name.as_str()) {
+            let relative_path = self.relative_api_path(&canonical);
+            if self
+                .ignore_rules
+                .is_ignored(&relative_path, metadata.is_dir())
+            {
                 continue;
             }
+            let name = entry.file_name().to_string_lossy().into_owned();
             entries.push(WorkspaceEntry {
                 name,
-                path: self.relative_api_path(&canonical),
+                path: relative_path,
                 is_directory: metadata.is_dir(),
             });
         }
@@ -271,6 +447,44 @@ pub struct WorkspaceEntry {
     pub name: String,
     pub path: String,
     pub is_directory: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileChunk {
+    pub content: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub total_bytes: u64,
+    pub has_more: bool,
+}
+
+fn read_limited_line(reader: &mut BufReader<File>) -> LensResult<Option<String>> {
+    let mut bytes = Vec::new();
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            if bytes.is_empty() {
+                return Ok(None);
+            }
+            return String::from_utf8(bytes)
+                .map(Some)
+                .map_err(|_| LensError::BadRequest("file is not valid UTF-8".to_string()));
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let take = newline.map_or(available.len(), |position| position + 1);
+        if bytes.len() + take > MAX_FILE_CHUNK_BYTES {
+            return Err(LensError::PayloadTooLarge(
+                "a file line exceeds the 256 KiB chunk limit".to_string(),
+            ));
+        }
+        bytes.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        if newline.is_some() {
+            return String::from_utf8(bytes)
+                .map(Some)
+                .map_err(|_| LensError::BadRequest("file is not valid UTF-8".to_string()));
+        }
+    }
 }
 
 fn find_repository_root(cwd: &Path) -> LensResult<PathBuf> {
@@ -353,6 +567,17 @@ pub struct RenderedDiagram {
 
 pub trait PlantUmlRenderer: Send + Sync {
     fn render(&self, source: &str) -> LensResult<RenderedDiagram>;
+}
+
+pub struct UnconfiguredRenderer;
+
+impl PlantUmlRenderer for UnconfiguredRenderer {
+    fn render(&self, _source: &str) -> LensResult<RenderedDiagram> {
+        Err(LensError::Renderer(
+            "no PlantUML renderer is configured; use --renderer-url or LENS_RENDERER_URL"
+                .to_string(),
+        ))
+    }
 }
 
 pub struct HttpRenderer {
@@ -618,6 +843,8 @@ fn handle_connection(
         "/api/file" => file_response(
             workspace,
             params.get("path").map(String::as_str).unwrap_or(""),
+            optional_query_usize(&params, "startLine")?,
+            optional_query_usize(&params, "lineCount")?,
         ),
         "/api/render" => render_response(
             workspace,
@@ -709,8 +936,29 @@ fn tree_response(workspace: &Workspace, requested: &str) -> LensResult<HttpRespo
     ))
 }
 
-fn file_response(workspace: &Workspace, requested: &str) -> LensResult<HttpResponse> {
-    let content = workspace.read_file(requested)?;
+fn file_response(
+    workspace: &Workspace,
+    requested: &str,
+    start_line: Option<usize>,
+    line_count: Option<usize>,
+) -> LensResult<HttpResponse> {
+    if start_line.is_some() || line_count.is_some() {
+        let chunk = workspace.read_file_chunk(
+            requested,
+            start_line.unwrap_or(0),
+            line_count.unwrap_or(MAX_FILE_CHUNK_LINES),
+        )?;
+        return Ok(file_chunk_response(requested, chunk));
+    }
+
+    let content = match workspace.read_file(requested) {
+        Ok(content) => content,
+        Err(LensError::PayloadTooLarge(_)) => {
+            let chunk = workspace.read_file_chunk(requested, 0, MAX_FILE_CHUNK_LINES)?;
+            return Ok(file_chunk_response(requested, chunk));
+        }
+        Err(error) => return Err(error),
+    };
     let blocks = extract_plantuml_blocks(&content);
     let blocks = blocks
         .iter()
@@ -723,15 +971,30 @@ fn file_response(workspace: &Workspace, requested: &str) -> LensResult<HttpRespo
         .collect::<Vec<_>>()
         .join(",");
     let body = format!(
-        "{{\"path\":{},\"content\":{},\"plantumlBlocks\":[{}]}}",
+        "{{\"path\":{},\"content\":{},\"partial\":false,\"startLine\":1,\"endLine\":{},\"totalBytes\":{},\"hasMore\":false,\"plantumlBlocks\":[{}]}}",
         json_string(requested),
         json_string(&content),
+        content.lines().count(),
+        content.len(),
         blocks
     );
     Ok(HttpResponse::ok(
         "application/json; charset=utf-8",
         body.into_bytes(),
     ))
+}
+
+fn file_chunk_response(requested: &str, chunk: FileChunk) -> HttpResponse {
+    let body = format!(
+        "{{\"path\":{},\"content\":{},\"partial\":true,\"startLine\":{},\"endLine\":{},\"totalBytes\":{},\"hasMore\":{},\"plantumlBlocks\":[]}}",
+        json_string(requested),
+        json_string(&chunk.content),
+        chunk.start_line,
+        chunk.end_line,
+        chunk.total_bytes,
+        chunk.has_more
+    );
+    HttpResponse::ok("application/json; charset=utf-8", body.into_bytes())
 }
 
 fn render_response(
@@ -765,6 +1028,17 @@ fn parse_query(query: &str) -> LensResult<HashMap<String, String>> {
         params.insert(percent_decode(key)?, percent_decode(value)?);
     }
     Ok(params)
+}
+
+fn optional_query_usize(params: &HashMap<String, String>, name: &str) -> LensResult<Option<usize>> {
+    params
+        .get(name)
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|_| LensError::BadRequest(format!("invalid {name} parameter")))
+        })
+        .transpose()
 }
 
 fn percent_decode(value: &str) -> LensResult<String> {
@@ -1054,6 +1328,24 @@ mod tests {
     }
 
     #[test]
+    fn honors_lensignore_while_allowing_explicit_reads() {
+        let directory = fixture();
+        fs::create_dir(directory.0.join("private")).unwrap();
+        fs::write(directory.0.join("private/notes.md"), "private").unwrap();
+        fs::write(directory.0.join("credentials.secret"), "secret").unwrap();
+        fs::write(directory.0.join(".lensignore"), "private/\n*.secret\n").unwrap();
+
+        let workspace = Workspace::from_arg(None, &directory.0).unwrap();
+        let entries = workspace.list("").unwrap();
+        assert!(!entries.iter().any(|entry| entry.name == "private"));
+        assert!(!entries
+            .iter()
+            .any(|entry| entry.name == "credentials.secret"));
+        assert_eq!(workspace.read_file("private/notes.md").unwrap(), "private");
+        assert_eq!(workspace.read_file("credentials.secret").unwrap(), "secret");
+    }
+
+    #[test]
     fn extracts_closed_and_unclosed_plantuml_blocks() {
         let blocks = extract_plantuml_blocks(
             "before\n```plantuml |500\nAlice -> Bob\n```\nafter\n```plantuml\nsecond\n",
@@ -1143,6 +1435,14 @@ mod tests {
     }
 
     #[test]
+    fn keeps_remote_rendering_opt_in() {
+        assert!(matches!(
+            UnconfiguredRenderer.render("source"),
+            Err(LensError::Renderer(message)) if message.contains("is configured")
+        ));
+    }
+
+    #[test]
     fn rejects_malformed_and_oversized_requests() {
         let directory = fixture();
         let workspace = Workspace::from_arg(None, &directory.0).unwrap();
@@ -1171,6 +1471,11 @@ mod tests {
             vec![b'x'; (MAX_FILE_BYTES + 1) as usize],
         )
         .unwrap();
+        fs::write(
+            directory.0.join("large.md"),
+            "line of source\n".repeat(400_000),
+        )
+        .unwrap();
         let workspace = Workspace::from_arg(None, &directory.0).unwrap();
         assert!(matches!(
             workspace.read_file("large.txt"),
@@ -1179,6 +1484,12 @@ mod tests {
 
         let mut server = WorkspaceServer::start(workspace, Arc::new(StubRenderer), 0).unwrap();
         let address = server.address();
+        let large_response = http_request(
+            address,
+            "GET /api/file?path=large.md HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        assert!(large_response.contains("\"partial\":true"));
+        assert!(large_response.len() < 300_000);
         let responses = thread::scope(|scope| {
             let handles = (0..8)
                 .map(|_| scope.spawn(|| http_request(address, "GET / HTTP/1.1\r\n\r\n")))

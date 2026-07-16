@@ -1,6 +1,6 @@
 # Lens Viewer
 
-Status: E3 elaboration baseline
+Status: E4 elaboration baseline
 
 Lens is a CLI that starts a local browser-based viewer for source code and
 Markdown documentation in a codebase. It renders PlantUML fenced blocks found
@@ -80,6 +80,9 @@ Main success scenario:
 
 The workspace lists directories on demand; Lens does not build a complete
 repository index at startup.
+
+Large files are read in bounded line chunks. The browser can request the next
+chunk without asking Lens to serialize the entire file into one response.
 
 Extensions:
 
@@ -172,8 +175,8 @@ Postconditions:
 
 Open issues:
 
-- Graceful signal handling and persistent server shutdown remain to be designed
-  for the production CLI.
+- Platform-specific process and signal behavior remains to be validated for
+  release packaging.
 
 ### C-02 `renderPlantUml(path, blockIndex)`
 
@@ -228,8 +231,8 @@ Rules and questions:
 - A workspace must not expose content outside its selected target, including
   symlink targets.
 - A renderer failure must not make the source document unreadable.
-- The production model still needs an explicit policy for ignored/generated
-  files in large repositories.
+- The workspace applies built-in generated/vendor patterns plus optional
+  `.lensignore` rules while preserving explicit reads.
 
 ## E3 Workspace Decisions
 
@@ -243,16 +246,30 @@ Rules and questions:
 - Markdown documents are displayed in source order. PlantUML blocks become
   cards with diagram/source toggles, line ranges, and source-preserving render
   errors.
+- `.lensignore` accepts gitignore-style glob patterns. Built-in generated and
+  vendor patterns remain active, while explicit file reads are still allowed.
+- Large files use bounded line chunks instead of a whole-file JSON response.
 
 ## Renderer Configuration And Privacy
 
 - `--renderer-url URL` and `LENS_RENDERER_URL` select the PlantUML POST
   endpoint; the command-line option takes precedence.
-- The default endpoint is `https://kroki.io/plantuml/svg`.
+- No remote renderer endpoint is selected by default. Remote rendering is
+  explicit opt-in.
 - Lens sends only the selected PlantUML block source to the configured endpoint
   and does not send repository listings, file paths, or telemetry.
 - Use a local or private endpoint when diagram source must not leave the
   machine.
+
+## E4 Document Fidelity Decisions
+
+- Markdown headings, paragraphs, safe links, and non-PlantUML fenced code are
+  rendered as document content without executing Markdown HTML.
+- A PlantUML block remains a source-preserving card when rendering fails.
+- Files larger than the whole-file response limit are exposed through bounded
+  line ranges, with the browser requesting continuation explicitly.
+- `.lensignore` is the first project-specific filtering mechanism; support for
+  importing `.gitignore` rules remains deferred.
 
 ## MVP Boundary
 
@@ -331,4 +348,5 @@ packaging details.
 - [E1: Lens inception](../iterations/e1-lens-inception.md) records the current
   inception objective; [E2: Runtime hardening](../iterations/e2-runtime-hardening.md)
   records runtime evidence; [E3: Workspace usability](../iterations/e3-workspace-usability.md)
-  records scale and browser evidence.
+  records scale and browser evidence; [E4: Document fidelity](../iterations/e4-document-fidelity.md)
+  records file policy and privacy evidence.
