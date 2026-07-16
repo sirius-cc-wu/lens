@@ -1,6 +1,6 @@
 # Lens Viewer
 
-Status: inception baseline
+Status: E2 elaboration baseline
 
 Lens is a CLI that starts a local browser-based viewer for source code and
 Markdown documentation in a codebase. It renders PlantUML fenced blocks found
@@ -188,8 +188,43 @@ Postconditions:
 
 Open issues:
 
-- Renderer response validation should be expanded beyond the current SVG
-  adapter assumption.
+- Alternate diagram formats and renderer authentication remain outside the
+  current SVG-only adapter contract.
+
+## DM-01 Domain Model Notes
+
+Conceptual classes:
+
+- `Workspace`: the bounded set of codebase content selected for one Lens
+  session.
+- `Document`: readable source or Markdown content in a workspace.
+- `PlantUML Block`: embedded PlantUML source located within a Markdown
+  document.
+- `Diagram`: a rendered representation produced from one PlantUML block.
+- `PlantUML Renderer`: an external system that converts PlantUML source into a
+  diagram.
+
+Associations:
+
+- A `Workspace` contains documents and applies the boundary rules for access.
+- A `Document` may contain zero or more PlantUML blocks.
+- A PlantUML block produces a diagram through a PlantUML renderer.
+- A workspace delegates diagram production to a configured renderer.
+
+Attributes:
+
+- `Workspace.target`: selected file or directory path.
+- `Document.path`: workspace-relative path.
+- `PlantUML Block.source`: source text and its document line range.
+- `Diagram.contentType`: validated representation type, currently SVG.
+
+Rules and questions:
+
+- A workspace must not expose content outside its selected target, including
+  symlink targets.
+- A renderer failure must not make the source document unreadable.
+- The production model still needs an explicit policy for ignored/generated
+  files in large repositories.
 
 ## MVP Boundary
 
@@ -244,7 +279,18 @@ packaging details.
 - Rust is the MVP runtime recommendation; the evidence and tradeoffs are
   recorded in [ADR-001](../decisions/adr-001-rust-runtime.md).
 - The renderer is accessed through a replaceable adapter. The current spike
-  uses a POST endpoint returning SVG and keeps the endpoint configurable.
+  uses a native Rust HTTP client for a configurable POST endpoint returning
+  validated SVG.
+
+## E2 Elaboration Decisions
+
+- HTTP requests are bounded, parsed as complete request lines, and given read
+  and write timeouts.
+- File responses are limited to 4 MiB and renderer responses to 8 MiB.
+- The workspace accepts at most 32 concurrent connections and joins them on
+  shutdown.
+- Ctrl-C requests graceful server shutdown; the browser URL remains available
+  when automatic browser launch is disabled or unavailable.
 
 ## Traceability
 
@@ -253,5 +299,7 @@ packaging details.
 - `UC-03` -> Markdown parsing and PlantUML renderer spike
 - `SSD-01` -> `C-01` -> CLI and workspace server
 - `SSD-03` -> `C-02` -> `PlantUmlRenderer` adapter
+- `DM-01` -> `Workspace`, `Document`, `PlantUML Block`, and `Diagram` concepts
 - [E1: Lens inception](../iterations/e1-lens-inception.md) records the current
-  iteration objective and evidence required before elaboration.
+  inception objective; [E2: Runtime hardening](../iterations/e2-runtime-hardening.md)
+  records the elaboration evidence.

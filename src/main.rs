@@ -1,9 +1,9 @@
 use std::env;
 use std::path::PathBuf;
 use std::process;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 
-use lens::{open_browser, CurlRenderer, LensError, Workspace, WorkspaceServer};
+use lens::{open_browser, HttpRenderer, LensError, Workspace, WorkspaceServer};
 
 struct Config {
     target: Option<PathBuf>,
@@ -26,8 +26,8 @@ fn run() -> Result<(), LensError> {
     let cwd = env::current_dir()?;
     let workspace = Workspace::from_arg(config.target.as_deref(), &cwd)?;
     let renderer_url = config.renderer_url;
-    let renderer = Arc::new(CurlRenderer::new(renderer_url.clone()));
-    let server = WorkspaceServer::start(workspace, renderer, config.port)?;
+    let renderer = Arc::new(HttpRenderer::new(renderer_url.clone()));
+    let mut server = WorkspaceServer::start(workspace, renderer, config.port)?;
     let url = server.url();
 
     println!("Lens workspace available at {url}");
@@ -39,7 +39,16 @@ fn run() -> Result<(), LensError> {
         }
     }
 
-    server.wait();
+    let (shutdown_sender, shutdown_receiver) = mpsc::channel();
+    if let Err(error) = ctrlc::set_handler(move || {
+        let _ = shutdown_sender.send(());
+    }) {
+        eprintln!("lens: graceful Ctrl-C handling unavailable: {error}");
+        server.wait();
+        return Ok(());
+    }
+    let _ = shutdown_receiver.recv();
+    server.shutdown();
     Ok(())
 }
 

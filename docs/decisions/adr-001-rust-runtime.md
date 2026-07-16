@@ -14,9 +14,9 @@ the preferred languages were unsuitable.
 Use Rust for the Lens MVP runtime.
 
 The E1 slice uses Rust's standard library for the CLI, local HTTP server,
-filesystem boundary, and testable renderer abstraction. A configurable `curl`
-adapter handles the initial HTTPS PlantUML POST integration without coupling
-the domain-facing operation to one renderer deployment.
+filesystem boundary, and testable renderer abstraction. E2 replaces the
+subprocess renderer with `ureq` using Rustls for HTTPS PlantUML POST requests,
+without coupling the domain-facing operation to one renderer deployment.
 
 ## Evidence
 
@@ -32,11 +32,10 @@ the domain-facing operation to one renderer deployment.
 
 - The CLI can remain a single native binary with a small runtime footprint.
 - Filesystem and HTTP behavior are explicit and easy to test at the boundary.
-- A production server, browser asset pipeline, and signal handling still need
+- The production browser asset pipeline and richer HTTP behavior still need
   deliberate implementation rather than inheriting framework defaults.
-- The current renderer adapter depends on `curl`; this is a temporary
-  infrastructure boundary and must be replaced or made a validated packaging
-  prerequisite before release.
+- The binary carries a Rustls-based HTTP client and no longer requires an
+  external `curl` executable.
 
 ## Revisit When
 

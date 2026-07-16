@@ -4,15 +4,22 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc, Mutex,
 };
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 pub type LensResult<T> = Result<T, LensError>;
+
+const MAX_HTTP_REQUEST_BYTES: usize = 16 * 1024;
+const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_RENDER_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_CONNECTIONS: usize = 32;
+const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const RENDER_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug)]
 pub enum LensError {
@@ -21,6 +28,7 @@ pub enum LensError {
     Forbidden(String),
     NotFound(String),
     BadRequest(String),
+    PayloadTooLarge(String),
     Renderer(String),
 }
 
@@ -32,6 +40,7 @@ impl Display for LensError {
             | Self::Forbidden(message)
             | Self::NotFound(message)
             | Self::BadRequest(message)
+            | Self::PayloadTooLarge(message)
             | Self::Renderer(message) => formatter.write_str(message),
         }
     }
@@ -172,6 +181,13 @@ impl Workspace {
         if !path.is_file() {
             return Err(LensError::BadRequest(format!(
                 "workspace path is not a file: {requested}"
+            )));
+        }
+        let size = fs::metadata(&path)?.len();
+        if size > MAX_FILE_BYTES {
+            return Err(LensError::PayloadTooLarge(format!(
+                "file exceeds the {} MiB limit: {requested}",
+                MAX_FILE_BYTES / (1024 * 1024)
             )));
         }
         fs::read_to_string(&path).map_err(|error| {
@@ -324,11 +340,11 @@ pub trait PlantUmlRenderer: Send + Sync {
     fn render(&self, source: &str) -> LensResult<RenderedDiagram>;
 }
 
-pub struct CurlRenderer {
+pub struct HttpRenderer {
     endpoint: String,
 }
 
-impl CurlRenderer {
+impl HttpRenderer {
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self {
             endpoint: endpoint.into(),
@@ -336,57 +352,51 @@ impl CurlRenderer {
     }
 }
 
-impl PlantUmlRenderer for CurlRenderer {
+impl PlantUmlRenderer for HttpRenderer {
     fn render(&self, source: &str) -> LensResult<RenderedDiagram> {
-        let mut child = Command::new("curl")
-            .args([
-                "--fail",
-                "--silent",
-                "--show-error",
-                "--max-time",
-                "20",
-                "--request",
-                "POST",
-                "--header",
-                "Content-Type: text/plain; charset=utf-8",
-                "--header",
-                "Accept: image/svg+xml",
-                "--data-binary",
-                "@-",
-                &self.endpoint,
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| LensError::Renderer(format!("cannot start curl: {error}")))?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(source.as_bytes()).map_err(|error| {
-                LensError::Renderer(format!("cannot send PlantUML source: {error}"))
-            })?;
-        }
-
-        let output = child
-            .wait_with_output()
+        let response = ureq::post(&self.endpoint)
+            .set("Content-Type", "text/plain; charset=utf-8")
+            .set("Accept", "image/svg+xml")
+            .timeout(RENDER_TIMEOUT)
+            .send_string(source)
             .map_err(|error| LensError::Renderer(format!("renderer request failed: {error}")))?;
-        if !output.status.success() {
-            let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(LensError::Renderer(if message.is_empty() {
-                format!("renderer returned {}", output.status)
-            } else {
-                message
-            }));
+        let content_type = response.header("Content-Type").unwrap_or_default();
+        if !content_type
+            .to_ascii_lowercase()
+            .starts_with("image/svg+xml")
+        {
+            return Err(LensError::Renderer(format!(
+                "renderer returned unexpected content type: {}",
+                if content_type.is_empty() {
+                    "missing Content-Type"
+                } else {
+                    content_type
+                }
+            )));
         }
-        if output.stdout.is_empty() {
+
+        let mut body = Vec::new();
+        response
+            .into_reader()
+            .take((MAX_RENDER_RESPONSE_BYTES + 1) as u64)
+            .read_to_end(&mut body)
+            .map_err(|error| {
+                LensError::Renderer(format!("cannot read renderer response: {error}"))
+            })?;
+        if body.len() > MAX_RENDER_RESPONSE_BYTES {
             return Err(LensError::Renderer(
-                "renderer returned an empty diagram".to_string(),
+                "renderer response exceeds the 8 MiB limit".to_string(),
+            ));
+        }
+        if !body.windows(4).any(|window| window == b"<svg") {
+            return Err(LensError::Renderer(
+                "renderer response is not SVG content".to_string(),
             ));
         }
 
         Ok(RenderedDiagram {
             content_type: "image/svg+xml".to_string(),
-            body: output.stdout,
+            body,
         })
     }
 }
@@ -414,6 +424,7 @@ pub struct WorkspaceServer {
     address: SocketAddr,
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
+    connections: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl WorkspaceServer {
@@ -426,12 +437,49 @@ impl WorkspaceServer {
         listener.set_nonblocking(true)?;
         let address = listener.local_addr()?;
         let stop = Arc::new(AtomicBool::new(false));
+        let workspace = Arc::new(workspace);
+        let active_connections = Arc::new(AtomicUsize::new(0));
+        let connections = Arc::new(Mutex::new(Vec::new()));
         let thread_stop = Arc::clone(&stop);
+        let thread_workspace = Arc::clone(&workspace);
+        let thread_renderer = Arc::clone(&renderer);
+        let thread_active_connections = Arc::clone(&active_connections);
+        let thread_connections = Arc::clone(&connections);
         let join = thread::spawn(move || {
             while !thread_stop.load(Ordering::Acquire) {
                 match listener.accept() {
-                    Ok((stream, _)) => {
-                        let _ = handle_connection(stream, &workspace, renderer.as_ref());
+                    Ok((mut stream, _)) => {
+                        if thread_stop.load(Ordering::Acquire) {
+                            let _ = stream.shutdown(Shutdown::Both);
+                            break;
+                        }
+                        if thread_active_connections.load(Ordering::Acquire) >= MAX_CONNECTIONS {
+                            let _ = write_response(
+                                &mut stream,
+                                503,
+                                "text/plain; charset=utf-8",
+                                b"too many concurrent connections",
+                            );
+                            continue;
+                        }
+
+                        thread_active_connections.fetch_add(1, Ordering::AcqRel);
+                        let connection_workspace = Arc::clone(&thread_workspace);
+                        let connection_renderer = Arc::clone(&thread_renderer);
+                        let connection_active = Arc::clone(&thread_active_connections);
+                        let connection = thread::spawn(move || {
+                            let _guard = ConnectionGuard(connection_active);
+                            let _ = serve_connection(
+                                stream,
+                                connection_workspace.as_ref(),
+                                connection_renderer.as_ref(),
+                            );
+                        });
+                        if let Ok(mut connections) = thread_connections.lock() {
+                            connections.push(connection);
+                        } else {
+                            let _ = connection.join();
+                        }
                     }
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
@@ -445,6 +493,7 @@ impl WorkspaceServer {
             address,
             stop,
             join: Some(join),
+            connections,
         })
     }
 
@@ -457,20 +506,31 @@ impl WorkspaceServer {
     }
 
     pub fn shutdown(&mut self) {
-        if self.stop.swap(true, Ordering::Release) {
-            return;
-        }
+        self.stop.store(true, Ordering::Release);
         let _ = TcpStream::connect(self.address);
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+        self.join_connections();
     }
 
     pub fn wait(mut self) {
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+        self.join_connections();
         self.stop.store(true, Ordering::Release);
+    }
+
+    fn join_connections(&self) {
+        let connections = self
+            .connections
+            .lock()
+            .map(|mut connections| connections.drain(..).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for connection in connections {
+            let _ = connection.join();
+        }
     }
 }
 
@@ -480,14 +540,33 @@ impl Drop for WorkspaceServer {
     }
 }
 
-fn handle_connection(
+struct ConnectionGuard(Arc<AtomicUsize>);
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn serve_connection(
     mut stream: TcpStream,
     workspace: &Workspace,
     renderer: &dyn PlantUmlRenderer,
 ) -> LensResult<()> {
-    let mut buffer = [0_u8; 64 * 1024];
-    let size = stream.read(&mut buffer)?;
-    let request = String::from_utf8_lossy(&buffer[..size]);
+    stream.set_read_timeout(Some(HTTP_READ_TIMEOUT))?;
+    stream.set_write_timeout(Some(HTTP_READ_TIMEOUT))?;
+    match handle_connection(&mut stream, workspace, renderer) {
+        Ok(()) => Ok(()),
+        Err(error) => write_error(&mut stream, error),
+    }
+}
+
+fn handle_connection(
+    stream: &mut TcpStream,
+    workspace: &Workspace,
+    renderer: &dyn PlantUmlRenderer,
+) -> LensResult<()> {
+    let request = read_http_request(stream)?;
     let request_line = request
         .lines()
         .next()
@@ -495,9 +574,15 @@ fn handle_connection(
     let mut request_parts = request_line.split_whitespace();
     let method = request_parts.next().unwrap_or_default();
     let uri = request_parts.next().unwrap_or_default();
+    let version = request_parts.next().unwrap_or_default();
+    if request_parts.next().is_some() || !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
+        return Err(LensError::BadRequest(
+            "invalid HTTP request line".to_string(),
+        ));
+    }
     if method != "GET" {
         return write_response(
-            &mut stream,
+            stream,
             405,
             "text/plain; charset=utf-8",
             b"only GET is supported",
@@ -534,13 +619,43 @@ fn handle_connection(
 
     match response {
         Ok(response) => write_response(
-            &mut stream,
+            stream,
             response.status,
             &response.content_type,
             &response.body,
         ),
-        Err(error) => write_error(&mut stream, error),
+        Err(error) => write_error(stream, error),
     }
+}
+
+fn read_http_request(stream: &mut TcpStream) -> LensResult<String> {
+    let mut request = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let size = stream.read(&mut buffer)?;
+        if size == 0 {
+            break;
+        }
+        if request.len() + size > MAX_HTTP_REQUEST_BYTES {
+            return Err(LensError::PayloadTooLarge(
+                "HTTP request exceeds the 16 KiB limit".to_string(),
+            ));
+        }
+        request.extend_from_slice(&buffer[..size]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+    }
+    if request.is_empty() {
+        return Err(LensError::BadRequest("empty HTTP request".to_string()));
+    }
+    if !request.windows(4).any(|window| window == b"\r\n\r\n") {
+        return Err(LensError::BadRequest(
+            "incomplete HTTP request headers".to_string(),
+        ));
+    }
+    String::from_utf8(request)
+        .map_err(|_| LensError::BadRequest("HTTP request is not UTF-8".to_string()))
 }
 
 struct HttpResponse {
@@ -611,6 +726,16 @@ fn render_response(
     renderer: &dyn PlantUmlRenderer,
 ) -> LensResult<HttpResponse> {
     let diagram = render_block(workspace, requested, block_index, renderer)?;
+    if !diagram
+        .content_type
+        .to_ascii_lowercase()
+        .starts_with("image/svg+xml")
+        || !diagram.body.windows(4).any(|window| window == b"<svg")
+    {
+        return Err(LensError::Renderer(
+            "renderer response is not valid SVG content".to_string(),
+        ));
+    }
     Ok(HttpResponse {
         status: 200,
         content_type: diagram.content_type,
@@ -669,7 +794,9 @@ fn write_response(
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        413 => "Payload Too Large",
         502 => "Bad Gateway",
+        503 => "Service Unavailable",
         _ => "Internal Server Error",
     };
     let header = format!(
@@ -687,6 +814,7 @@ fn write_error(stream: &mut TcpStream, error: LensError) -> LensResult<()> {
         LensError::Forbidden(message) => (403, message),
         LensError::NotFound(message) => (404, message),
         LensError::BadRequest(message) => (400, message),
+        LensError::PayloadTooLarge(message) => (413, message),
         LensError::Renderer(message) => (502, message),
         LensError::InvalidTarget(message) => (500, message),
         LensError::Io(error) => (500, error.to_string()),
@@ -851,6 +979,52 @@ mod tests {
         }
     }
 
+    fn http_request(address: SocketAddr, request: &str) -> String {
+        let mut stream = TcpStream::connect(address).expect("server should accept connections");
+        stream
+            .write_all(request.as_bytes())
+            .expect("request should be written");
+        stream
+            .shutdown(Shutdown::Write)
+            .expect("request should be closed");
+        let mut response = String::new();
+        stream
+            .read_to_string(&mut response)
+            .expect("response should be readable");
+        response
+    }
+
+    fn renderer_stub(content_type: &str, body: &[u8]) -> (String, JoinHandle<Vec<u8>>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let content_type = content_type.to_string();
+        let body = body.to_vec();
+        let join = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let size = stream.read(&mut buffer).unwrap();
+                if size == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..size]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(header.as_bytes()).unwrap();
+            stream.write_all(&body).unwrap();
+            stream.shutdown(Shutdown::Write).unwrap();
+            request
+        });
+        (format!("http://{address}/render"), join)
+    }
+
     fn fixture() -> TempDir {
         let directory = TempDir::new();
         fs::create_dir(directory.0.join(".git")).expect("git marker should be created");
@@ -940,11 +1114,7 @@ mod tests {
             "GET /api/file?path=README.md HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
             "GET /api/render?path=README.md&block=0 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         ] {
-            let mut stream = TcpStream::connect(server.address()).unwrap();
-            stream.write_all(request.as_bytes()).unwrap();
-            stream.shutdown(Shutdown::Write).unwrap();
-            let mut response = String::new();
-            stream.read_to_string(&mut response).unwrap();
+            let response = http_request(server.address(), request);
             assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
         }
         server.shutdown();
@@ -955,16 +1125,87 @@ mod tests {
         let directory = fixture();
         let workspace = Workspace::from_arg(None, &directory.0).unwrap();
         let mut server = WorkspaceServer::start(workspace, Arc::new(FailingRenderer), 0).unwrap();
-        let mut stream = TcpStream::connect(server.address()).unwrap();
-        stream
-            .write_all(
-                b"GET /api/render?path=README.md&block=0 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-            )
-            .unwrap();
-        stream.shutdown(Shutdown::Write).unwrap();
-        let mut response = String::new();
-        stream.read_to_string(&mut response).unwrap();
+        let response = http_request(
+            server.address(),
+            "GET /api/render?path=README.md&block=0 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
         assert!(response.starts_with("HTTP/1.1 502 Bad Gateway"));
         server.shutdown();
+    }
+
+    #[test]
+    fn uses_the_native_http_renderer_and_validates_svg() {
+        let (endpoint, join) =
+            renderer_stub("image/svg+xml", b"<?xml version=\"1.0\"?><svg></svg>");
+        let renderer = HttpRenderer::new(endpoint);
+        let diagram = renderer.render("@startuml\nAlice -> Bob\n@enduml").unwrap();
+        assert_eq!(diagram.content_type, "image/svg+xml");
+        assert!(diagram.body.ends_with(b"<svg></svg>"));
+        let request = join.join().unwrap();
+        assert!(String::from_utf8_lossy(&request).contains("Content-Type: text/plain"));
+    }
+
+    #[test]
+    fn rejects_non_svg_renderer_responses() {
+        let (endpoint, join) = renderer_stub("text/plain", b"not a diagram");
+        let renderer = HttpRenderer::new(endpoint);
+        assert!(matches!(
+            renderer.render("source"),
+            Err(LensError::Renderer(_))
+        ));
+        join.join().unwrap();
+    }
+
+    #[test]
+    fn rejects_malformed_and_oversized_requests() {
+        let directory = fixture();
+        let workspace = Workspace::from_arg(None, &directory.0).unwrap();
+        let mut server = WorkspaceServer::start(workspace, Arc::new(StubRenderer), 0).unwrap();
+
+        let malformed = http_request(
+            server.address(),
+            "GET / HTTP/2.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        assert!(malformed.starts_with("HTTP/1.1 400 Bad Request"));
+
+        let oversized = format!(
+            "GET / HTTP/1.1\r\nX-Large: {}\r\n\r\n",
+            "x".repeat(MAX_HTTP_REQUEST_BYTES)
+        );
+        let oversized = http_request(server.address(), &oversized);
+        assert!(oversized.starts_with("HTTP/1.1 413 Payload Too Large"));
+        server.shutdown();
+    }
+
+    #[test]
+    fn rejects_oversized_files_and_allows_concurrent_requests() {
+        let directory = fixture();
+        fs::write(
+            directory.0.join("large.txt"),
+            vec![b'x'; (MAX_FILE_BYTES + 1) as usize],
+        )
+        .unwrap();
+        let workspace = Workspace::from_arg(None, &directory.0).unwrap();
+        assert!(matches!(
+            workspace.read_file("large.txt"),
+            Err(LensError::PayloadTooLarge(_))
+        ));
+
+        let mut server = WorkspaceServer::start(workspace, Arc::new(StubRenderer), 0).unwrap();
+        let address = server.address();
+        let responses = thread::scope(|scope| {
+            let handles = (0..8)
+                .map(|_| scope.spawn(|| http_request(address, "GET / HTTP/1.1\r\n\r\n")))
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert!(responses
+            .iter()
+            .all(|response| response.starts_with("HTTP/1.1 200 OK")));
+        server.shutdown();
+        assert!(TcpStream::connect(address).is_err());
     }
 }

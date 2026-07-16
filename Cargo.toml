@@ -11,3 +11,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "lens"
 path = "src/main.rs"
+
+[dependencies]
+ctrlc = "=3.4.5"
+# Keep the transitive TLS graph compatible with the supported Rust 1.75 toolchain.
+ureq = { version = "=2.9.7", default-features = false, features = ["tls"] }
+url = "=2.4.1"
+zeroize = "=1.8.1"
