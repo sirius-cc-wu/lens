@@ -1,6 +1,6 @@
 # E1: Lens Inception
 
-Status: active
+Status: completed
 
 ## Goal
 
@@ -26,8 +26,8 @@ browse content, and render a PlantUML block in Markdown.
 
 ## Artifacts To Refine
 
-- None yet. Refine the feature brief when the stack spike or fixture behavior
-  changes the scope or use-case extensions.
+- Feature brief: [`docs/features/lens-viewer.md`](../features/lens-viewer.md) -
+  refined with SSD summaries, operation contracts, and implementation evidence.
 
 ## Artifacts Consulted
 
@@ -39,10 +39,12 @@ browse content, and render a PlantUML block in Markdown.
 
 ## Decisions To Record
 
-- Runtime and language choice: deferred until the launcher/file-serving spike.
-- PlantUML renderer deployment and configuration: deferred until the renderer
-  adapter spike.
-- Browser application asset strategy: deferred until the launcher slice.
+- Runtime and language choice: [ADR-001](../decisions/adr-001-rust-runtime.md) -
+  Rust is recommended for the MVP runtime.
+- PlantUML renderer deployment and configuration: keep the adapter replaceable;
+  the current contract is a configurable POST endpoint returning SVG.
+- Browser application asset strategy: the spike embeds a minimal HTML client;
+  production assets remain an elaboration concern.
 
 ## Trace
 
@@ -63,15 +65,30 @@ browse content, and render a PlantUML block in Markdown.
 
 ## Results
 
-The inception baseline is documented, but implementation evidence is not yet
-available. The iteration remains active until the exit criteria are tested.
+The vertical slice met the inception exit criteria:
+
+- Rust CLI target resolution supports no argument, directory, and file forms.
+- A local HTTP workspace serves a minimal browser UI plus tree and file APIs.
+- Canonical path checks reject traversal and skip symlinks outside the target.
+- Markdown PlantUML fences are extracted and rendered through an injected
+  adapter; renderer failures return HTTP 502 without stopping the server.
+- `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and
+  the CLI startup smoke test pass.
+
+Residual risks are graceful signal handling, production-grade HTTP behavior,
+renderer response validation, and a richer browser client.
 
 ## Artifact Outcomes
 
 - started: `Lens Viewer` - [`docs/features/lens-viewer.md`](../features/lens-viewer.md)
-  - current source of truth for inception requirements and risks.
-- started: `E1: Lens Inception` - this file - historical record of the active
-  objective and exit criteria.
-- deferred: SSDs, operation contracts, domain model, realizations, and design
-  class diagram - create them after the startup and rendering slice exposes
-  stable system operations and architectural decisions.
+  - refined with SSD summaries, contracts, and the validated MVP boundary.
+- started: `ADR-001` - [`docs/decisions/adr-001-rust-runtime.md`](../decisions/adr-001-rust-runtime.md)
+  - records the runtime recommendation and its evidence.
+- started: `SSD-01` through `SSD-03` and `C-01` through `C-02` - canonical
+  summaries in the feature brief - system operations are now stable enough for
+  the next design iteration.
+- started: `E1: Lens Inception` - this file - closed with implementation and
+  verification results.
+- deferred: detailed domain model, realizations, and design class diagram -
+  create them when production workspace and renderer responsibilities are
+  explored in elaboration.

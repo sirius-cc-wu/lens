@@ -1,0 +1,13 @@
+[package]
+name = "lens"
+version = "0.1.0"
+edition = "2021"
+description = "A local browser viewer for code and Markdown PlantUML blocks"
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "lens"
+path = "src/main.rs"

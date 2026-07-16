@@ -8,6 +8,10 @@
 
 - [E1: Lens inception](iterations/e1-lens-inception.md)
 
+## Decisions
+
+- [ADR-001: Use Rust for the MVP runtime](decisions/adr-001-rust-runtime.md)
+
 ## Repository Notes
 
 - [`user-prompts.md`](user-prompts.md) records the project prompts that led to

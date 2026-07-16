@@ -108,6 +108,89 @@ Extensions:
 - 2b. The Markdown contains an empty or malformed block: Lens identifies the
   block issue without preventing the rest of the document from being viewed.
 
+## System Sequence Summaries
+
+The following system events were exposed by the E1 implementation slice. The
+Lens workspace is treated as one black-box system; its HTTP routes are concrete
+operation names for the prototype, not a commitment to the final transport.
+
+### SSD-01 Start Workspace
+
+1. Developer -> Lens CLI: `startWorkspace(targetPath?)`
+2. Lens CLI -> Operating system: `openBrowser(workspaceUrl)`
+3. Lens CLI -> Developer: `workspaceReady(workspaceUrl)`
+
+Extensions:
+
+- `targetPath` is omitted: Lens resolves the current Git repository.
+- Browser launch fails: Lens reports the URL and keeps the workspace available
+  for manual opening.
+- Target resolution fails: Lens returns an error and does not start the
+  workspace.
+
+### SSD-02 Browse Workspace Content
+
+1. Developer -> Lens workspace: `listDirectory(path)`
+2. Lens workspace -> Developer: `directoryEntries`
+3. Developer -> Lens workspace: `readFile(path)`
+4. Lens workspace -> Developer: `fileContent(plantumlBlockMetadata)`
+
+Extensions:
+
+- The path is outside the workspace: Lens returns `workspacePathRejected`.
+- The path cannot be read: Lens returns `fileReadFailed`.
+
+### SSD-03 Render PlantUML Block
+
+1. Developer -> Lens workspace: `renderPlantUml(path, blockIndex)`
+2. Lens workspace -> PlantUML renderer: `render(source)`
+3. PlantUML renderer -> Lens workspace: `diagram` or `renderFailed`
+4. Lens workspace -> Developer: `diagram` or `renderFailed`
+
+## Operation Contracts
+
+### C-01 `startWorkspace(targetPath?)`
+
+Cross references: `UC-01`, `SSD-01`
+
+Preconditions:
+
+- The optional target path is supplied by the developer or the current
+  directory is available.
+
+Postconditions:
+
+- A readable workspace target is established.
+- A local workspace endpoint is listening for browser requests.
+- The browser launch is attempted unless explicitly disabled.
+- No file in the target repository is modified.
+
+Open issues:
+
+- Graceful signal handling and persistent server shutdown remain to be designed
+  for the production CLI.
+
+### C-02 `renderPlantUml(path, blockIndex)`
+
+Cross references: `UC-03`, `SSD-03`
+
+Preconditions:
+
+- `path` resolves to a readable file within the workspace.
+- `blockIndex` identifies a non-empty PlantUML fence in that file.
+
+Postconditions:
+
+- The selected PlantUML source is sent to the configured renderer.
+- A diagram representation is returned to the requesting workspace client, or
+  an actionable render failure is returned.
+- The source document remains unchanged and readable.
+
+Open issues:
+
+- Renderer response validation should be expanded beyond the current SVG
+  adapter assumption.
+
 ## MVP Boundary
 
 ### Workspace Startup
@@ -136,8 +219,8 @@ Extensions:
 - Avoid modifying files in the target repository.
 
 Out of scope for the inception baseline: Obsidian integration, Markdown
-editing, Mermaid support, diagram export, collaborative access, and a
-committed runtime/language choice.
+editing, Mermaid support, diagram export, collaborative access, and production
+packaging details.
 
 ## Architectural Risks
 
@@ -148,7 +231,7 @@ committed runtime/language choice.
 | Markdown fence handling | Incorrect extraction will render the wrong source or corrupt document context. | Parser examples for valid, empty, malformed, nested, and multiple blocks. |
 | PlantUML renderer integration | Network failures, encoding, response validation, and service choice affect the core value. | A renderer adapter exercised against a stub service and one real compatible endpoint. |
 | Large repository responsiveness | Indexing or reading the whole repository at startup may make the CLI unusable. | Fixture and benchmark with ignored/generated directories. |
-| Runtime and packaging choice | The preferred Rust, Python, or C# stack changes server, browser assets, and distribution design. | A short stack spike against the launcher and file-serving slice. |
+| Runtime packaging | Supported-platform packaging and bundled asset choices affect distribution. | A packaging smoke test on each supported platform. |
 
 ## Inception Decisions
 
@@ -158,13 +241,17 @@ committed runtime/language choice.
   in Markdown.
 - The first implementation slice should validate startup, safe file access,
   and one render path together.
-- The language and runtime decision is deferred until the thin slice provides
-  evidence.
+- Rust is the MVP runtime recommendation; the evidence and tradeoffs are
+  recorded in [ADR-001](../decisions/adr-001-rust-runtime.md).
+- The renderer is accessed through a replaceable adapter. The current spike
+  uses a POST endpoint returning SVG and keeps the endpoint configurable.
 
 ## Traceability
 
 - `UC-01` -> startup lifecycle and target-resolution spike
 - `UC-02` -> workspace file-access and path-containment spike
 - `UC-03` -> Markdown parsing and PlantUML renderer spike
+- `SSD-01` -> `C-01` -> CLI and workspace server
+- `SSD-03` -> `C-02` -> `PlantUmlRenderer` adapter
 - [E1: Lens inception](../iterations/e1-lens-inception.md) records the current
   iteration objective and evidence required before elaboration.
