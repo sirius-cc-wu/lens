@@ -5,11 +5,11 @@ Status: planned
 Goal:
 
 - Establish whether Lens can safely present a Markdown file in a local browser
-  session and choose the PlantUML rendering boundary.
+  session using the public PlantUML server.
 
 Risks Addressed:
 
-- `R-01`: renderer privacy
+- `R-01`: public PlantUML server availability and response behavior
 - `R-02`: untrusted Markdown and SVG
 - `R-03`: target scope escape
 - `R-06`: browser launch and process lifetime
@@ -28,7 +28,7 @@ Artifacts to Refine:
   refine `UC-01` from executable-spike feedback.
 - Supplementary specification:
   [`docs/supplementary-specification.md`](../supplementary-specification.md) -
-  set renderer, sanitization, and performance constraints from evidence.
+  set public-renderer, sanitization, and performance constraints from evidence.
 - Risk list: [`docs/risk-list.md`](../risk-list.md) - update probabilities and
   mitigations from the spike.
 
@@ -37,11 +37,13 @@ Artifacts Consulted:
 - Vision and business case: [`docs/vision.md`](../vision.md)
 - Glossary: [`docs/glossary.md`](../glossary.md)
 - Development case: [`docs/development-case.md`](../development-case.md)
+- `ADR-001`, public PlantUML rendering:
+  [`docs/decisions/adr-001-public-plantuml-rendering.md`](../decisions/adr-001-public-plantuml-rendering.md)
 
 Decisions to Record:
 
-- Renderer boundary: local-only, explicit remote opt-in, or another approach -
-  create a decision record after comparing privacy, setup, and failure behavior.
+- Public PlantUML server integration: record a decision only if request,
+  timeout, or failure behavior has durable product consequences.
 - Browser-session scope: listener binding, target-root authorization, and
   browser-launch fallback - create a decision record if the choice has durable
   security or deployment consequences.
@@ -59,8 +61,8 @@ Exit Criteria:
   authorized target scope.
 - One normal PlantUML block and one failed block have observable, documented
   behavior.
-- A renderer-boundary decision records whether any diagram source leaves the
-  machine and how the user is informed.
+- Successful, invalid, unavailable, and delayed public-renderer responses have
+  observable, documented behavior.
 - The resulting evidence updates `R-01` through `R-03` and supports a credible
   `E2` plan.
 

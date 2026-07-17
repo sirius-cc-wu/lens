@@ -7,7 +7,7 @@ Status: inception baseline
 | Actor | Goal |
 |---|---|
 | Developer or technical writer | Read repository Markdown and its diagrams without opening an editor-specific plugin. |
-| Diagram renderer | Converts PlantUML source to a displayable result. It may be local or remote; the contract is not yet selected. |
+| PlantUML public server | Converts PlantUML source to a displayable result through `https://www.plantuml.com/plantuml`. |
 | Operating system browser | Displays the local Lens view after the CLI starts it. |
 
 ## Use-Case List
@@ -60,9 +60,8 @@ Extensions:
 - 6a. If a PlantUML block is invalid or the renderer is unavailable, Lens keeps
   the source visible and shows an error associated with that block. One failed
   diagram does not prevent the rest of the document from rendering.
-- 6b. If rendering would send source to a remote service, Lens follows the
-  renderer privacy decision established in elaboration before making the
-  request.
+- 6b. Lens sends PlantUML block source to the public PlantUML server. V1 does
+  not provide a local renderer or a privacy-preserving rendering path.
 
 Postconditions:
 
@@ -75,6 +74,7 @@ Postconditions:
 - Does "codebase code and document" require a code-file navigator in the first
   release, or only documentation navigation with links to repository files?
 - Which Markdown extensions and filenames are in scope?
-- Is network rendering opt-in, opt-out, or prohibited by default?
+- What request, response-size, and timeout limits are needed for the public
+  PlantUML server?
 - Must the viewer work in a browser that is already running, headless
   environments, or remote development containers?

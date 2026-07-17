@@ -37,6 +37,8 @@ and locally maintained technical documentation.
 - Resolve a file, directory, or current-directory target.
 - Present Markdown documents in a browser served by the local Lens process.
 - Detect and render fenced `plantuml` blocks in Markdown.
+- Send PlantUML block source to the public PlantUML server at
+  `https://www.plantuml.com/plantuml` for rendering.
 - Provide clear errors for unreadable targets, unsupported files, and failed
   diagram rendering.
 
@@ -64,11 +66,11 @@ burden lower than installing an editor plugin.
 |---|---|---|
 | Build or buy | Build a thin standalone CLI and browser viewer. The reference Obsidian plugin is not reusable as a product dependency because Lens must not depend on Obsidian. | Reuse only portable ideas or permissively licensed libraries after license review. |
 | Browser presentation | Feasible with a loopback HTTP server and the platform browser-launch facility. | Prove target resolution, server lifetime, and browser launch in `E1`. |
-| PlantUML rendering | Feasible through a configured renderer, as demonstrated by the reference plugin's PlantUML, Kroki, and local-server integrations. | Decide the renderer contract and default in `E1`; do not assume an external service is acceptable. |
+| PlantUML rendering | V1 uses the public PlantUML server at `https://www.plantuml.com/plantuml`. This accepts that PlantUML source leaves the machine. | Validate request construction, response handling, and failure behavior in `E1`. See [ADR-001](decisions/adr-001-public-plantuml-rendering.md). |
 | Markdown parsing | Feasible with an established CommonMark-compatible library. | Select a library after language and packaging decisions are known. |
 
-No show-stopper has been found, but renderer privacy, packaging, and the exact
-meaning of codebase browsing are material risks.
+No show-stopper has been found, but public-renderer availability, packaging, and
+the exact meaning of codebase browsing are material risks.
 
 ## Success Measures for a First Release
 
@@ -76,6 +78,6 @@ meaning of codebase browsing are material risks.
   blocks rendered in a supported browser.
 - A user can run `lens` in a repository and reach Markdown documentation without
   supplying an explicit target.
-- The user is told before diagram source leaves the machine, or can select a
-  local renderer that keeps it local.
+- A failed PlantUML request leaves its source visible with an actionable error
+  while the rest of the document remains readable.
 - No Obsidian installation, vault, or API is required at runtime.

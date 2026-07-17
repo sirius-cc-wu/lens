@@ -11,13 +11,13 @@ does not prescribe the implementation architecture.
   to the local network by default.
 - Failure to launch a browser must leave the local URL visible in the CLI.
 
-## Content Handling and Privacy
+## Content Handling
 
 - Lens reads targets without modifying repository files.
-- The product must state when diagram source is sent to a renderer outside the
-  machine.
-- A local rendering path must be evaluated before an external renderer becomes
-  the default.
+- Lens sends PlantUML block source over HTTPS to
+  `https://www.plantuml.com/plantuml` for V1 rendering.
+- V1 provides no local renderer or privacy-preserving alternative for PlantUML
+  source.
 - Lens must not collect telemetry or require an account for the initial release.
 
 ## Rendering and Resilience

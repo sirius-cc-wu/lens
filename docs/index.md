@@ -11,6 +11,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [Supplementary specification](supplementary-specification.md)
 - [Glossary](glossary.md)
 - [Risk list](risk-list.md)
+- [ADR-001: Use the public PlantUML server for V1 rendering](decisions/adr-001-public-plantuml-rendering.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)
 - [Elaboration iteration records](iterations/)
