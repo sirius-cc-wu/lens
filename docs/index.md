@@ -1,0 +1,22 @@
+# Lens Product Documents
+
+These documents record the current inception baseline for Lens, a standalone
+command-line Markdown viewer with PlantUML support. They are intentionally
+small and will be refined as elaboration resolves the listed risks.
+
+## Current Artifacts
+
+- [Vision and business case](vision.md)
+- [Primary feature and use cases](features/markdown-viewing.md) (`FEAT-01`)
+- [Supplementary specification](supplementary-specification.md)
+- [Glossary](glossary.md)
+- [Risk list](risk-list.md)
+- [Development case](development-case.md)
+- [Elaboration phase plan](elaboration-phase-plan.md)
+- [Elaboration iteration records](iterations/)
+
+## Inception Status
+
+Completed on 2026-07-18. The product need, basic scope, actors, key use cases,
+major risks, and a first elaboration iteration are defined. Implementation and
+architecture decisions remain deferred until elaboration evidence is available.
