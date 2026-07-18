@@ -14,6 +14,8 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-001: Use the public PlantUML server for V1 rendering](decisions/adr-001-public-plantuml-rendering.md)
 - [ADR-002: Restrict viewing-session scope](decisions/adr-002-loopback-viewer-scope.md)
 - [ADR-003: Authorize document-root discovery](decisions/adr-003-document-root-discovery.md)
+- [ADR-004: V1 Linux documentation-viewer scope](decisions/adr-004-v1-release-scope.md)
+- [V1 release readiness](release-readiness.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)
 - [Elaboration iteration records](iterations/)

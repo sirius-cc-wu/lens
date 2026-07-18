@@ -26,7 +26,7 @@ and locally maintained technical documentation.
 - The CLI command is named `lens`.
 - It accepts a file target, a directory target, or no target; no target means
   the current repository.
-- It opens a browser to display codebase code and documentation.
+- It opens a browser to display repository documentation.
 - Markdown files with PlantUML fenced blocks are rendered.
 - Lens must not depend on Obsidian.
 
@@ -41,6 +41,7 @@ and locally maintained technical documentation.
   `https://www.plantuml.com/plantuml` for rendering.
 - Provide clear errors for unreadable targets, unsupported files, and failed
   diagram rendering.
+- Support Linux browser launch through `xdg-open`.
 
 ### Deferred Scope
 
@@ -48,9 +49,9 @@ and locally maintained technical documentation.
 - Standalone `.puml` file viewing.
 - Markdown or diagram editing, export, zoom controls, and live file watching.
 - Authentication, shared hosting, cloud synchronization, or telemetry.
-- A full code browser beyond what is needed to navigate documentation. The
-  phrase "display the codebase's code and document" needs elaboration before it
-  becomes a release commitment.
+- Repository source-code browsing. V1 is documentation-only; a later release
+  needs a separate use case and authorization model for source files.
+- macOS and Windows releases.
 
 ## Business Case
 
@@ -69,8 +70,8 @@ burden lower than installing an editor plugin.
 | PlantUML rendering | V1 uses the public PlantUML server at `https://www.plantuml.com/plantuml`. This accepts that PlantUML source leaves the machine. | Validate request construction, response handling, and failure behavior in `E1`. See [ADR-001](decisions/adr-001-public-plantuml-rendering.md). |
 | Markdown parsing | Feasible with an established CommonMark-compatible library. | Select a library after language and packaging decisions are known. |
 
-No show-stopper has been found, but public-renderer availability, packaging, and
-the exact meaning of codebase browsing are material risks.
+No show-stopper has been found, but public-renderer availability and Linux
+packaging verification remain material risks.
 
 ## Success Measures for a First Release
 
@@ -81,3 +82,5 @@ the exact meaning of codebase browsing are material risks.
 - A failed PlantUML request leaves its source visible with an actionable error
   while the rest of the document remains readable.
 - No Obsidian installation, vault, or API is required at runtime.
+- The Linux package installs with Cargo and opens the viewer through `xdg-open`
+  or reports a manual loopback URL.

@@ -19,11 +19,11 @@ Status: refined in E2
 | `UC-03` | View documentation from a directory argument | High |
 | `UC-04` | Navigate between discovered Markdown documents | Medium |
 | `UC-05` | Receive a target-resolution or rendering failure | High |
-| `UC-06` | View source code associated with documentation | Unknown; clarify before commitment |
+| `UC-06` | View source code associated with documentation | Deferred from V1 |
 
 Inception detailed `UC-01` to validate initial scope without prematurely
 specifying the entire product. E2 adds the document-root and navigation detail
-for `UC-02` through `UC-04`; `UC-06` remains deferred.
+for `UC-02` through `UC-04`; ADR-004 defers `UC-06` from V1.
 
 ## UC-01: View a Markdown File with PlantUML Blocks
 

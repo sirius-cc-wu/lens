@@ -5,8 +5,9 @@ does not prescribe the implementation architecture.
 
 ## Runtime and Portability
 
-- Lens runs as a command-line application on the initially supported desktop
-  platforms. Exact platform and distribution targets are an elaboration decision.
+- Lens V1 supports Linux and launches the browser through `xdg-open`.
+- The supported source-install command is `cargo install --path . --locked`.
+- macOS and Windows are not V1 release platforms.
 - The CLI starts a local-only browser session and should not expose the viewer
   to the local network by default.
 - Failure to launch a browser must leave the local URL visible in the CLI.

@@ -3,6 +3,9 @@ name = "lens"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
+description = "A Linux CLI for viewing repository Markdown and PlantUML diagrams in a browser"
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 anyhow = "=1.0.79"
