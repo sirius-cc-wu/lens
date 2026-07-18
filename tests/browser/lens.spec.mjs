@@ -37,6 +37,31 @@ test("controlled_renderer_and_navigation_pane_link_then_displays_selected_docume
   }
 });
 
+test("standalone plantuml link then displays its rendered diagram", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
+
+    // Act
+    await page.getByRole("link", { name: "architecture.puml" }).click();
+
+    // Assert
+    expect(new URL(page.url()).pathname).toBe("/documents/architecture.puml");
+    await expect(page.locator("article")).toContainText("Standalone PlantUML file.");
+    await expect.poll(() => fixture.renderer.requests).toBe(2);
+    await expect
+      .poll(() =>
+        page.locator("img[data-diagram]").evaluate((image) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true);
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("save displayed document then refreshes browser view automatically", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
@@ -286,6 +311,10 @@ async function createDocumentationRepository({ hiddenDocument } = {}) {
       writeFile(
         join(directory, "guides", "guide.md"),
         "# Guide page\n\nThe guide is a discovered document.\n",
+      ),
+      writeFile(
+        join(directory, "architecture.puml"),
+        "@startuml\nAlice -> Bob: standalone fixture\n@enduml\n",
       ),
       writeFile(join(binDirectory, "xdg-open"), "#!/bin/sh\nexit 0\n"),
     ];

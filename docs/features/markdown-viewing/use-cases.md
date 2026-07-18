@@ -1,6 +1,6 @@
 # FEAT-01: View Markdown with PlantUML
 
-Status: refined in P5
+Status: refined in P6
 
 ## Actors
 
@@ -20,6 +20,7 @@ Status: refined in P5
 | `UC-04` | Navigate between discovered Markdown documents | Medium |
 | `UC-05` | Receive a target-resolution or rendering failure | High |
 | `UC-06` | View source code associated with documentation | Deferred from V1 |
+| `UC-10` | View a standalone PlantUML file | Medium |
 
 Inception detailed `UC-01` to validate initial scope without prematurely
 specifying the entire product. E2 adds the document-root and navigation detail
@@ -89,16 +90,18 @@ target. Directory and current-directory targets remain work for `UC-02` and
 
 Primary actor: Developer or technical writer
 
-Goal: Open Markdown documentation from the current directory, a directory
-argument, or a Markdown file argument.
+Goal: Open Markdown documentation and standalone PlantUML files from the
+current directory, a directory argument, or a supported file argument.
 
-Trigger: The user runs `lens`, `lens <directory>`, or `lens <markdown-file>`.
+Trigger: The user runs `lens`, `lens <directory>`, `lens <markdown-file>`, or
+`lens <plantuml-file>`.
 
 Main success scenario:
 
 1. Lens resolves the document root from the supplied target or current
    directory.
-2. Lens identifies Markdown documents within the document root.
+2. Lens identifies Markdown documents and `.puml` files within the document
+   root.
 3. Lens selects the explicitly named file, a root `README` document, a
    `docs/index` document, or the first discovered document as the initial
    document.
@@ -108,9 +111,9 @@ Main success scenario:
 Extensions:
 
 - 1a. If the target is missing, unreadable, hidden, a symbolic link, or neither
-  a directory nor a supported Markdown file, Lens reports an actionable error
+  a directory nor a supported document, Lens reports an actionable error
   and starts no viewing session.
-- 2a. If the document root has no Markdown documents, Lens reports an
+- 2a. If the document root has no Markdown or PlantUML documents, Lens reports an
   actionable error and starts no viewing session.
 
 Special requirements:
@@ -119,8 +122,29 @@ Special requirements:
 - Symbolic links found during document discovery are excluded.
 - Hidden files and directories found during document discovery are excluded.
 - A direct hidden or symbolic-link target is rejected before document discovery.
-- A direct file target remains the initial document but authorizes its canonical
-  parent as the document root.
+- A direct Markdown or `.puml` file target remains the initial document but
+  authorizes its canonical parent as the document root.
+
+## UC-10: View a Standalone PlantUML File
+
+Primary actor: Developer or technical writer
+
+Goal: Open a visible `.puml` file directly or select one from the authorized
+document set without treating arbitrary source files as viewable documents.
+
+Main success scenario:
+
+1. The user opens a `.puml` target or selects a discovered `.puml` identifier.
+2. Lens reads the already authorized source and represents it as one diagram.
+3. Lens uses the session renderer choice and retains the source fallback.
+4. The user reads the rendered diagram or its visible source fallback.
+
+Extensions:
+
+- 1a. A hidden, symbolic-link, out-of-root, or non-`.puml` source file is not
+  added to the document set or made reachable by a browser route.
+- 3a. If rendering is disabled or fails, Lens keeps the original standalone
+  PlantUML source readable and applies the existing diagram controls.
 
 ## UC-04: Navigate Between Discovered Markdown Documents
 

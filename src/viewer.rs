@@ -25,9 +25,9 @@ use reqwest::Client;
 use tokio::{io::AsyncWriteExt, process::Command as TokioCommand};
 
 use crate::{
-    markdown::{escape_html, render, Diagram, RenderedDocument},
+    markdown::{escape_html, render, render_standalone_plantuml, Diagram, RenderedDocument},
     plantuml::{DiagramRenderer, RendererMode},
-    target::{MarkdownDocument, MarkdownTarget},
+    target::{DocumentKind, MarkdownDocument, MarkdownTarget},
 };
 
 const MAX_DIAGRAM_BYTES: usize = 2 * 1024 * 1024;
@@ -104,11 +104,12 @@ impl ViewerState {
                     document.identifier.clone(),
                     document.canonical_path.clone(),
                     document.source.clone(),
+                    document.kind,
                 )
             })
             .collect::<Vec<_>>();
 
-        for (document_id, identifier, canonical_path, stored_source) in documents {
+        for (document_id, identifier, canonical_path, stored_source, kind) in documents {
             let Ok(source) = fs::read_to_string(canonical_path) else {
                 continue;
             };
@@ -116,10 +117,11 @@ impl ViewerState {
                 continue;
             }
 
-            let rendered = render(
+            let rendered = render_document(
                 &source,
                 document_id,
                 &identifier,
+                kind,
                 &self.known_documents,
                 &self.renderer,
             );
@@ -139,6 +141,7 @@ struct ViewerDocument {
     identifier: String,
     canonical_path: PathBuf,
     source: String,
+    kind: DocumentKind,
     rendered: RenderedDocument,
     revision: u64,
 }
@@ -220,10 +223,12 @@ fn viewer_state(
             identifier: document.identifier.clone(),
             canonical_path: document.canonical_path,
             source: document.source.clone(),
-            rendered: render(
+            kind: document.kind,
+            rendered: render_document(
                 &document.source,
                 document_id,
                 &document.identifier,
+                document.kind,
                 &known_documents,
                 &renderer,
             ),
@@ -240,6 +245,22 @@ fn viewer_state(
         renderer,
         rendering_disabled: AtomicBool::new(false),
     })
+}
+
+fn render_document(
+    source: &str,
+    document_id: usize,
+    identifier: &str,
+    kind: DocumentKind,
+    known_documents: &BTreeSet<String>,
+    renderer: &DiagramRenderer,
+) -> RenderedDocument {
+    match kind {
+        DocumentKind::Markdown => {
+            render(source, document_id, identifier, known_documents, renderer)
+        }
+        DocumentKind::PlantUml => render_standalone_plantuml(document_id, source, renderer),
+    }
 }
 
 fn router(state: Arc<ViewerState>) -> Router {
@@ -703,7 +724,7 @@ mod tests {
     use crate::{
         markdown::Diagram,
         plantuml::{DiagramRenderer, RendererMode},
-        target::MarkdownDocument,
+        target::{DocumentKind, MarkdownDocument},
     };
 
     fn test_renderer() -> DiagramRenderer {
@@ -731,6 +752,7 @@ mod tests {
             identifier: identifier.to_owned(),
             canonical_path: PathBuf::from(identifier),
             source: source.to_owned(),
+            kind: DocumentKind::Markdown,
         }
     }
 
@@ -739,6 +761,7 @@ mod tests {
             identifier: "README.md".to_owned(),
             canonical_path: path,
             source: source.to_owned(),
+            kind: DocumentKind::Markdown,
         }
     }
 

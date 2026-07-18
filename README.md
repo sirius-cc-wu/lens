@@ -38,19 +38,21 @@ The command writes `dist/lens-<version>-<target>.tar.gz` and a matching
 lens
 lens docs
 lens docs/features/markdown-viewing/oc-02-open-document-root.md
+lens diagrams/architecture.puml
 lens --renderer local docs
 lens --renderer disabled docs
 ```
 
 With no argument, Lens uses the current directory as the document root. A
-directory argument uses that directory; a Markdown file argument uses the
-file's canonical parent. Lens initially opens a root `README`, then
-`docs/index`, then the first discovered Markdown document.
+directory argument uses that directory; a Markdown or `.puml` file argument
+uses the file's canonical parent. Lens initially opens a root `README`, then
+`docs/index`, then the first discovered document.
 
-Lens discovers `.md` and `.markdown` files under the document root. It excludes
-hidden entries and symbolic links. Relative links resolve only when their target
-is a discovered Markdown document; all other local paths receive a Lens guidance
-page without filesystem access.
+Lens discovers `.md`, `.markdown`, and `.puml` files under the document root.
+It excludes hidden entries and symbolic links. Relative Markdown links resolve
+only when their target is a discovered Markdown document; all other local paths
+receive a Lens guidance page without filesystem access. A standalone `.puml`
+file appears in the same navigation pane and renders as one diagram.
 
 ## PlantUML
 

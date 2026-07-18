@@ -76,6 +76,22 @@ pub fn render(
     RenderedDocument { html, diagrams }
 }
 
+pub fn render_standalone_plantuml(
+    document_id: usize,
+    source: &str,
+    renderer: &DiagramRenderer,
+) -> RenderedDocument {
+    RenderedDocument {
+        html: format!(
+            r#"<p class="standalone-plantuml">Standalone PlantUML file.</p>{}"#,
+            diagram_placeholder(document_id, 0, source, renderer.is_enabled())
+        ),
+        diagrams: vec![Diagram {
+            source: source.to_owned(),
+        }],
+    }
+}
+
 fn diagram_placeholder(
     document_id: usize,
     diagram_id: usize,
@@ -175,7 +191,7 @@ pub fn escape_html(value: &str) -> String {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::render;
+    use super::{render, render_standalone_plantuml};
     use crate::plantuml::{DiagramRenderer, RendererMode};
 
     fn public_renderer() -> DiagramRenderer {
@@ -220,6 +236,21 @@ mod tests {
             .html
             .contains("PlantUML rendering is disabled for this viewing session."));
         assert!(document.html.contains("Alice -&gt; Bob: private"));
+    }
+
+    #[test]
+    fn standalone_plantuml_source_then_renders_a_document_scoped_diagram() {
+        // Arrange
+        let source = "@startuml\nAlice -> Bob: standalone\n@enduml";
+
+        // Act
+        let document = render_standalone_plantuml(2, source, &public_renderer());
+
+        // Assert
+        assert_eq!(document.diagrams.len(), 1);
+        assert_eq!(document.diagrams[0].source, source);
+        assert!(document.html.contains("Standalone PlantUML file."));
+        assert!(document.html.contains("src=\"/diagrams/2/0\""));
     }
 
     #[test]

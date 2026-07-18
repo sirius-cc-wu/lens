@@ -67,6 +67,10 @@ Allow Lens to open `.puml` files directly as well as PlantUML blocks embedded in
 Markdown. This broadens diagram viewing without turning Lens into a general
 source-code browser.
 
+Status: implemented in P6. Lens discovers visible `.puml` files alongside
+Markdown, accepts a direct `.puml` target, and serves each standalone source as
+one diagram through the existing session-bound renderer route.
+
 ## 7. Cross-Platform Support
 
 Support macOS and Windows browser launch paths with platform-specific tests and

@@ -11,6 +11,13 @@ pub struct MarkdownDocument {
     pub(crate) identifier: String,
     pub(crate) canonical_path: PathBuf,
     pub(crate) source: String,
+    pub(crate) kind: DocumentKind,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum DocumentKind {
+    Markdown,
+    PlantUml,
 }
 
 #[derive(Debug)]
@@ -35,9 +42,11 @@ pub enum TargetError {
         #[source]
         source: std::io::Error,
     },
-    #[error("Target {path} is not a directory or Markdown file; expected .md or .markdown")]
+    #[error(
+        "Target {path} is not a directory or supported document; expected .md, .markdown, or .puml"
+    )]
     UnsupportedTarget { path: PathBuf },
-    #[error("Target {path} contains no discoverable Markdown documents")]
+    #[error("Target {path} contains no discoverable Markdown or PlantUML documents")]
     NoMarkdownDocuments { path: PathBuf },
     #[error("Target {path} is a symbolic link; choose a directory or Markdown file directly")]
     SymbolicLinkTarget { path: PathBuf },
@@ -68,7 +77,7 @@ pub fn load_markdown_target(path: Option<&Path>) -> Result<MarkdownTarget, Targe
 
     let (document_root, initial_path) = if metadata.is_dir() {
         (canonical_target, None)
-    } else if metadata.is_file() && is_markdown_file(&canonical_target) {
+    } else if metadata.is_file() && document_kind(&canonical_target).is_some() {
         let document_root = canonical_target
             .parent()
             .expect("a regular file has a parent directory")
@@ -132,9 +141,9 @@ fn discover_documents_in(
             discover_documents_in(root, &path, documents)?;
             continue;
         }
-        if !file_type.is_file() || !is_markdown_file(&path) {
+        let Some(kind) = file_type.is_file().then(|| document_kind(&path)).flatten() else {
             continue;
-        }
+        };
 
         let canonical_path = canonicalize(&path)?;
         if !canonical_path.starts_with(root) {
@@ -149,6 +158,7 @@ fn discover_documents_in(
             identifier: document_identifier(root, &path),
             canonical_path,
             source,
+            kind,
         });
     }
 
@@ -242,6 +252,17 @@ fn is_markdown_file(path: &Path) -> bool {
         })
 }
 
+fn document_kind(path: &Path) -> Option<DocumentKind> {
+    if is_markdown_file(path) {
+        Some(DocumentKind::Markdown)
+    } else {
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("puml"))
+            .then_some(DocumentKind::PlantUml)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::Path};
@@ -273,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn non_markdown_file_then_returns_unsupported_target_error() {
+    fn unsupported_file_then_returns_unsupported_target_error() {
         // Arrange
         let directory = temporary_directory("unsupported-target");
         let path = directory.join("notes.txt");
@@ -288,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn directory_without_markdown_then_returns_no_documents_error() {
+    fn directory_without_supported_documents_then_returns_no_documents_error() {
         // Arrange
         let directory = temporary_directory("empty-document-root");
 
@@ -374,6 +395,27 @@ mod tests {
 
         // Assert
         assert_target(&target, 0, &["selected.md", "sibling.md"]);
+        remove_directory(directory);
+    }
+
+    #[test]
+    fn direct_plantuml_file_then_selects_file_and_discovers_siblings() {
+        // Arrange
+        let directory = temporary_directory("plantuml-file-document-root");
+        let selected = directory.join("architecture.puml");
+        fs::write(&selected, "@startuml\n@enduml\n").expect("PlantUML fixture should be writable");
+        fs::write(directory.join("guide.md"), "# Guide\n")
+            .expect("Markdown fixture should be writable");
+
+        // Act
+        let target = load_markdown_target(Some(&selected)).expect("PlantUML file should load");
+
+        // Assert
+        assert_target(&target, 0, &["architecture.puml", "guide.md"]);
+        assert!(matches!(
+            target.documents[0].kind,
+            super::DocumentKind::PlantUml
+        ));
         remove_directory(directory);
     }
 

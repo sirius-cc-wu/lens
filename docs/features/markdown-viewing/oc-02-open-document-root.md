@@ -13,9 +13,9 @@ Preconditions:
 Postconditions on success:
 
 - A document root was identified from the canonical current directory, a
-  canonical directory target, or the canonical parent of a Markdown file target.
-- A document set was created from supported Markdown files discovered within the
-  document root.
+  canonical directory target, or the canonical parent of a supported file target.
+- A document set was created from supported Markdown and `.puml` files
+  discovered within the document root.
 - Every document in the document set is associated with a stable identifier
   relative to the document root.
 - The explicitly named file, a root `README` document, a `docs/index` document,
@@ -29,7 +29,7 @@ Postconditions on validation failure:
 
 - No viewing session was created.
 - Lens reports whether the target is missing, unreadable, hidden, a symbolic
-  link, unsupported, or has no discoverable Markdown documents.
+  link, unsupported, or has no discoverable Markdown or PlantUML documents.
 
 Open Issues:
 

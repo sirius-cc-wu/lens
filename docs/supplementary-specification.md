@@ -14,7 +14,8 @@ does not prescribe the implementation architecture.
 
 ## Content Handling
 
-- Lens reads targets without modifying repository files.
+- Lens reads visible Markdown and `.puml` targets without modifying repository
+  files.
 - Lens defaults to sending PlantUML block source over HTTPS to
   `https://www.plantuml.com/plantuml`, and also supports a local `plantuml`
   command or disabled diagram rendering for a viewing session.
