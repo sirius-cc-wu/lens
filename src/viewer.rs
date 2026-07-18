@@ -350,7 +350,6 @@ mod tests {
             get(|| async { ([(header::CONTENT_TYPE, "image/svg+xml")], "<svg></svg>") }),
         );
         let app = test_router_with_diagrams(vec![Diagram {
-            source: "@startuml\n@enduml".to_owned(),
             url: mock_renderer_url(renderer).await,
         }]);
         let request = Request::builder()
@@ -388,7 +387,6 @@ mod tests {
             }),
         );
         let app = test_router_with_diagrams(vec![Diagram {
-            source: "not valid PlantUML".to_owned(),
             url: mock_renderer_url(renderer).await,
         }]);
         let request = Request::builder()
@@ -411,7 +409,6 @@ mod tests {
             get(|| async { (axum::http::StatusCode::SERVICE_UNAVAILABLE, "unavailable") }),
         );
         let app = test_router_with_diagrams(vec![Diagram {
-            source: "@startuml\n@enduml".to_owned(),
             url: mock_renderer_url(renderer).await,
         }]);
         let request = Request::builder()
@@ -438,7 +435,6 @@ mod tests {
         );
         let app = test_router_with_client(
             vec![Diagram {
-                source: "@startuml\n@enduml".to_owned(),
                 url: mock_renderer_url(renderer).await,
             }],
             renderer_client_with_timeout(Duration::from_millis(10))

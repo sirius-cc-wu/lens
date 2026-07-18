@@ -4,7 +4,6 @@ use crate::plantuml::svg_url;
 
 #[derive(Debug, Clone)]
 pub struct Diagram {
-    pub source: String,
     pub url: String,
 }
 
@@ -28,7 +27,6 @@ pub fn render(markdown: &str) -> RenderedDocument {
                     let diagram_id = diagrams.len();
                     diagrams.push(Diagram {
                         url: svg_url(&source),
-                        source: source.clone(),
                     });
                     events.push(Event::Html(diagram_placeholder(diagram_id, &source).into()));
                 }
@@ -93,7 +91,6 @@ mod tests {
         assert_eq!(document.diagrams.len(), 1);
         assert!(document.html.contains("src=\"/diagrams/0\""));
         assert!(document.diagrams[0].url.contains("/svg/"));
-        assert!(document.diagrams[0].source.contains("Alice -> Bob"));
     }
 
     #[test]
