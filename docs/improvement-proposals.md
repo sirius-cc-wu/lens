@@ -66,3 +66,12 @@ tests should verify rendered Markdown, document navigation, the guidance page
 for unauthorized paths, and PlantUML success and failure states using a
 controlled renderer. This would verify the complete CLI, server, and browser
 path while keeping external renderer failures out of the test result.
+
+## 10. YAML Frontmatter Rendering
+
+Detect YAML frontmatter at the beginning of Markdown documents and render it as
+readable document metadata instead of leaving it hidden or treating it as body
+text. Define a consistent presentation for common fields, preserve unknown and
+nested values safely, and show an actionable result when frontmatter is
+malformed. Add fixtures and browser tests covering valid metadata, delimiters,
+and invalid YAML.
