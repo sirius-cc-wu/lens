@@ -8,7 +8,8 @@ Status: proposed
 
 These are candidate improvements after the V1 release. They are not release
 commitments; a future iteration should select one based on user value, risk, and
-implementation evidence.
+implementation evidence. Implemented proposals are removed from this list; the
+remaining numbers are stable and are not reused.
 
 ## 1. Local PlantUML Rendering
 
@@ -22,25 +23,6 @@ current privacy and renderer-availability risks.
 Publish Linux binaries and checksums with GitHub Releases. This would let users
 install Lens without a Rust toolchain and reduce the friction of the current
 source-install path.
-
-## 3. Document Navigation Pane
-
-Add a sidebar containing the discovered document set, current-document
-highlighting, and search. The sidebar must use the existing authorized document
-set so it does not broaden filesystem access.
-
-Status: implemented in C3. The browser-verified pane lists only the existing
-authorized document set, marks the current document, and filters those
-identifiers locally.
-
-## 4. Automatic Refresh
-
-Watch discovered Markdown files and refresh the browser view when they change.
-This would support authors who use Lens to preview documentation while editing.
-
-Status: implemented in C4. Lens polls only the fixed, already authorized
-document set, preserves the last successful rendering during a failed read, and
-reloads the current browser page after its document revision advances.
 
 ## 5. Diagram Failure Controls
 
@@ -65,20 +47,6 @@ has evidence.
 Add GitHub Actions checks for formatting, tests, Clippy, package verification,
 tagged releases, and binary publishing. This would make each release
 repeatable and reduce regression risk.
-
-## 9. Automated Browser End-to-End Testing
-
-Add headless-browser tests that start the compiled `lens` command against a
-temporary documentation repository and interact with its loopback URL. The
-tests should verify rendered Markdown, document navigation, the guidance page
-for unauthorized paths, and PlantUML success and failure states using a
-controlled renderer. This would verify the complete CLI, server, and browser
-path while keeping external renderer failures out of the test result.
-
-Status: implemented in C1 and C2. `BTE-01` starts the compiled command against
-a temporary repository and verifies rendered Markdown, document navigation, the
-guidance page for an undiscovered document, and controlled-renderer success and
-failure without contacting the public service.
 
 ## 10. YAML Frontmatter Rendering
 

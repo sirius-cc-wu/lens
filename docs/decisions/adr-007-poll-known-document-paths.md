@@ -6,12 +6,12 @@ Date: 2026-07-18
 
 ## Context
 
-Proposal 4 should show authors the current saved Markdown while they edit. At
-session startup, ADR-003 has already authorized a fixed set of canonical
-Markdown paths. Re-running discovery when any filesystem event occurs would
-change the authorization boundary during a session, could expose a newly added
-or hidden file, and would complicate partial-save behavior. Browser polling of
-full document content would also make file observation depend on a
+Automatic refresh should show authors the current saved Markdown while they
+edit. At session startup, ADR-003 has already authorized a fixed set of
+canonical Markdown paths. Re-running discovery when any filesystem event occurs
+would change the authorization boundary during a session, could expose a newly
+added or hidden file, and would complicate partial-save behavior. Browser
+polling of full document content would also make file observation depend on a
 browser-provided path.
 
 ## Decision

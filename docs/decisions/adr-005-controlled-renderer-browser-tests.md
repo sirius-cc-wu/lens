@@ -38,7 +38,8 @@ renderer URL through a browser route.
 
 ## Trace
 
-- Proposal: [Automated Browser End-to-End Testing](../improvement-proposals.md#9-automated-browser-end-to-end-testing)
+- Implementation: [C1 browser end-to-end harness](../iterations/c1-browser-end-to-end-harness.md)
+  and [C2 browser guidance and renderer failure](../iterations/c2-browser-guidance-and-renderer-failure.md)
 - Requirements: `UC-01` through `UC-05` in
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - Security boundary: [ADR-002](adr-002-loopback-viewer-scope.md)
