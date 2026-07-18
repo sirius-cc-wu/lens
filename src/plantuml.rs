@@ -1,11 +1,20 @@
-use std::io::Write;
+use std::{env, io::Write};
 
 use flate2::{write::DeflateEncoder, Compression};
 
 pub const PUBLIC_SERVER: &str = "https://www.plantuml.com/plantuml";
+pub const SERVER_ENVIRONMENT_VARIABLE: &str = "LENS_PLANTUML_SERVER";
 
-pub fn svg_url(source: &str) -> String {
-    format!("{PUBLIC_SERVER}/svg/{}", encode(source))
+pub fn renderer_server() -> String {
+    env::var(SERVER_ENVIRONMENT_VARIABLE)
+        .ok()
+        .map(|server| server.trim().trim_end_matches('/').to_owned())
+        .filter(|server| !server.is_empty())
+        .unwrap_or_else(|| PUBLIC_SERVER.to_owned())
+}
+
+pub fn svg_url(server: &str, source: &str) -> String {
+    format!("{}/svg/{}", server.trim_end_matches('/'), encode(source))
 }
 
 fn encode(source: &str) -> String {
@@ -69,7 +78,7 @@ mod tests {
         let source = "@startuml\nAlice -> Bob: hello\n@enduml";
 
         // Act
-        let url = svg_url(source);
+        let url = svg_url(PUBLIC_SERVER, source);
 
         // Assert
         assert!(url.starts_with(&format!("{PUBLIC_SERVER}/svg/")));
@@ -79,5 +88,17 @@ mod tests {
             .all(|character| character.is_ascii_alphanumeric()
                 || character == '-'
                 || character == '_'));
+    }
+
+    #[test]
+    fn controlled_renderer_server_then_generates_its_svg_url() {
+        // Arrange
+        let server = "http://127.0.0.1:12345/";
+
+        // Act
+        let url = svg_url(server, "@startuml\n@enduml");
+
+        // Assert
+        assert!(url.starts_with("http://127.0.0.1:12345/svg/"));
     }
 }

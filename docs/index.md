@@ -38,6 +38,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-002: Restrict viewing-session scope](decisions/adr-002-loopback-viewer-scope.md)
 - [ADR-003: Authorize document-root discovery](decisions/adr-003-document-root-discovery.md)
 - [ADR-004: V1 Linux documentation-viewer scope](decisions/adr-004-v1-release-scope.md)
+- [ADR-005: Use a controlled PlantUML renderer in browser tests](decisions/adr-005-controlled-renderer-browser-tests.md)
 - [V1 release readiness](release-readiness.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)

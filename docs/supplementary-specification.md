@@ -23,6 +23,15 @@ does not prescribe the implementation architecture.
   returned SVG only as an image, never as inline document markup.
 - Lens must not collect telemetry or require an account for the initial release.
 
+## Automated Browser Verification
+
+- Browser end-to-end tests start the compiled `lens` command against a
+  temporary documentation repository and use a local server with predefined
+  responses (a controlled renderer) for PlantUML evidence.
+- The test child process may set `LENS_PLANTUML_SERVER` to that controlled
+  renderer. When the variable is absent or empty, Lens uses the public server
+  defined by ADR-001.
+
 ## Rendering and Resilience
 
 - Common Markdown content remains readable when an individual PlantUML block

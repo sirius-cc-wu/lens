@@ -67,6 +67,10 @@ for unauthorized paths, and PlantUML success and failure states using a
 controlled renderer. This would verify the complete CLI, server, and browser
 path while keeping external renderer failures out of the test result.
 
+Status: selected for C1 and C2. C1 establishes the deterministic browser
+harness, rendered Markdown, document navigation, and renderer-success path;
+C2 covers the guidance page and renderer-failure path.
+
 ## 10. YAML Frontmatter Rendering
 
 Detect YAML frontmatter at the beginning of Markdown documents and render it as

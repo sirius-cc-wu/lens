@@ -16,6 +16,7 @@ use reqwest::Client;
 
 use crate::{
     markdown::{escape_html, render, Diagram, RenderedDocument},
+    plantuml::renderer_server,
     target::{MarkdownDocument, MarkdownTarget},
 };
 
@@ -37,7 +38,13 @@ struct ViewerDocument {
 pub async fn serve(target: MarkdownTarget) -> Result<()> {
     let (documents, initial_document) = target.into_parts();
     let initial_path = documents[initial_document].canonical_path.clone();
-    let state = viewer_state(documents, initial_document, renderer_client()?);
+    let diagram_renderer = renderer_server();
+    let state = viewer_state(
+        documents,
+        initial_document,
+        renderer_client()?,
+        &diagram_renderer,
+    );
     let listener =
         TcpListener::bind("127.0.0.1:0").context("Could not start the loopback viewer")?;
     let address = listener
@@ -81,6 +88,7 @@ fn viewer_state(
     documents: Vec<MarkdownDocument>,
     initial_document: usize,
     client: Client,
+    renderer_server: &str,
 ) -> Arc<ViewerState> {
     let document_ids = documents
         .iter()
@@ -98,6 +106,7 @@ fn viewer_state(
                 document_id,
                 &document.identifier,
                 &known_documents,
+                renderer_server,
             ),
         })
         .collect();
@@ -330,7 +339,7 @@ mod tests {
         deferred_navigation_page, renderer_client, renderer_client_with_timeout, request_diagram,
         router, viewer_state,
     };
-    use crate::{markdown::Diagram, target::MarkdownDocument};
+    use crate::{markdown::Diagram, plantuml::PUBLIC_SERVER, target::MarkdownDocument};
 
     fn test_router() -> axum::Router {
         test_router_with_documents(vec![test_document("README.md", "# Lens")], 0)
@@ -344,6 +353,7 @@ mod tests {
             documents,
             initial_document,
             renderer_client().expect("test client should initialize"),
+            PUBLIC_SERVER,
         ))
     }
 

@@ -1,0 +1,11 @@
+{
+  "name": "lens-browser-tests",
+  "private": true,
+  "scripts": {
+    "pretest:browser": "cargo build --locked",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}
