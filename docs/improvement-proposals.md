@@ -91,6 +91,8 @@ and invalid YAML.
 
 ## 11. Scalable Document Navigation Search
 
+Status: selected for implementation in N3.
+
 Replace the complete document list in every navigation pane with server-side
 identifier search and a capped result set. Lens would build an index from the
 active session's already authorized document identifiers when it starts, then
