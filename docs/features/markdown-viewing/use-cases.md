@@ -1,6 +1,6 @@
 # FEAT-01: View Markdown with PlantUML
 
-Status: refined in E1
+Status: refined in E2
 
 ## Actors
 
@@ -21,8 +21,9 @@ Status: refined in E1
 | `UC-05` | Receive a target-resolution or rendering failure | High |
 | `UC-06` | View source code associated with documentation | Unknown; clarify before commitment |
 
-One of six use cases is detailed in inception (16.7%) to validate the initial
-scope without prematurely specifying the entire product.
+Inception detailed `UC-01` to validate initial scope without prematurely
+specifying the entire product. E2 adds the document-root and navigation detail
+for `UC-02` through `UC-04`; `UC-06` remains deferred.
 
 ## UC-01: View a Markdown File with PlantUML Blocks
 
@@ -73,10 +74,71 @@ E1 scope: The executable slice accepts a direct `.md` or `.markdown` file
 target. Directory and current-directory targets remain work for `UC-02` and
 `UC-03`.
 
-Until `UC-04` is implemented, a link to another repository document receives a
-Lens-owned 404 page that explains document navigation is unavailable and links
-back to the selected document. Lens must not resolve that link into a filesystem
-path during E1.
+## UC-02 and UC-03: Open a Document Root
+
+Primary actor: Developer or technical writer
+
+Goal: Open Markdown documentation from the current directory, a directory
+argument, or a Markdown file argument.
+
+Trigger: The user runs `lens`, `lens <directory>`, or `lens <markdown-file>`.
+
+Main success scenario:
+
+1. Lens resolves the document root from the supplied target or current
+   directory.
+2. Lens identifies Markdown documents within the document root.
+3. Lens selects the explicitly named file, a root `README` document, a
+   `docs/index` document, or the first discovered document as the initial
+   document.
+4. Lens opens a local viewing session for the document root.
+5. The user reads the initial document in the browser.
+
+Extensions:
+
+- 1a. If the target is missing, unreadable, or neither a directory nor a
+  supported Markdown file, Lens reports an actionable error and starts no
+  viewing session.
+- 2a. If the document root has no Markdown documents, Lens reports an
+  actionable error and starts no viewing session.
+
+Special requirements:
+
+- The document root and discovered documents are canonical paths.
+- Symbolic links found during document discovery are excluded.
+- Hidden files and directories found during document discovery are excluded.
+- A direct file target remains the initial document but authorizes its canonical
+  parent as the document root.
+
+## UC-04: Navigate Between Discovered Markdown Documents
+
+Primary actor: Developer or technical writer
+
+Goal: Follow a Markdown link to another discovered document without allowing
+the link to read files outside the document root.
+
+Preconditions:
+
+- Lens has an active viewing session with a discovered document set.
+
+Main success scenario:
+
+1. The user follows a link in the current document.
+2. Lens identifies whether the link targets a discovered Markdown document.
+3. Lens displays the target document and its diagrams.
+
+Extensions:
+
+- 2a. If the link target is not a discovered Markdown document, Lens returns a
+  Lens-owned 404 guidance page. It does not resolve the requested URL into a
+  filesystem path.
+- 2b. External links and same-document fragment links retain their standard
+  browser behavior.
+
+Special requirements:
+
+- Lens maps links only to the discovered document set. It must not use a link
+  URL as a filesystem path or an arbitrary renderer URL.
 
 ## Open Questions
 

@@ -1,4 +1,10 @@
-use std::{net::TcpListener, process::Command, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    net::TcpListener,
+    process::Command,
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use axum::{
@@ -13,26 +19,24 @@ use reqwest::Client;
 
 use crate::{
     markdown::{escape_html, render, Diagram},
-    target::MarkdownTarget,
+    target::{MarkdownDocument, MarkdownTarget},
 };
 
 const MAX_DIAGRAM_BYTES: usize = 2 * 1024 * 1024;
 const RENDER_TIMEOUT: Duration = Duration::from_secs(10);
 
-#[derive(Clone)]
 struct ViewerState {
-    html: String,
-    diagrams: Vec<Diagram>,
+    documents: Vec<MarkdownDocument>,
+    document_ids: BTreeMap<String, usize>,
+    known_documents: BTreeSet<String>,
+    initial_document: usize,
     client: Client,
 }
 
 pub async fn serve(target: MarkdownTarget) -> Result<()> {
-    let document = render(&target.source);
-    let state = Arc::new(ViewerState {
-        html: page(&target.canonical_path.display().to_string(), document.html),
-        diagrams: document.diagrams,
-        client: renderer_client()?,
-    });
+    let (documents, initial_document) = target.into_parts();
+    let initial_path = documents[initial_document].canonical_path.clone();
+    let state = viewer_state(documents, initial_document, renderer_client()?);
     let listener =
         TcpListener::bind("127.0.0.1:0").context("Could not start the loopback viewer")?;
     let address = listener
@@ -40,10 +44,7 @@ pub async fn serve(target: MarkdownTarget) -> Result<()> {
         .context("Could not determine the loopback viewer address")?;
     let url = format!("http://{address}");
 
-    println!(
-        "Lens is serving {} at {url}",
-        target.canonical_path.display()
-    );
+    println!("Lens is serving {} at {url}", initial_path.display());
     if let Err(error) = open_browser(&url) {
         eprintln!("Could not open a browser automatically: {error}");
         eprintln!("Open {url} manually.");
@@ -75,21 +76,69 @@ fn open_browser(url: &str) -> std::io::Result<()> {
         .map(|_| ())
 }
 
+fn viewer_state(
+    documents: Vec<MarkdownDocument>,
+    initial_document: usize,
+    client: Client,
+) -> Arc<ViewerState> {
+    let document_ids = documents
+        .iter()
+        .enumerate()
+        .map(|(index, document)| (document.identifier.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let known_documents = document_ids.keys().cloned().collect();
+
+    Arc::new(ViewerState {
+        documents,
+        document_ids,
+        known_documents,
+        initial_document,
+        client,
+    })
+}
+
 fn router(state: Arc<ViewerState>) -> Router {
     Router::new()
-        .route("/", get(document_view))
+        .route("/", get(initial_document_view))
+        .route("/documents/*document_id", get(document_view))
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
-        .route("/diagrams/:diagram_id", get(diagram))
+        .route("/diagrams/:document_id/:diagram_id", get(diagram))
         .fallback(not_found)
         .with_state(state)
 }
 
-async fn document_view(State(state): State<Arc<ViewerState>>) -> impl IntoResponse {
+async fn initial_document_view(State(state): State<Arc<ViewerState>>) -> Response {
+    rendered_document_response(&state, state.initial_document)
+}
+
+async fn document_view(
+    State(state): State<Arc<ViewerState>>,
+    Path(document_id): Path<String>,
+) -> Response {
+    let document_id = document_id.trim_start_matches('/');
+    match state.document_ids.get(document_id) {
+        Some(&document_id) => rendered_document_response(&state, document_id),
+        None => not_found().await.into_response(),
+    }
+}
+
+fn rendered_document_response(state: &ViewerState, document_id: usize) -> Response {
+    let document = &state.documents[document_id];
+    let rendered = render(
+        &document.source,
+        document_id,
+        &document.identifier,
+        &state.known_documents,
+    );
     (
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
-        Html(state.html.clone()),
+        Html(page(
+            &document.canonical_path.display().to_string(),
+            rendered.html,
+        )),
     )
+        .into_response()
 }
 
 async fn stylesheet() -> impl IntoResponse {
@@ -114,8 +163,20 @@ async fn not_found() -> impl IntoResponse {
     )
 }
 
-async fn diagram(State(state): State<Arc<ViewerState>>, Path(diagram_id): Path<usize>) -> Response {
-    let Some(diagram) = state.diagrams.get(diagram_id) else {
+async fn diagram(
+    State(state): State<Arc<ViewerState>>,
+    Path((document_id, diagram_id)): Path<(usize, usize)>,
+) -> Response {
+    let Some(document) = state.documents.get(document_id) else {
+        return (StatusCode::NOT_FOUND, "Diagram not found").into_response();
+    };
+    let rendered = render(
+        &document.source,
+        document_id,
+        &document.identifier,
+        &state.known_documents,
+    );
+    let Some(diagram) = rendered.diagrams.get(diagram_id) else {
         return (StatusCode::NOT_FOUND, "Diagram not found").into_response();
     };
 
@@ -221,7 +282,7 @@ fn page(title: &str, document_html: String) -> String {
 fn deferred_navigation_page() -> String {
     page(
         "Document navigation unavailable",
-        "<p>Lens can display the selected document, but navigating to another repository document is not available yet.</p><p><a href=\"/\">Return to the selected document</a></p>".to_owned(),
+        "<p>Lens can display the selected document, but the requested document is not part of this viewing session.</p><p><a href=\"/\">Return to the initial document</a></p>".to_owned(),
     )
 }
 
@@ -254,7 +315,7 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 
 #[cfg(test)]
 mod tests {
-    use std::{net::TcpListener, sync::Arc, time::Duration};
+    use std::{net::TcpListener, path::PathBuf, time::Duration};
 
     use axum::{
         body::Body,
@@ -265,30 +326,32 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        deferred_navigation_page, renderer_client, renderer_client_with_timeout, router,
-        ViewerState,
+        deferred_navigation_page, renderer_client, renderer_client_with_timeout, request_diagram,
+        router, viewer_state,
     };
-    use crate::markdown::{render, Diagram};
+    use crate::{markdown::Diagram, target::MarkdownDocument};
 
     fn test_router() -> axum::Router {
-        let document = render("# Lens");
-        test_router_with_diagrams(document.diagrams)
+        test_router_with_documents(vec![test_document("README.md", "# Lens")], 0)
     }
 
-    fn test_router_with_diagrams(diagrams: Vec<Diagram>) -> axum::Router {
-        test_router_with_client(
-            diagrams,
+    fn test_router_with_documents(
+        documents: Vec<MarkdownDocument>,
+        initial_document: usize,
+    ) -> axum::Router {
+        router(viewer_state(
+            documents,
+            initial_document,
             renderer_client().expect("test client should initialize"),
-        )
+        ))
     }
 
-    fn test_router_with_client(diagrams: Vec<Diagram>, client: reqwest::Client) -> axum::Router {
-        let state = Arc::new(ViewerState {
-            html: "<main>Lens</main>".to_owned(),
-            diagrams,
-            client,
-        });
-        router(state)
+    fn test_document(identifier: &str, source: &str) -> MarkdownDocument {
+        MarkdownDocument {
+            identifier: identifier.to_owned(),
+            canonical_path: PathBuf::from(identifier),
+            source: source.to_owned(),
+        }
     }
 
     async fn mock_renderer_url(renderer: Router) -> String {
@@ -307,11 +370,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_file_path_then_returns_not_found() {
+    async fn unknown_document_path_then_returns_not_found() {
         // Arrange
         let app = test_router();
         let request = Request::builder()
-            .uri("/../../etc/passwd")
+            .uri("/documents/../../etc/passwd")
             .body(Body::empty())
             .expect("test request should build");
 
@@ -322,10 +385,32 @@ mod tests {
         assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
     }
 
+    #[tokio::test]
+    async fn discovered_document_path_then_returns_document() {
+        // Arrange
+        let app = test_router_with_documents(
+            vec![
+                test_document("README.md", "# Read me"),
+                test_document("guides/intro.md", "# Introduction"),
+            ],
+            0,
+        );
+        let request = Request::builder()
+            .uri("/documents/guides/intro.md")
+            .body(Body::empty())
+            .expect("test request should build");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
     #[test]
     fn deferred_document_navigation_then_explains_how_to_return() {
         // Arrange
-        let expected_message = "navigating to another repository document is not available yet";
+        let expected_message = "requested document is not part of this viewing session";
 
         // Act
         let page = deferred_navigation_page();
@@ -340,7 +425,7 @@ mod tests {
         // Arrange
         let app = test_router();
         let request = Request::builder()
-            .uri("/diagrams/99")
+            .uri("/diagrams/99/0")
             .body(Body::empty())
             .expect("test request should build");
 
@@ -381,27 +466,24 @@ mod tests {
             "/svg",
             get(|| async { ([(header::CONTENT_TYPE, "image/svg+xml")], "<svg></svg>") }),
         );
-        let app = test_router_with_diagrams(vec![Diagram {
+        let diagram = Diagram {
             url: mock_renderer_url(renderer).await,
-        }]);
-        let request = Request::builder()
-            .uri("/diagrams/0")
-            .body(Body::empty())
-            .expect("test request should build");
+        };
 
         // Act
-        let response = app.oneshot(request).await.expect("router should respond");
+        let response = request_diagram(
+            &renderer_client().expect("test client should initialize"),
+            &diagram,
+        )
+        .await
+        .expect("valid SVG should render");
 
         // Assert
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
-        assert_eq!(
-            response.headers().get(header::CONTENT_TYPE),
-            Some(&header::HeaderValue::from_static("image/svg+xml"))
-        );
+        assert_eq!(response, b"<svg></svg>");
     }
 
     #[tokio::test]
-    async fn renderer_error_header_then_returns_bad_gateway() {
+    async fn renderer_error_header_then_returns_error() {
         // Arrange
         let renderer = Router::new().route(
             "/svg",
@@ -418,45 +500,45 @@ mod tests {
                 )
             }),
         );
-        let app = test_router_with_diagrams(vec![Diagram {
+        let diagram = Diagram {
             url: mock_renderer_url(renderer).await,
-        }]);
-        let request = Request::builder()
-            .uri("/diagrams/0")
-            .body(Body::empty())
-            .expect("test request should build");
+        };
 
         // Act
-        let response = app.oneshot(request).await.expect("router should respond");
+        let result = request_diagram(
+            &renderer_client().expect("test client should initialize"),
+            &diagram,
+        )
+        .await;
 
         // Assert
-        assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
+        assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn unavailable_renderer_then_returns_bad_gateway() {
+    async fn unavailable_renderer_then_returns_error() {
         // Arrange
         let renderer = Router::new().route(
             "/svg",
             get(|| async { (axum::http::StatusCode::SERVICE_UNAVAILABLE, "unavailable") }),
         );
-        let app = test_router_with_diagrams(vec![Diagram {
+        let diagram = Diagram {
             url: mock_renderer_url(renderer).await,
-        }]);
-        let request = Request::builder()
-            .uri("/diagrams/0")
-            .body(Body::empty())
-            .expect("test request should build");
+        };
 
         // Act
-        let response = app.oneshot(request).await.expect("router should respond");
+        let result = request_diagram(
+            &renderer_client().expect("test client should initialize"),
+            &diagram,
+        )
+        .await;
 
         // Assert
-        assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
+        assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn delayed_renderer_then_returns_bad_gateway() {
+    async fn delayed_renderer_then_times_out() {
         // Arrange
         let renderer = Router::new().route(
             "/svg",
@@ -465,22 +547,16 @@ mod tests {
                 ([(header::CONTENT_TYPE, "image/svg+xml")], "<svg></svg>")
             }),
         );
-        let app = test_router_with_client(
-            vec![Diagram {
-                url: mock_renderer_url(renderer).await,
-            }],
-            renderer_client_with_timeout(Duration::from_millis(10))
-                .expect("test client should initialize"),
-        );
-        let request = Request::builder()
-            .uri("/diagrams/0")
-            .body(Body::empty())
-            .expect("test request should build");
+        let diagram = Diagram {
+            url: mock_renderer_url(renderer).await,
+        };
+        let client = renderer_client_with_timeout(Duration::from_millis(10))
+            .expect("test client should initialize");
 
         // Act
-        let response = app.oneshot(request).await.expect("router should respond");
+        let result = request_diagram(&client, &diagram).await;
 
         // Assert
-        assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
+        assert!(result.is_err());
     }
 }

@@ -40,6 +40,8 @@ does not prescribe the implementation architecture.
   security policy.
 - The browser-facing server must restrict access to the resolved target scope;
   a request must not permit arbitrary filesystem reads.
+- A viewing session serves only its discovered document set. Symbolic links and
+  hidden files and directories found during discovery are excluded.
 - The first release does not accept write operations through the browser view.
 
 ## Performance
