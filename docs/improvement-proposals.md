@@ -17,6 +17,11 @@ diagram source on the user's machine and avoid dependence on the public
 PlantUML service. This is the highest-value proposal because it addresses the
 current privacy and renderer-availability risks.
 
+Status: implemented in P1. `--renderer public|local|disabled` selects the
+session renderer. Public remains the default; local invokes the installed
+`plantuml` command without a renderer-service request, and disabled keeps the
+diagram source visible without an image request.
+
 ## 2. Prebuilt Linux Binaries
 
 Publish Linux binaries and checksums with GitHub Releases. This would let users

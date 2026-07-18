@@ -165,7 +165,25 @@ test("renderer fails before client script loads then reveals the source", async 
   }
 });
 
-async function startBrowserFixture({ hiddenDocument, rendererStatus } = {}) {
+test("disabled renderer then preserves plantuml source without a diagram request", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ rendererMode: "disabled" });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByText("PlantUML rendering is disabled for this viewing session.")).toBeVisible();
+    await expect(page.locator("img[data-diagram]")).toHaveCount(0);
+    await expect(page.locator(".diagram-source")).toContainText("Alice -> Bob: browser fixture");
+    await expect.poll(() => fixture.renderer.requests).toBe(0);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+async function startBrowserFixture({ hiddenDocument, rendererMode, rendererStatus } = {}) {
   let repository;
   let renderer;
   let lens;
@@ -193,7 +211,7 @@ async function startBrowserFixture({ hiddenDocument, rendererStatus } = {}) {
   try {
     repository = await createDocumentationRepository({ hiddenDocument });
     renderer = await startRenderer({ status: rendererStatus });
-    lens = await startLens(repository, renderer.url);
+    lens = await startLens(repository, renderer.url, rendererMode);
     return { lens, renderer, repository, stop };
   } catch (error) {
     try {
@@ -267,12 +285,16 @@ async function startRenderer({ status = 200 } = {}) {
   };
 }
 
-async function startLens(repository, rendererUrl) {
+async function startLens(repository, rendererUrl, rendererMode) {
   const lensBinary = process.env.LENS_BROWSER_TEST_BINARY;
   if (!lensBinary) {
     throw new Error("Playwright global setup did not provide the Lens executable path");
   }
-  const child = spawn(lensBinary, [repository.directory], {
+  const commandArguments = [repository.directory];
+  if (rendererMode) {
+    commandArguments.push("--renderer", rendererMode);
+  }
+  const child = spawn(lensBinary, commandArguments, {
     env: {
       ...process.env,
       LENS_PLANTUML_SERVER: rendererUrl,

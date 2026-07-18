@@ -2,11 +2,11 @@ use std::collections::BTreeSet;
 
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag};
 
-use crate::plantuml::svg_url;
+use crate::plantuml::DiagramRenderer;
 
 #[derive(Clone, Debug)]
 pub struct Diagram {
-    pub url: String,
+    pub source: String,
 }
 
 #[derive(Debug)]
@@ -20,7 +20,7 @@ pub fn render(
     document_id: usize,
     current_document: &str,
     known_documents: &BTreeSet<String>,
-    renderer_server: &str,
+    renderer: &DiagramRenderer,
 ) -> RenderedDocument {
     let parser = Parser::new_ext(markdown, Options::all());
     let mut events = Vec::new();
@@ -34,10 +34,16 @@ pub fn render(
                     let source = plantuml_source.take().expect("PlantUML source is active");
                     let diagram_id = diagrams.len();
                     diagrams.push(Diagram {
-                        url: svg_url(renderer_server, &source),
+                        source: source.clone(),
                     });
                     events.push(Event::Html(
-                        diagram_placeholder(document_id, diagram_id, &source).into(),
+                        diagram_placeholder(
+                            document_id,
+                            diagram_id,
+                            &source,
+                            renderer.is_enabled(),
+                        )
+                        .into(),
                     ));
                 }
                 Event::Text(text) | Event::Code(text) => source.push_str(&text),
@@ -70,10 +76,25 @@ pub fn render(
     RenderedDocument { html, diagrams }
 }
 
-fn diagram_placeholder(document_id: usize, diagram_id: usize, source: &str) -> String {
+fn diagram_placeholder(
+    document_id: usize,
+    diagram_id: usize,
+    source: &str,
+    rendering_enabled: bool,
+) -> String {
+    let image = rendering_enabled
+        .then(|| {
+            format!(
+                r#"<img src="/diagrams/{document_id}/{diagram_id}" alt="Rendered PlantUML diagram" data-diagram>"#
+            )
+        })
+        .unwrap_or_else(|| {
+            "<p class=\"diagram-disabled\">PlantUML rendering is disabled for this viewing session.</p>"
+                .to_owned()
+        });
     format!(
-        r#"<figure class="diagram"><img src="/diagrams/{document_id}/{diagram_id}" alt="Rendered PlantUML diagram" data-diagram><p class="diagram-error" hidden>PlantUML rendering failed. The source is shown below.</p><details class="diagram-source"><summary>PlantUML source</summary><pre><code>{}</code></pre></details></figure>"#,
-        escape_html(source)
+        r#"<figure class="diagram">{image}<p class="diagram-error" hidden>PlantUML rendering failed. The source is shown below.</p><details class="diagram-source"><summary>PlantUML source</summary><pre><code>{}</code></pre></details></figure>"#,
+        escape_html(source),
     )
 }
 
@@ -157,7 +178,11 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::render;
-    use crate::plantuml::PUBLIC_SERVER;
+    use crate::plantuml::{DiagramRenderer, RendererMode};
+
+    fn public_renderer() -> DiagramRenderer {
+        DiagramRenderer::from_mode(RendererMode::Public)
+    }
 
     #[test]
     fn plantuml_block_then_adds_document_scoped_diagram_endpoint() {
@@ -170,13 +195,33 @@ mod tests {
             3,
             "guides/intro.md",
             &BTreeSet::new(),
-            PUBLIC_SERVER,
+            &public_renderer(),
         );
 
         // Assert
         assert_eq!(document.diagrams.len(), 1);
         assert!(document.html.contains("src=\"/diagrams/3/0\""));
-        assert!(document.diagrams[0].url.contains("/svg/"));
+        assert_eq!(
+            document.diagrams[0].source,
+            "@startuml\nAlice -> Bob: hello\n@enduml\n"
+        );
+    }
+
+    #[test]
+    fn disabled_renderer_then_keeps_plantuml_source_without_an_image_request() {
+        // Arrange
+        let markdown = "```plantuml\n@startuml\nAlice -> Bob: private\n@enduml\n```";
+        let renderer = DiagramRenderer::from_mode(RendererMode::Disabled);
+
+        // Act
+        let document = render(markdown, 0, "document.md", &BTreeSet::new(), &renderer);
+
+        // Assert
+        assert!(!document.html.contains("data-diagram"));
+        assert!(document
+            .html
+            .contains("PlantUML rendering is disabled for this viewing session."));
+        assert!(document.html.contains("Alice -&gt; Bob: private"));
     }
 
     #[test]
@@ -192,7 +237,7 @@ mod tests {
             0,
             "guides/intro.md",
             &known_documents,
-            PUBLIC_SERVER,
+            &public_renderer(),
         );
 
         // Assert
@@ -213,7 +258,7 @@ mod tests {
             0,
             "guides/intro.md",
             &known_documents,
-            PUBLIC_SERVER,
+            &public_renderer(),
         );
 
         // Assert
@@ -229,7 +274,13 @@ mod tests {
         let markdown = "```rust\nlet answer = 42;\n```";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new(), PUBLIC_SERVER);
+        let document = render(
+            markdown,
+            0,
+            "document.md",
+            &BTreeSet::new(),
+            &public_renderer(),
+        );
 
         // Assert
         assert!(document.diagrams.is_empty());
@@ -243,7 +294,13 @@ mod tests {
         let markdown = "<script>alert('unsafe')</script>";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new(), PUBLIC_SERVER);
+        let document = render(
+            markdown,
+            0,
+            "document.md",
+            &BTreeSet::new(),
+            &public_renderer(),
+        );
 
         // Assert
         assert!(!document.html.contains("<script>"));
@@ -256,7 +313,13 @@ mod tests {
         let markdown = "```plantuml\nAlice -> Bob: <unsafe>\n```";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new(), PUBLIC_SERVER);
+        let document = render(
+            markdown,
+            0,
+            "document.md",
+            &BTreeSet::new(),
+            &public_renderer(),
+        );
 
         // Assert
         assert!(document.html.contains("&lt;unsafe&gt;"));

@@ -1,13 +1,13 @@
 # FEAT-01: View Markdown with PlantUML
 
-Status: refined in E2
+Status: refined in P1
 
 ## Actors
 
 | Actor | Goal |
 |---|---|
 | Developer or technical writer | Read repository Markdown and its diagrams without opening an editor-specific plugin. |
-| PlantUML public server | Converts PlantUML source to a displayable result through `https://www.plantuml.com/plantuml`. |
+| Diagram renderer | Depending on the selected session setting, converts PlantUML source through the public server or installed `plantuml` command, or leaves the source visible. |
 | Operating system browser | Displays the local Lens view after the CLI starts it. |
 
 ## Use-Case List
@@ -38,7 +38,7 @@ Preconditions:
 - The supplied target is a readable Markdown file.
 - A supported browser is available.
 
-Trigger: The user runs `lens <markdown-file>`.
+Trigger: The user runs `lens [--renderer public|local|disabled] <markdown-file>`.
 
 Main success scenario:
 
@@ -61,8 +61,12 @@ Extensions:
 - 6a. If a PlantUML block is invalid or the renderer is unavailable, Lens keeps
   the source visible and shows an error associated with that block. One failed
   diagram does not prevent the rest of the document from rendering.
-- 6b. Lens sends PlantUML block source to the public PlantUML server. V1 does
-  not provide a local renderer or a privacy-preserving rendering path.
+- 6b. With the default `--renderer public`, Lens sends PlantUML block source to
+  the public PlantUML server.
+- 6c. With `--renderer local`, Lens runs the installed `plantuml` command with
+  the block source on standard input and keeps it off the renderer network.
+- 6d. With `--renderer disabled`, Lens does not request a diagram image and
+  instead displays the original PlantUML source with a disabled status.
 
 Postconditions:
 

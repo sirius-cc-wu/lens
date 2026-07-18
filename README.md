@@ -8,7 +8,9 @@ Obsidian.
 
 - Linux with `xdg-open` and a browser available.
 - Rust 1.75 or newer to build from source.
-- Network access to `https://www.plantuml.com/plantuml` for PlantUML diagrams.
+- Network access to `https://www.plantuml.com/plantuml` when using the default
+  public PlantUML renderer.
+- An installed `plantuml` command when using `--renderer local`.
 
 ## Install
 
@@ -24,6 +26,8 @@ cargo install --path . --locked
 lens
 lens docs
 lens docs/features/markdown-viewing/oc-02-open-document-root.md
+lens --renderer local docs
+lens --renderer disabled docs
 ```
 
 With no argument, Lens uses the current directory as the document root. A
@@ -38,9 +42,12 @@ page without filesystem access.
 
 ## PlantUML
 
-Lens sends PlantUML block source to the public PlantUML server. A failed diagram
-request leaves the source visible in the document. Do not use Lens V1 with
-PlantUML source that must remain local.
+Lens uses the public PlantUML server by default. A failed diagram request leaves
+the source visible in the document. Select `--renderer local` to run the
+installed `plantuml` command on the current machine; Lens passes the diagram
+source over that command's standard input and does not send it to a renderer
+service. Select `--renderer disabled` to display PlantUML source without
+requesting a rendered diagram for the viewing session.
 
 ## V1 Scope
 
