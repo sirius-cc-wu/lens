@@ -149,3 +149,8 @@ Special requirements:
   PlantUML server?
 - Must the viewer work in a browser that is already running, headless
   environments, or remote development containers?
+
+## UML Design Views
+
+- [V1 component, realization, and Rust type diagrams](uml-design.md) (`CMP-01`,
+  `RZ-01`, and `DCD-01`)
