@@ -57,3 +57,12 @@ has evidence.
 Add GitHub Actions checks for formatting, tests, Clippy, package verification,
 tagged releases, and binary publishing. This would make each release
 repeatable and reduce regression risk.
+
+## 9. Automated Browser End-to-End Testing
+
+Add headless-browser tests that start the compiled `lens` command against a
+temporary documentation repository and interact with its loopback URL. The
+tests should verify rendered Markdown, document navigation, the guidance page
+for unauthorized paths, and PlantUML success and failure states using a
+controlled renderer. This would verify the complete CLI, server, and browser
+path while keeping external renderer failures out of the test result.
