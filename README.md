@@ -6,7 +6,8 @@ Obsidian.
 
 ## Requirements
 
-- Linux with `xdg-open` and a browser available.
+- A browser and the platform launcher: `xdg-open` on Linux, `open` on macOS,
+  or `cmd /C start` on Windows.
 - Rust 1.75 or newer to build from source.
 - Network access to `https://www.plantuml.com/plantuml` when using the default
   public PlantUML renderer.
@@ -20,17 +21,18 @@ From a Lens checkout:
 cargo install --path . --locked
 ```
 
-## Linux Release Archive
+## Release Archive
 
-Build a release archive and its SHA-256 checksum for a Linux Rust target:
+Build a release archive and its SHA-256 checksum for a supported Rust target:
 
 ```bash
-scripts/package-linux-release.sh --target x86_64-unknown-linux-gnu
+scripts/package-release.sh --target x86_64-unknown-linux-gnu
 ```
 
 The command writes `dist/lens-<version>-<target>.tar.gz` and a matching
 `.sha256` file. The archive contains the `lens` binary, `README.md`, and
-`LICENSE`; verify the checksum before extracting it.
+`LICENSE`; Windows archives contain `lens.exe`. Verify the checksum before
+extracting it.
 
 ## Use
 
@@ -70,8 +72,8 @@ further renderer requests while preserving each diagram's source.
 
 ## V1 Scope
 
-V1 is a documentation viewer. It does not browse source-code files, edit
-documents, render Mermaid, or support macOS or Windows releases.
+Lens is a documentation viewer. It does not browse source-code files, edit
+documents, or render Mermaid.
 
 ## License
 

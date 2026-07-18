@@ -42,20 +42,22 @@ lens --help
 
 Expected result: `lens --help` describes an optional `TARGET` argument.
 
-## Linux Binary Archive Check
+## Binary Archive Check
 
-On a Linux host with the selected Rust target installed, build a fresh archive:
+On a native supported-platform host with the selected Rust target installed,
+build a fresh archive:
 
 ```bash
-scripts/package-linux-release.sh --target x86_64-unknown-linux-gnu --output /tmp/lens-release
+scripts/package-release.sh --target x86_64-unknown-linux-gnu --output /tmp/lens-release
 cd /tmp/lens-release
 sha256sum --check lens-*-x86_64-unknown-linux-gnu.tar.gz.sha256
 tar -tzf lens-*-x86_64-unknown-linux-gnu.tar.gz
 ```
 
 Expected result: checksum verification succeeds and the archive contains a
-single target-named directory with `lens`, `README.md`, and `LICENSE`. The
-packaging command refuses to overwrite an existing archive or checksum.
+single target-named directory with `lens` (or `lens.exe` on Windows), `README.md`,
+and `LICENSE`. The packaging command refuses to overwrite an existing archive
+or checksum.
 
 ## Package Metadata
 
@@ -93,9 +95,11 @@ Expected results:
 - The failed diagram keeps its source visible with an error.
 - The remainder of the document remains readable.
 
-## V1 Boundaries
+## Supported Platforms
 
-- Linux only.
+- Linux, macOS, and Windows launch their default browser through `xdg-open`,
+  `open`, and `cmd /C start` respectively. A launch failure still prints the
+  loopback URL for manual opening.
 - Documentation-only: source-code browsing is not part of V1.
 - Public PlantUML rendering is the default; local and disabled renderer modes
   are documented in the README.

@@ -77,6 +77,11 @@ Support macOS and Windows browser launch paths with platform-specific tests and
 release artifacts. Linux remains the only supported V1 platform until this work
 has evidence.
 
+Status: implemented in P7. Lens selects the native Linux, macOS, or Windows
+browser-launch command through platform-tested command construction, and the
+target-aware release packager produces archives for each supported target on a
+native release runner.
+
 ## 8. Release Automation
 
 Add GitHub Actions checks for formatting, tests, Clippy, package verification,

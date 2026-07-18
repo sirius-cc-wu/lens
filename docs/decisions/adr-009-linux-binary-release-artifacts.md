@@ -1,4 +1,4 @@
-# ADR-009: Package Linux Binary Release Artifacts
+# ADR-009: Package Target-Specific Binary Release Artifacts
 
 Status: accepted
 
@@ -6,29 +6,32 @@ Date: 2026-07-19
 
 ## Context
 
-Installing Lens from source requires a Rust toolchain. A Linux release needs a
-small artifact that users can verify before extracting, while the repository
-still needs one packaging definition that later tag automation can reuse.
+Installing Lens from source requires a Rust toolchain. A native-platform release
+needs a small artifact that users can verify before extracting, while the
+repository still needs one packaging definition that later tag automation can
+reuse.
 
 ## Decision
 
-`scripts/package-linux-release.sh` builds Lens in release mode for an explicit
-Linux Rust target and writes two sibling files: a target-named `tar.gz` archive
-and its SHA-256 checksum. The archive contains one target-named directory with
-the executable, `README.md`, and `LICENSE`.
+`scripts/package-release.sh` builds Lens in release mode for an explicit Linux,
+macOS, or Windows Rust target and writes two sibling files: a target-named
+`tar.gz` archive and its SHA-256 checksum. The archive contains one target-named
+directory with the native executable, `README.md`, and `LICENSE`.
 
 The command defaults to the host Rust target, accepts `--target` and `--output`,
-requires a Linux target name, and refuses to overwrite either output file. It
-uses `cargo build --locked --release --target` so the package follows the locked
-dependency set. GitHub Release upload is deliberately deferred to proposal 8;
-that workflow must call this command rather than duplicate packaging logic.
+requires a supported target name, and refuses to overwrite either output file.
+It uses `cargo build --locked --release --target` so the package follows the
+locked dependency set. `scripts/package-linux-release.sh` remains a compatibility
+entry point. GitHub Release upload is deliberately deferred to proposal 8; that
+workflow must call this command rather than duplicate packaging logic.
 
 ## Consequences
 
-- Users can install a verified binary without a Rust toolchain.
+- Users can install a verified native binary without a Rust toolchain.
 - Each architecture is explicit in its filename and must be built by a runner
   with that Rust target installed.
-- The release process depends on standard Linux `tar` and `sha256sum` tools.
+- The release process depends on `tar` and SHA-256 tooling supplied by each
+  native release runner.
 - A maintainer must choose or automate the set of target architectures.
 
 ## Trace

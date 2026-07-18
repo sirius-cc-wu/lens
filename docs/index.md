@@ -47,6 +47,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-009: Package Linux binary release artifacts](decisions/adr-009-linux-binary-release-artifacts.md)
 - [ADR-010: Keep diagram controls inside a viewing session](decisions/adr-010-diagram-failure-controls.md)
 - [ADR-011: Admit standalone PlantUML files to the document set](decisions/adr-011-standalone-plantuml-files.md)
+- [ADR-012: Support native browser launch and archives](decisions/adr-012-cross-platform-support.md)
 - [V1 release readiness](release-readiness.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)
