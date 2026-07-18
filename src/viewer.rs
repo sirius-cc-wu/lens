@@ -1,6 +1,6 @@
 use std::{
-    collections::BTreeMap, net::TcpListener, path::PathBuf, process::Command, sync::Arc,
-    time::Duration,
+    collections::BTreeMap, fmt::Write as _, net::TcpListener, path::PathBuf, process::Command,
+    sync::Arc, time::Duration,
 };
 
 use anyhow::{Context, Result};
@@ -16,6 +16,7 @@ use reqwest::Client;
 
 use crate::{
     markdown::{escape_html, render, Diagram, RenderedDocument},
+    plantuml::renderer_server,
     target::{MarkdownDocument, MarkdownTarget},
 };
 
@@ -29,6 +30,27 @@ struct ViewerState {
     client: Client,
 }
 
+impl ViewerState {
+    fn navigation_pane(&self, current_document: usize) -> String {
+        let mut document_links = String::new();
+        for (identifier, &document_index) in &self.document_ids {
+            let current = (document_index == current_document)
+                .then_some(r#" aria-current="page""#)
+                .unwrap_or_default();
+            let identifier = escape_html(identifier);
+            write!(
+                document_links,
+                r#"<li data-document-navigation-item><a href="/documents/{identifier}"{current}>{identifier}</a></li>"#
+            )
+            .expect("writing navigation markup to a string cannot fail");
+        }
+
+        format!(
+            r#"<nav class="document-navigation" aria-label="Discovered documents" data-document-navigation><h2>Documents</h2><label for="document-filter">Filter discovered documents</label><input id="document-filter" type="search" data-document-filter aria-controls="document-catalog"><noscript><p>Filtering requires JavaScript; all discovered documents are shown.</p></noscript><p data-document-filter-empty role="status" hidden>No discovered documents match the filter.</p><ul id="document-catalog">{document_links}</ul></nav>"#
+        )
+    }
+}
+
 struct ViewerDocument {
     canonical_path: PathBuf,
     rendered: RenderedDocument,
@@ -37,7 +59,13 @@ struct ViewerDocument {
 pub async fn serve(target: MarkdownTarget) -> Result<()> {
     let (documents, initial_document) = target.into_parts();
     let initial_path = documents[initial_document].canonical_path.clone();
-    let state = viewer_state(documents, initial_document, renderer_client()?);
+    let diagram_renderer = renderer_server();
+    let state = viewer_state(
+        documents,
+        initial_document,
+        renderer_client()?,
+        &diagram_renderer,
+    );
     let listener =
         TcpListener::bind("127.0.0.1:0").context("Could not start the loopback viewer")?;
     let address = listener
@@ -81,6 +109,7 @@ fn viewer_state(
     documents: Vec<MarkdownDocument>,
     initial_document: usize,
     client: Client,
+    renderer_server: &str,
 ) -> Arc<ViewerState> {
     let document_ids = documents
         .iter()
@@ -98,6 +127,7 @@ fn viewer_state(
                 document_id,
                 &document.identifier,
                 &known_documents,
+                renderer_server,
             ),
         })
         .collect();
@@ -137,12 +167,14 @@ async fn document_view(
 }
 
 fn rendered_document_response(state: &ViewerState, document_id: usize) -> Response {
+    let navigation = state.navigation_pane(document_id);
     let document = &state.documents[document_id];
     (
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
         Html(page(
             &document.canonical_path.display().to_string(),
             document.rendered.html.clone(),
+            navigation,
         )),
     )
         .into_response()
@@ -257,7 +289,7 @@ async fn shutdown_signal() {
     }
 }
 
-fn page(title: &str, document_html: String) -> String {
+fn page(title: &str, document_html: String, navigation_html: String) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -269,8 +301,11 @@ fn page(title: &str, document_html: String) -> String {
 </head>
 <body>
   <main>
-    <header><p class="eyebrow">Lens</p><h1>{}</h1></header>
-    <article>{document_html}</article>
+    {navigation_html}
+    <section class="document-content">
+      <header><p class="eyebrow">Lens</p><h1>{}</h1></header>
+      <article>{document_html}</article>
+    </section>
   </main>
   <script src="/app.js"></script>
 </body>
@@ -284,6 +319,7 @@ fn deferred_navigation_page() -> String {
     page(
         "Document navigation unavailable",
         "<p>Lens can display the selected document, but the requested document is not part of this viewing session.</p><p><a href=\"/\">Return to the initial document</a></p>".to_owned(),
+        String::new(),
     )
 }
 
@@ -297,11 +333,39 @@ const APP_SCRIPT: &str = r#"for (const image of document.querySelectorAll('[data
     figure.querySelector('.diagram-error').hidden = false;
     figure.querySelector('.diagram-source').open = true;
   });
+}
+
+for (const navigation of document.querySelectorAll('[data-document-navigation]')) {
+  const filter = navigation.querySelector('[data-document-filter]');
+  const empty = navigation.querySelector('[data-document-filter-empty]');
+  const entries = navigation.querySelectorAll('[data-document-navigation-item]');
+  if (!filter || !empty) continue;
+
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLocaleLowerCase();
+    let visibleEntries = 0;
+    for (const entry of entries) {
+      const matches = entry.textContent.toLocaleLowerCase().includes(query);
+      entry.hidden = !matches;
+      if (matches) visibleEntries += 1;
+    }
+    empty.hidden = visibleEntries !== 0;
+  });
 }"#;
 
 const APP_STYLESHEET: &str = r#"* { box-sizing: border-box; }
 body { margin: 0; background: #f4f1ea; color: #1d2826; font-family: Georgia, serif; line-height: 1.55; }
-main { width: min(920px, calc(100% - 2rem)); margin: 3rem auto 5rem; }
+main { width: min(1200px, calc(100% - 2rem)); margin: 3rem auto 5rem; display: grid; grid-template-columns: minmax(13rem, .35fr) minmax(0, 920px); gap: 2rem; align-items: start; }
+.document-navigation { position: sticky; top: 1rem; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; font-family: system-ui, sans-serif; }
+.document-navigation h2 { margin: 0 0 .75rem; font-size: 1rem; }
+.document-navigation label { display: block; font-size: .8rem; font-weight: 700; }
+.document-navigation input { width: 100%; margin: .25rem 0 .75rem; padding: .4rem; border: 1px solid #8d897e; font: inherit; }
+.document-navigation ul { margin: 0; padding: 0; list-style: none; }
+.document-navigation li + li { margin-top: .35rem; }
+.document-navigation a { color: #1d2826; overflow-wrap: anywhere; }
+.document-navigation a[aria-current="page"] { color: #8b3f21; font-weight: 800; text-decoration-thickness: .18em; }
+.document-navigation [role="status"] { margin: .75rem 0; color: #8b3f21; font-size: .875rem; }
+.document-content { min-width: 0; }
 header { border-bottom: 3px solid #1d2826; margin-bottom: 2rem; }
 h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; margin: 0 0 1.2rem; overflow-wrap: anywhere; }
 .eyebrow { color: #8b3f21; font-family: system-ui, sans-serif; font-size: .75rem; font-weight: 800; letter-spacing: .14em; margin: 0 0 .4rem; text-transform: uppercase; }
@@ -312,7 +376,7 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .diagram img { display: block; width: 100%; height: auto; }
 .diagram-error { color: #9c2f19; font-family: system-ui, sans-serif; font-weight: 700; }
 .diagram-source { margin-top: .75rem; }
-@media (max-width: 600px) { main { width: min(100% - 1rem, 920px); margin-top: 1.5rem; } .diagram { padding: .5rem; } }"#;
+@media (max-width: 760px) { main { width: min(100% - 1rem, 920px); margin-top: 1.5rem; display: block; } .document-navigation { position: static; margin-bottom: 1.5rem; } .diagram { padding: .5rem; } }"#;
 
 #[cfg(test)]
 mod tests {
@@ -330,7 +394,7 @@ mod tests {
         deferred_navigation_page, renderer_client, renderer_client_with_timeout, request_diagram,
         router, viewer_state,
     };
-    use crate::{markdown::Diagram, target::MarkdownDocument};
+    use crate::{markdown::Diagram, plantuml::PUBLIC_SERVER, target::MarkdownDocument};
 
     fn test_router() -> axum::Router {
         test_router_with_documents(vec![test_document("README.md", "# Lens")], 0)
@@ -344,6 +408,7 @@ mod tests {
             documents,
             initial_document,
             renderer_client().expect("test client should initialize"),
+            PUBLIC_SERVER,
         ))
     }
 
@@ -353,6 +418,48 @@ mod tests {
             canonical_path: PathBuf::from(identifier),
             source: source.to_owned(),
         }
+    }
+
+    #[test]
+    fn document_navigation_pane_then_lists_known_documents_and_marks_current() {
+        // Arrange
+        let state = viewer_state(
+            vec![
+                test_document("README.md", "# Read me"),
+                test_document("guides/intro.md", "# Introduction"),
+            ],
+            0,
+            renderer_client().expect("test client should initialize"),
+            PUBLIC_SERVER,
+        );
+
+        // Act
+        let navigation = state.navigation_pane(1);
+
+        // Assert
+        assert!(navigation.contains("aria-label=\"Discovered documents\""));
+        assert!(navigation.contains("href=\"/documents/README.md\""));
+        assert!(navigation.contains("href=\"/documents/guides/intro.md\" aria-current=\"page\""));
+        assert!(!navigation.contains(".private.md"));
+        assert_eq!(navigation.matches("aria-current=\"page\"").count(), 1);
+    }
+
+    #[test]
+    fn document_navigation_pane_with_html_identifier_then_escapes_identifier() {
+        // Arrange
+        let state = viewer_state(
+            vec![test_document("guides/<unsafe>.md", "# Guide")],
+            0,
+            renderer_client().expect("test client should initialize"),
+            PUBLIC_SERVER,
+        );
+
+        // Act
+        let navigation = state.navigation_pane(0);
+
+        // Assert
+        assert!(navigation.contains("/documents/guides/&lt;unsafe&gt;.md"));
+        assert!(!navigation.contains("/documents/guides/<unsafe>.md"));
     }
 
     async fn mock_renderer_url(renderer: Router) -> String {

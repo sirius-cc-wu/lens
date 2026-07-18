@@ -20,6 +20,7 @@ pub fn render(
     document_id: usize,
     current_document: &str,
     known_documents: &BTreeSet<String>,
+    renderer_server: &str,
 ) -> RenderedDocument {
     let parser = Parser::new_ext(markdown, Options::all());
     let mut events = Vec::new();
@@ -33,7 +34,7 @@ pub fn render(
                     let source = plantuml_source.take().expect("PlantUML source is active");
                     let diagram_id = diagrams.len();
                     diagrams.push(Diagram {
-                        url: svg_url(&source),
+                        url: svg_url(renderer_server, &source),
                     });
                     events.push(Event::Html(
                         diagram_placeholder(document_id, diagram_id, &source).into(),
@@ -156,6 +157,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::render;
+    use crate::plantuml::PUBLIC_SERVER;
 
     #[test]
     fn plantuml_block_then_adds_document_scoped_diagram_endpoint() {
@@ -163,7 +165,13 @@ mod tests {
         let markdown = "```plantuml\n@startuml\nAlice -> Bob: hello\n@enduml\n```";
 
         // Act
-        let document = render(markdown, 3, "guides/intro.md", &BTreeSet::new());
+        let document = render(
+            markdown,
+            3,
+            "guides/intro.md",
+            &BTreeSet::new(),
+            PUBLIC_SERVER,
+        );
 
         // Assert
         assert_eq!(document.diagrams.len(), 1);
@@ -179,7 +187,13 @@ mod tests {
             BTreeSet::from(["README.md".to_owned(), "guides/intro.md".to_owned()]);
 
         // Act
-        let document = render(markdown, 0, "guides/intro.md", &known_documents);
+        let document = render(
+            markdown,
+            0,
+            "guides/intro.md",
+            &known_documents,
+            PUBLIC_SERVER,
+        );
 
         // Assert
         assert!(document
@@ -194,7 +208,13 @@ mod tests {
         let known_documents = BTreeSet::from(["guides/intro.md".to_owned()]);
 
         // Act
-        let document = render(markdown, 0, "guides/intro.md", &known_documents);
+        let document = render(
+            markdown,
+            0,
+            "guides/intro.md",
+            &known_documents,
+            PUBLIC_SERVER,
+        );
 
         // Assert
         assert!(document.html.contains("href=\"../../secret.md\""));
@@ -209,7 +229,7 @@ mod tests {
         let markdown = "```rust\nlet answer = 42;\n```";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new());
+        let document = render(markdown, 0, "document.md", &BTreeSet::new(), PUBLIC_SERVER);
 
         // Assert
         assert!(document.diagrams.is_empty());
@@ -223,7 +243,7 @@ mod tests {
         let markdown = "<script>alert('unsafe')</script>";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new());
+        let document = render(markdown, 0, "document.md", &BTreeSet::new(), PUBLIC_SERVER);
 
         // Assert
         assert!(!document.html.contains("<script>"));
@@ -236,7 +256,7 @@ mod tests {
         let markdown = "```plantuml\nAlice -> Bob: <unsafe>\n```";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new());
+        let document = render(markdown, 0, "document.md", &BTreeSet::new(), PUBLIC_SERVER);
 
         // Assert
         assert!(document.html.contains("&lt;unsafe&gt;"));

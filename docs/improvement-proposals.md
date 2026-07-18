@@ -29,6 +29,10 @@ Add a sidebar containing the discovered document set, current-document
 highlighting, and search. The sidebar must use the existing authorized document
 set so it does not broaden filesystem access.
 
+Status: implemented in C3. The browser-verified pane lists only the existing
+authorized document set, marks the current document, and filters those
+identifiers locally.
+
 ## 4. Automatic Refresh
 
 Watch discovered Markdown files and refresh the browser view when they change.
@@ -66,6 +70,11 @@ tests should verify rendered Markdown, document navigation, the guidance page
 for unauthorized paths, and PlantUML success and failure states using a
 controlled renderer. This would verify the complete CLI, server, and browser
 path while keeping external renderer failures out of the test result.
+
+Status: implemented in C1 and C2. `BTE-01` starts the compiled command against
+a temporary repository and verifies rendered Markdown, document navigation, the
+guidance page for an undiscovered document, and controlled-renderer success and
+failure without contacting the public service.
 
 ## 10. YAML Frontmatter Rendering
 
