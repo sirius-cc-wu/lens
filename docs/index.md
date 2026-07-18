@@ -1,4 +1,25 @@
-# Lens Product Documents
+---
+title: Lens
+---
+
+# Lens
+
+Lens is a Linux CLI that opens repository Markdown and PlantUML diagrams in a
+browser without requiring Obsidian.
+
+## V1
+
+```bash
+cargo install --path . --locked
+lens [TARGET]
+```
+
+V1 is a documentation-only viewer for Linux. It discovers Markdown documents
+under the selected root, supports safe navigation between those documents, and
+uses the public PlantUML server for diagrams. See the
+[release readiness checklist](release-readiness.md) for verification and scope.
+
+## Product Documents
 
 These documents record the current inception baseline for Lens, a standalone
 command-line Markdown viewer with PlantUML support. They are intentionally
