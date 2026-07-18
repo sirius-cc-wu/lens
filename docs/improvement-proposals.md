@@ -28,6 +28,10 @@ Publish Linux binaries and checksums with GitHub Releases. This would let users
 install Lens without a Rust toolchain and reduce the friction of the current
 source-install path.
 
+Status: implemented in P2. The release-packaging command builds a target-bound
+Linux archive containing Lens, the README, and license, and writes a SHA-256
+checksum beside it. Proposal 8 will publish those verified artifacts from tags.
+
 ## 3. Document Navigation Pane
 
 Add a sidebar containing the discovered document set, current-document

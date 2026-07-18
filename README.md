@@ -20,6 +20,18 @@ From a Lens checkout:
 cargo install --path . --locked
 ```
 
+## Linux Release Archive
+
+Build a release archive and its SHA-256 checksum for a Linux Rust target:
+
+```bash
+scripts/package-linux-release.sh --target x86_64-unknown-linux-gnu
+```
+
+The command writes `dist/lens-<version>-<target>.tar.gz` and a matching
+`.sha256` file. The archive contains the `lens` binary, `README.md`, and
+`LICENSE`; verify the checksum before extracting it.
+
 ## Use
 
 ```bash

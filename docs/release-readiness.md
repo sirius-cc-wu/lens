@@ -42,11 +42,26 @@ lens --help
 
 Expected result: `lens --help` describes an optional `TARGET` argument.
 
+## Linux Binary Archive Check
+
+On a Linux host with the selected Rust target installed, build a fresh archive:
+
+```bash
+scripts/package-linux-release.sh --target x86_64-unknown-linux-gnu --output /tmp/lens-release
+cd /tmp/lens-release
+sha256sum --check lens-*-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -tzf lens-*-x86_64-unknown-linux-gnu.tar.gz
+```
+
+Expected result: checksum verification succeeds and the archive contains a
+single target-named directory with `lens`, `README.md`, and `LICENSE`. The
+packaging command refuses to overwrite an existing archive or checksum.
+
 ## Package Metadata
 
 - `Cargo.toml` declares the MIT license and points to `LICENSE`.
-- Repository, homepage, and hosted documentation URLs are intentionally absent
-  until the project has public canonical URLs.
+- `Cargo.toml` identifies the public repository, homepage, and hosted
+  documentation URLs used by release metadata.
 
 ## Target Checks
 
@@ -82,4 +97,5 @@ Expected results:
 
 - Linux only.
 - Documentation-only: source-code browsing is not part of V1.
-- PlantUML source is sent to the public PlantUML server.
+- Public PlantUML rendering is the default; local and disabled renderer modes
+  are documented in the README.
