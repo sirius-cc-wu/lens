@@ -83,7 +83,7 @@ Special requirements:
 
 ## Trace
 
-- Proposal: [Automatic Refresh](../../improvement-proposals.md#4-automatic-refresh)
+- Implementation: [C4 automatic refresh](../../iterations/c4-automatic-refresh.md)
 - Session and authorization basis: `UC-02` through `UC-04`,
   [`FEAT-01`](../markdown-viewing/use-cases.md), and
   [ADR-003](../../decisions/adr-003-document-root-discovery.md)

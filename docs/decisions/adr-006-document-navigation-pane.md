@@ -6,10 +6,10 @@ Date: 2026-07-18
 
 ## Context
 
-Proposal 3 adds a sidebar and identifier search to help users locate repository
-documentation. A new browser route or a search endpoint would create another
-request surface near the authorization boundary of ADR-003. The feature only
-needs the identifiers Lens has already discovered and authorized.
+The document navigation pane adds a sidebar and identifier search to help users
+locate repository documentation. A new browser route or a search endpoint would
+create another request surface near the authorization boundary of ADR-003. The
+feature only needs the identifiers Lens has already discovered and authorized.
 
 ## Decision
 
@@ -38,7 +38,7 @@ its links remain available.
 
 ## Trace
 
-- Proposal: [Document Navigation Pane](../improvement-proposals.md#3-document-navigation-pane)
+- Implementation: [C3 document navigation pane](../iterations/c3-document-navigation-pane.md)
 - Requirements: [`FEAT-02`](../features/document-navigation-pane/use-cases.md)
 - System sequence: [`SSD-03`](../features/document-navigation-pane/ssd-03-browse-document-catalog.md)
 - Contract: [`OC-03`](../features/document-navigation-pane/oc-03-request-document-catalog.md)

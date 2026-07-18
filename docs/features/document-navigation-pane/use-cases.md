@@ -101,7 +101,7 @@ Special requirements:
 
 ## Trace
 
-- Proposal: [Document Navigation Pane](../../improvement-proposals.md#3-document-navigation-pane)
+- Implementation: [C3 document navigation pane](../../iterations/c3-document-navigation-pane.md)
 - Existing safe-navigation basis: `UC-04`,
   [`FEAT-01`](../markdown-viewing/use-cases.md), and
   [ADR-003](../../decisions/adr-003-document-root-discovery.md)
