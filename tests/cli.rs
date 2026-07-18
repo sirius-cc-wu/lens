@@ -16,7 +16,8 @@ fn help_flag_then_describes_optional_target() {
     // Assert
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
-    assert!(stdout.contains("Usage: lens [TARGET]"));
+    assert!(stdout.contains("Usage: lens [OPTIONS] [TARGET]"));
+    assert!(stdout.contains("--renderer <RENDERER>"));
     assert!(stdout.contains("lens .agents/skills"));
 }
 
@@ -50,7 +51,7 @@ fn empty_current_directory_then_reports_no_documents_error() {
     // Assert
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("error output should be UTF-8");
-    assert!(stderr.contains("contains no discoverable Markdown documents"));
+    assert!(stderr.contains("contains no discoverable Markdown or PlantUML documents"));
     std::fs::remove_dir(directory).expect("test directory should be removable");
 }
 

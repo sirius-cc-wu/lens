@@ -18,11 +18,20 @@ diagram source on the user's machine and avoid dependence on the public
 PlantUML service. This is the highest-value proposal because it addresses the
 current privacy and renderer-availability risks.
 
+Status: implemented in P1. `--renderer public|local|disabled` selects the
+session renderer. Public remains the default; local invokes the installed
+`plantuml` command without a renderer-service request, and disabled keeps the
+diagram source visible without an image request.
+
 ## 2. Prebuilt Linux Binaries
 
 Publish Linux binaries and checksums with GitHub Releases. This would let users
 install Lens without a Rust toolchain and reduce the friction of the current
 source-install path.
+
+Status: implemented in P2. The release-packaging command builds a target-bound
+Linux archive containing Lens, the README, and license, and writes a SHA-256
+checksum beside it. Proposal 8 will publish those verified artifacts from tags.
 
 ## 5. Diagram Failure Controls
 
@@ -30,11 +39,19 @@ Expose renderer status, allow a failed diagram request to be retried, and let a
 user disable diagram rendering for a session. These controls would make public
 renderer failures clearer and give users a predictable fallback.
 
+Status: implemented in P5. Each document exposes its renderer status, a failed
+diagram presents a retry control, and a session disable control stops future
+renderer requests while leaving PlantUML source readable.
+
 ## 6. Standalone PlantUML Files
 
 Allow Lens to open `.puml` files directly as well as PlantUML blocks embedded in
 Markdown. This broadens diagram viewing without turning Lens into a general
 source-code browser.
+
+Status: implemented in P6. Lens discovers visible `.puml` files alongside
+Markdown, accepts a direct `.puml` target, and serves each standalone source as
+one diagram through the existing session-bound renderer route.
 
 ## 7. Cross-Platform Support
 
@@ -42,11 +59,22 @@ Support macOS and Windows browser launch paths with platform-specific tests and
 release artifacts. Linux remains the only supported V1 platform until this work
 has evidence.
 
+Status: implemented in P7. Lens selects the native Linux, macOS, or Windows
+browser-launch command through platform-tested command construction, and the
+target-aware release packager produces archives for each supported target on a
+native release runner.
+
 ## 8. Release Automation
 
 Add GitHub Actions checks for formatting, tests, Clippy, package verification,
 tagged releases, and binary publishing. This would make each release
 repeatable and reduce regression risk.
+
+Status: implemented in P8. GitHub Actions verifies formatting, Rust tests,
+Clippy, package metadata, and the browser suite on pull requests and `main`.
+A `v<package-version>` tag starts native Linux, macOS, and Windows packaging,
+then publishes the archives and SHA-256 checksums only after every matrix job
+succeeds.
 
 ## 10. YAML Frontmatter Rendering
 
@@ -56,6 +84,11 @@ text. Define a consistent presentation for common fields, preserve unknown and
 nested values safely, and show an actionable result when frontmatter is
 malformed. Add fixtures and browser tests covering valid metadata, delimiters,
 and invalid YAML.
+
+Status: implemented in P10. Lens recognizes a leading `---` header and either
+`---` or `...` closing delimiter, displays scalar, list, nested, and unknown
+YAML values as escaped metadata, and retains the Markdown body with a
+correction message when the header cannot be parsed.
 
 ## 11. Scalable Document Navigation Search
 

@@ -5,22 +5,29 @@ does not prescribe the implementation architecture.
 
 ## Runtime and Portability
 
-- Lens V1 supports Linux and launches the browser through `xdg-open`.
+- Lens supports Linux, macOS, and Windows. It launches the browser through
+  `xdg-open`, `open`, or `cmd /C start` respectively.
 - The supported source-install command is `cargo install --path . --locked`.
-- macOS and Windows are not V1 release platforms.
+- Release artifacts use a target-specific archive name and contain the native
+  binary name for the selected platform.
 - The CLI starts a local-only browser session and should not expose the viewer
   to the local network by default.
 - Failure to launch a browser must leave the local URL visible in the CLI.
 
 ## Content Handling
 
-- Lens reads targets without modifying repository files.
-- Lens sends PlantUML block source over HTTPS to
-  `https://www.plantuml.com/plantuml` for V1 rendering.
-- V1 provides no local renderer or privacy-preserving alternative for PlantUML
-  source.
+- Lens reads visible Markdown and `.puml` targets without modifying repository
+  files.
+- Lens defaults to sending PlantUML block source over HTTPS to
+  `https://www.plantuml.com/plantuml`, and also supports a local `plantuml`
+  command or disabled diagram rendering for a viewing session.
 - Lens requests a rendered diagram through its local viewer and exposes the
   returned SVG only as an image, never as inline document markup.
+- Lens renders a YAML header at the beginning of a Markdown document
+  (frontmatter) as escaped metadata before the Markdown body. It preserves
+  nested and unknown values structurally, accepts `---` or `...` as the
+  closing delimiter, and presents an actionable error without hiding the body
+  when the header is malformed.
 - Lens must not collect telemetry or require an account for the initial release.
 
 ## Automated Browser Verification
@@ -36,6 +43,9 @@ does not prescribe the implementation architecture.
 
 - Common Markdown content remains readable when an individual PlantUML block
   fails to render.
+- Every document identifies the active diagram renderer. A failed diagram can
+  be retried without accepting new source, and the user can disable rendering
+  for the remaining viewing session.
 - Rendered diagrams should preserve aspect ratio and fit within the document
   viewport without horizontal stretching.
 - Target errors and rendering errors identify the affected path or diagram and
@@ -52,7 +62,8 @@ does not prescribe the implementation architecture.
   a request must not permit arbitrary filesystem reads.
 - A viewing session serves only its discovered document set. Symbolic links and
   hidden files and directories found during discovery are excluded.
-- The first release does not accept write operations through the browser view.
+- The browser view does not accept repository writes. Its only mutable route
+  disables diagram rendering for the current in-memory viewing session.
 
 ## Performance
 

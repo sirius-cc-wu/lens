@@ -14,9 +14,9 @@ break the fixed-session security boundary established by ADR-002.
 
 Lens creates a canonical document root from the current directory, a visible
 non-symbolic-link directory argument, or the canonical parent of a visible
-non-symbolic-link file argument. It discovers `.md` and `.markdown` files
-recursively inside that root, excluding symbolic links and hidden files and
-directories.
+non-symbolic-link supported file argument. It discovers `.md`, `.markdown`, and
+`.puml` files recursively inside that root, excluding symbolic links and hidden
+files and directories.
 
 The session assigns each discovered document an identifier relative to the
 document root. It serves only known identifiers. Markdown links are rewritten
@@ -30,10 +30,11 @@ A file target remains the initial document.
 
 ## Consequences
 
-- `lens`, `lens <directory>`, and `lens <markdown-file>` have one typed target
+- `lens`, `lens <directory>`, `lens <markdown-file>`, and `lens <puml-file>`
+  have one typed target
   model and no environment-variable or process-global override path.
-- A direct Markdown file can link to discovered siblings under its canonical
-  parent.
+- A direct Markdown or PlantUML file can navigate to discovered siblings under
+  its canonical parent.
 - URL traversal and symlinked files cannot expand the document set.
 - Directory scanning and code-file browsing remain separate concerns.
 

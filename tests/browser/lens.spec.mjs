@@ -37,6 +37,31 @@ test("controlled_renderer_and_navigation_pane_link_then_displays_selected_docume
   }
 });
 
+test("standalone plantuml link then displays its rendered diagram", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
+
+    // Act
+    await page.getByRole("link", { name: "architecture.puml" }).click();
+
+    // Assert
+    expect(new URL(page.url()).pathname).toBe("/documents/architecture.puml");
+    await expect(page.locator("article")).toContainText("Standalone PlantUML file.");
+    await expect.poll(() => fixture.renderer.requests).toBe(2);
+    await expect
+      .poll(() =>
+        page.locator("img[data-diagram]").evaluate((image) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true);
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("save displayed document then refreshes browser view automatically", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
@@ -58,6 +83,51 @@ test("save displayed document then refreshes browser view automatically", async 
     await expect(page.getByRole("heading", { level: 1, name: "Refreshed browser fixture" })).toBeVisible();
     await expect(page.locator("article")).toContainText("Changed saved content.");
     expect(new URL(page.url()).pathname).toBe("/");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("valid frontmatter then renders nested metadata without markdown delimiters", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({
+    readme: "---\ntitle: Browser metadata\ntags:\n  - browser\n  - docs\npublication:\n  audience: maintainers\n...\n# Browser fixture\n\nA rendered document.\n",
+  });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    const metadata = page.locator(".document-metadata");
+    await expect(metadata).toContainText("title");
+    await expect(metadata).toContainText("Browser metadata");
+    await expect(metadata).toContainText("browser");
+    await expect(metadata).toContainText("audience");
+    await expect(metadata).toContainText("maintainers");
+    await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
+    await expect(page.locator("article")).not.toContainText("tags:");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("malformed frontmatter then explains correction and renders markdown body", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({
+    readme: "---\ntitle: [missing bracket\n---\n# Browser fixture\n\nA rendered document.\n",
+  });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("alert")).toContainText("Could not parse YAML frontmatter.");
+    await expect(page.getByRole("alert")).toContainText(
+      "Fix the YAML between the opening and closing delimiters.",
+    );
+    await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
   } finally {
     await fixture.stop();
   }
@@ -200,7 +270,80 @@ test("renderer fails before client script loads then reveals the source", async 
   }
 });
 
-async function startBrowserFixture({ hiddenDocument, rendererStatus, extraDocumentCount } = {}) {
+test("disabled renderer then preserves plantuml source without a diagram request", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ rendererMode: "disabled" });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.locator(".diagram-disabled")).toBeVisible();
+    await expect(page.locator("img[data-diagram]")).toHaveCount(0);
+    await expect(page.locator(".diagram-source")).toContainText("Alice -> Bob: browser fixture");
+    await expect.poll(() => fixture.renderer.requests).toBe(0);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("renderer failure then retry button loads the diagram", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ rendererStatuses: [503, 200] });
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect(page.getByText("PlantUML rendering failed. The source is shown below.")).toBeVisible();
+
+    // Act
+    await page.getByRole("button", { name: "Retry diagram rendering" }).click();
+
+    // Assert
+    await expect.poll(() => fixture.renderer.requests).toBe(2);
+    await expect
+      .poll(() =>
+        page.locator("img[data-diagram]").evaluate((image) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true);
+    await expect(page.getByText("PlantUML rendering failed. The source is shown below.")).toBeHidden();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("disable renderer control then blocks further rendering for the session", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
+    await expect(page.getByText("Diagram renderer: public.")).toBeVisible();
+
+    // Act
+    await page.getByRole("button", { name: "Disable diagram rendering for this session" }).click();
+
+    // Assert
+    await expect(page.getByText("Diagram rendering is disabled for this viewing session.")).toBeVisible();
+    await expect(page.locator(".diagram-disabled")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Disable diagram rendering for this session" })).toHaveCount(0);
+    const diagramResponse = await page.request.get(`${fixture.lens.url}/diagrams/0/0`);
+    expect(diagramResponse.status()).toBe(503);
+    expect(fixture.renderer.requests).toBe(1);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+async function startBrowserFixture({
+  hiddenDocument,
+  readme,
+  rendererMode,
+  rendererStatus,
+  rendererStatuses,
+  extraDocumentCount,
+} = {}) {
   let repository;
   let renderer;
   let lens;
@@ -226,9 +369,9 @@ async function startBrowserFixture({ hiddenDocument, rendererStatus, extraDocume
   };
 
   try {
-    repository = await createDocumentationRepository({ hiddenDocument, extraDocumentCount });
-    renderer = await startRenderer({ status: rendererStatus });
-    lens = await startLens(repository, renderer.url);
+    repository = await createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount });
+    renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
+    lens = await startLens(repository, renderer.url, rendererMode);
     return { lens, renderer, repository, stop };
   } catch (error) {
     try {
@@ -240,7 +383,7 @@ async function startBrowserFixture({ hiddenDocument, rendererStatus, extraDocume
   }
 }
 
-async function createDocumentationRepository({ hiddenDocument, extraDocumentCount = 0 } = {}) {
+async function createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount = 0 } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const binDirectory = join(directory, "bin");
   let files = [];
@@ -250,11 +393,16 @@ async function createDocumentationRepository({ hiddenDocument, extraDocumentCoun
     files = [
       writeFile(
         join(directory, "README.md"),
-        "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n",
+        readme ??
+          "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n",
       ),
       writeFile(
         join(directory, "guides", "guide.md"),
         "# Guide page\n\nThe guide is a discovered document.\n",
+      ),
+      writeFile(
+        join(directory, "architecture.puml"),
+        "@startuml\nAlice -> Bob: standalone fixture\n@enduml\n",
       ),
       writeFile(join(binDirectory, "xdg-open"), "#!/bin/sh\nexit 0\n"),
     ];
@@ -283,16 +431,17 @@ async function createDocumentationRepository({ hiddenDocument, extraDocumentCoun
   }
 }
 
-async function startRenderer({ status = 200 } = {}) {
+async function startRenderer({ status = 200, statuses } = {}) {
   let requests = 0;
   const server = createServer((_request, response) => {
+    const responseStatus = (statuses ?? [status])[Math.min(requests, (statuses ?? [status]).length - 1)];
     requests += 1;
-    if (status === 200) {
+    if (responseStatus === 200) {
       response.writeHead(200, { "content-type": "image/svg+xml" });
       response.end('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>');
       return;
     }
-    response.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+    response.writeHead(responseStatus, { "content-type": "text/plain; charset=utf-8" });
     response.end("Controlled renderer failure");
   });
   server.listen(0, "127.0.0.1");
@@ -310,12 +459,16 @@ async function startRenderer({ status = 200 } = {}) {
   };
 }
 
-async function startLens(repository, rendererUrl) {
+async function startLens(repository, rendererUrl, rendererMode) {
   const lensBinary = process.env.LENS_BROWSER_TEST_BINARY;
   if (!lensBinary) {
     throw new Error("Playwright global setup did not provide the Lens executable path");
   }
-  const child = spawn(lensBinary, [repository.directory], {
+  const commandArguments = [repository.directory];
+  if (rendererMode) {
+    commandArguments.push("--renderer", rendererMode);
+  }
+  const child = spawn(lensBinary, commandArguments, {
     env: {
       ...process.env,
       LENS_PLANTUML_SERVER: rendererUrl,

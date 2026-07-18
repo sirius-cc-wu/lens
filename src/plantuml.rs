@@ -1,11 +1,58 @@
-use std::{env, io::Write};
+use std::{env, io::Write, path::PathBuf};
 
+use clap::ValueEnum;
 use flate2::{write::DeflateEncoder, Compression};
 
 pub const PUBLIC_SERVER: &str = "https://www.plantuml.com/plantuml";
 pub const SERVER_ENVIRONMENT_VARIABLE: &str = "LENS_PLANTUML_SERVER";
 
-pub fn renderer_server() -> String {
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+pub enum RendererMode {
+    #[default]
+    Public,
+    Local,
+    Disabled,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum DiagramRenderer {
+    Public { server: String },
+    Local { command: PathBuf },
+    Disabled,
+}
+
+impl DiagramRenderer {
+    pub(crate) fn from_mode(mode: RendererMode) -> Self {
+        match mode {
+            RendererMode::Public => Self::Public {
+                server: renderer_server(),
+            },
+            RendererMode::Local => Self::Local {
+                command: PathBuf::from("plantuml"),
+            },
+            RendererMode::Disabled => Self::Disabled,
+        }
+    }
+
+    pub(crate) fn is_enabled(&self) -> bool {
+        !matches!(self, Self::Disabled)
+    }
+
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            Self::Public { .. } => "public",
+            Self::Local { .. } => "local",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn local_with_command(command: PathBuf) -> Self {
+        Self::Local { command }
+    }
+}
+
+fn renderer_server() -> String {
     env::var(SERVER_ENVIRONMENT_VARIABLE)
         .ok()
         .map(|server| server.trim().trim_end_matches('/').to_owned())

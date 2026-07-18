@@ -4,8 +4,11 @@ use std::{
     fs,
     net::TcpListener,
     path::PathBuf,
-    process::Command,
-    sync::{Arc, RwLock},
+    process::{Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
     time::Duration,
 };
 
@@ -14,11 +17,12 @@ use axum::{
     extract::{Path, RawQuery, State},
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use futures_util::StreamExt;
 use reqwest::Client;
+use tokio::{io::AsyncWriteExt, process::Command as TokioCommand};
 
 mod catalog;
 
@@ -27,9 +31,9 @@ use catalog::{
 };
 
 use crate::{
-    markdown::{escape_html, render, Diagram, RenderedDocument},
-    plantuml::renderer_server,
-    target::{MarkdownDocument, MarkdownTarget},
+    markdown::{escape_html, render, render_standalone_plantuml, Diagram, RenderedDocument},
+    plantuml::{DiagramRenderer, RendererMode},
+    target::{DocumentKind, MarkdownDocument, MarkdownTarget},
 };
 
 const MAX_DIAGRAM_BYTES: usize = 2 * 1024 * 1024;
@@ -42,7 +46,22 @@ struct ViewerState {
     known_documents: BTreeSet<String>,
     initial_document: usize,
     client: Client,
-    renderer_server: String,
+    renderer: DiagramRenderer,
+    rendering_disabled: AtomicBool,
+}
+
+#[allow(dead_code)] // Each variant is constructed by its supported target build.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BrowserPlatform {
+    Linux,
+    MacOs,
+    Windows,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct BrowserCommand {
+    program: &'static str,
+    arguments: Vec<String>,
 }
 
 impl ViewerState {
@@ -57,6 +76,25 @@ impl ViewerState {
             current_document,
             current_route,
         )
+    }
+
+    fn rendering_enabled(&self) -> bool {
+        self.renderer.is_enabled() && !self.rendering_disabled.load(Ordering::Acquire)
+    }
+
+    fn disable_rendering(&self) {
+        self.rendering_disabled.store(true, Ordering::Release);
+    }
+
+    fn renderer_controls(&self) -> String {
+        if self.rendering_enabled() {
+            format!(
+                r#"<section class="renderer-controls" data-renderer-controls><p role="status" data-renderer-status>Diagram renderer: {}.</p><button type="button" data-disable-renderer>Disable diagram rendering for this session</button></section>"#,
+                self.renderer.label()
+            )
+        } else {
+            r#"<section class="renderer-controls" data-renderer-controls><p role="status" data-renderer-status>Diagram rendering is disabled for this viewing session.</p></section>"#.to_owned()
+        }
     }
 
     fn document_revision(&self, document_id: usize) -> Option<u64> {
@@ -80,11 +118,12 @@ impl ViewerState {
                     document.identifier.clone(),
                     document.canonical_path.clone(),
                     document.source.clone(),
+                    document.kind,
                 )
             })
             .collect::<Vec<_>>();
 
-        for (document_id, identifier, canonical_path, stored_source) in documents {
+        for (document_id, identifier, canonical_path, stored_source, kind) in documents {
             let Ok(source) = fs::read_to_string(canonical_path) else {
                 continue;
             };
@@ -92,12 +131,13 @@ impl ViewerState {
                 continue;
             }
 
-            let rendered = render(
+            let rendered = render_document(
                 &source,
                 document_id,
                 &identifier,
+                kind,
                 &self.known_documents,
-                &self.renderer_server,
+                &self.renderer,
             );
             let mut documents = self
                 .documents
@@ -115,6 +155,7 @@ struct ViewerDocument {
     identifier: String,
     canonical_path: PathBuf,
     source: String,
+    kind: DocumentKind,
     rendered: RenderedDocument,
     revision: u64,
 }
@@ -127,15 +168,15 @@ impl ViewerDocument {
     }
 }
 
-pub async fn serve(target: MarkdownTarget) -> Result<()> {
+pub async fn serve(target: MarkdownTarget, renderer_mode: RendererMode) -> Result<()> {
     let (documents, initial_document) = target.into_parts();
     let initial_path = documents[initial_document].canonical_path.clone();
-    let diagram_renderer = renderer_server();
+    let diagram_renderer = DiagramRenderer::from_mode(renderer_mode);
     let state = viewer_state(
         documents,
         initial_document,
         renderer_client()?,
-        &diagram_renderer,
+        diagram_renderer,
     );
     tokio::spawn(watch_documents(state.clone()));
     let listener =
@@ -159,29 +200,64 @@ pub async fn serve(target: MarkdownTarget) -> Result<()> {
         .context("The loopback viewer stopped unexpectedly")
 }
 
-#[cfg(target_os = "linux")]
 fn open_browser(url: &str) -> std::io::Result<()> {
-    Command::new("xdg-open").arg(url).spawn().map(|_| ())
+    let command = browser_command(current_browser_platform()?, url);
+    Command::new(command.program)
+        .args(command.arguments)
+        .spawn()
+        .map(|_| ())
+}
+
+fn browser_command(platform: BrowserPlatform, url: &str) -> BrowserCommand {
+    match platform {
+        BrowserPlatform::Linux => BrowserCommand {
+            program: "xdg-open",
+            arguments: vec![url.to_owned()],
+        },
+        BrowserPlatform::MacOs => BrowserCommand {
+            program: "open",
+            arguments: vec![url.to_owned()],
+        },
+        BrowserPlatform::Windows => BrowserCommand {
+            program: "cmd",
+            arguments: vec![
+                "/C".to_owned(),
+                "start".to_owned(),
+                String::new(),
+                url.to_owned(),
+            ],
+        },
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn current_browser_platform() -> std::io::Result<BrowserPlatform> {
+    Ok(BrowserPlatform::Linux)
 }
 
 #[cfg(target_os = "macos")]
-fn open_browser(url: &str) -> std::io::Result<()> {
-    Command::new("open").arg(url).spawn().map(|_| ())
+fn current_browser_platform() -> std::io::Result<BrowserPlatform> {
+    Ok(BrowserPlatform::MacOs)
 }
 
 #[cfg(target_os = "windows")]
-fn open_browser(url: &str) -> std::io::Result<()> {
-    Command::new("cmd")
-        .args(["/C", "start", "", url])
-        .spawn()
-        .map(|_| ())
+fn current_browser_platform() -> std::io::Result<BrowserPlatform> {
+    Ok(BrowserPlatform::Windows)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn current_browser_platform() -> std::io::Result<BrowserPlatform> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Lens does not support automatic browser launch on this platform",
+    ))
 }
 
 fn viewer_state(
     documents: Vec<MarkdownDocument>,
     initial_document: usize,
     client: Client,
-    renderer_server: &str,
+    renderer: DiagramRenderer,
 ) -> Arc<ViewerState> {
     let catalog = DocumentCatalog::new(
         documents
@@ -197,12 +273,14 @@ fn viewer_state(
             identifier: document.identifier.clone(),
             canonical_path: document.canonical_path,
             source: document.source.clone(),
-            rendered: render(
+            kind: document.kind,
+            rendered: render_document(
                 &document.source,
                 document_id,
                 &document.identifier,
+                document.kind,
                 &known_documents,
-                renderer_server,
+                &renderer,
             ),
             revision: 0,
         })
@@ -214,8 +292,25 @@ fn viewer_state(
         known_documents,
         initial_document,
         client,
-        renderer_server: renderer_server.to_owned(),
+        renderer,
+        rendering_disabled: AtomicBool::new(false),
     })
+}
+
+fn render_document(
+    source: &str,
+    document_id: usize,
+    identifier: &str,
+    kind: DocumentKind,
+    known_documents: &BTreeSet<String>,
+    renderer: &DiagramRenderer,
+) -> RenderedDocument {
+    match kind {
+        DocumentKind::Markdown => {
+            render(source, document_id, identifier, known_documents, renderer)
+        }
+        DocumentKind::PlantUml => render_standalone_plantuml(document_id, source, renderer),
+    }
 }
 
 fn router(state: Arc<ViewerState>) -> Router {
@@ -226,6 +321,7 @@ fn router(state: Arc<ViewerState>) -> Router {
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
         .route("/diagrams/:document_id/:diagram_id", get(diagram))
+        .route("/renderer/disable", post(disable_renderer))
         .fallback(not_found)
         .with_state(state)
 }
@@ -279,6 +375,7 @@ fn rendered_document_response(
     current_route: &str,
 ) -> Response {
     let navigation = state.navigation_pane(document_id, request, current_route);
+    let renderer_controls = state.renderer_controls();
     let documents = state
         .documents
         .read()
@@ -290,6 +387,8 @@ fn rendered_document_response(
             &document.canonical_path.display().to_string(),
             document.rendered.html.clone(),
             navigation,
+            renderer_controls,
+            !state.rendering_enabled(),
             Some((&document.identifier, document.revision)),
         )),
     )
@@ -420,6 +519,13 @@ async fn diagram(
     State(state): State<Arc<ViewerState>>,
     Path((document_id, diagram_id)): Path<(usize, usize)>,
 ) -> Response {
+    if !state.rendering_enabled() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "PlantUML rendering is disabled for this viewing session.",
+        )
+            .into_response();
+    }
     let diagram = state
         .documents
         .read()
@@ -431,7 +537,7 @@ async fn diagram(
         return (StatusCode::NOT_FOUND, "Diagram not found").into_response();
     };
 
-    match request_diagram(&state.client, &diagram).await {
+    match request_diagram(&state.renderer, &state.client, &diagram).await {
         Ok(svg) => (
             [(
                 header::CONTENT_TYPE,
@@ -451,9 +557,32 @@ async fn diagram(
     }
 }
 
-async fn request_diagram(client: &Client, diagram: &Diagram) -> Result<Vec<u8>> {
+async fn disable_renderer(State(state): State<Arc<ViewerState>>) -> StatusCode {
+    state.disable_rendering();
+    StatusCode::NO_CONTENT
+}
+
+async fn request_diagram(
+    renderer: &DiagramRenderer,
+    client: &Client,
+    diagram: &Diagram,
+) -> Result<Vec<u8>> {
+    match renderer {
+        DiagramRenderer::Public { server } => request_public_diagram(client, server, diagram).await,
+        DiagramRenderer::Local { command } => request_local_diagram(command, diagram).await,
+        DiagramRenderer::Disabled => {
+            anyhow::bail!("PlantUML rendering is disabled for this viewing session")
+        }
+    }
+}
+
+async fn request_public_diagram(
+    client: &Client,
+    server: &str,
+    diagram: &Diagram,
+) -> Result<Vec<u8>> {
     let response = client
-        .get(&diagram.url)
+        .get(crate::plantuml::svg_url(server, &diagram.source))
         .send()
         .await
         .context("Could not contact the public PlantUML server")?;
@@ -490,6 +619,46 @@ async fn request_diagram(client: &Client, diagram: &Diagram) -> Result<Vec<u8>> 
     Ok(bytes)
 }
 
+async fn request_local_diagram(command: &std::path::Path, diagram: &Diagram) -> Result<Vec<u8>> {
+    let mut command_builder = TokioCommand::new(command);
+    command_builder
+        .args(["-tsvg", "-pipe"])
+        .kill_on_drop(true)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child = command_builder.spawn().with_context(|| {
+        format!(
+            "Could not start the local PlantUML command {}",
+            command.display()
+        )
+    })?;
+    let mut input = child
+        .stdin
+        .take()
+        .expect("piped PlantUML command should provide standard input");
+    input
+        .write_all(diagram.source.as_bytes())
+        .await
+        .context("Could not write PlantUML source to the local renderer")?;
+    drop(input);
+
+    let output = tokio::time::timeout(RENDER_TIMEOUT, child.wait_with_output())
+        .await
+        .context("The local PlantUML command timed out")?
+        .context("Could not wait for the local PlantUML command")?;
+    if !output.status.success() {
+        anyhow::bail!("The local PlantUML command exited with {}", output.status);
+    }
+    if output.stdout.len() > MAX_DIAGRAM_BYTES {
+        anyhow::bail!("The local PlantUML command returned an oversized diagram");
+    }
+    if !output.stdout.windows(4).any(|bytes| bytes == b"<svg") {
+        anyhow::bail!("The local PlantUML command did not return SVG content");
+    }
+    Ok(output.stdout)
+}
+
 fn renderer_client() -> Result<Client> {
     renderer_client_with_timeout(RENDER_TIMEOUT)
 }
@@ -519,6 +688,8 @@ fn page(
     title: &str,
     document_html: String,
     navigation_html: String,
+    renderer_controls: String,
+    rendering_disabled: bool,
     document_revision: Option<(&str, u64)>,
 ) -> String {
     let refresh_attributes = document_revision
@@ -529,9 +700,12 @@ fn page(
             )
         })
         .unwrap_or_default();
+    let rendering_disabled_attribute = rendering_disabled
+        .then_some(r#" data-diagram-rendering-disabled="true""#)
+        .unwrap_or_default();
     format!(
         r#"<!doctype html>
-<html lang="en">
+<html lang="en"{rendering_disabled_attribute}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -543,6 +717,7 @@ fn page(
     {navigation_html}
     <section class="document-content">
       <header><p class="eyebrow">Lens</p><h1>{}</h1></header>
+      {renderer_controls}
       <article>{document_html}</article>
     </section>
   </main>
@@ -559,6 +734,8 @@ fn deferred_navigation_page() -> String {
         "Document navigation unavailable",
         "<p>Lens can display the selected document, but the requested document is not part of this viewing session.</p><p><a href=\"/\">Return to the initial document</a></p>".to_owned(),
         String::new(),
+        String::new(),
+        false,
         None,
     )
 }
@@ -567,16 +744,58 @@ fn content_security_policy() -> &'static str {
     "default-src 'self'; base-uri 'none'; img-src 'self'; object-src 'none'; script-src 'self'; style-src 'self'"
 }
 
-const APP_SCRIPT: &str = r#"for (const image of document.querySelectorAll('[data-diagram]')) {
+const APP_SCRIPT: &str = r#"const markDiagramDisabled = (figure) => {
+  const image = figure.querySelector('[data-diagram]');
+  if (image) image.removeAttribute('src');
+  figure.querySelector('.diagram-error').hidden = true;
+  figure.querySelector('[data-diagram-retry]').hidden = true;
+  figure.querySelector('[data-diagram-disabled]').hidden = false;
+  figure.querySelector('.diagram-source').open = true;
+};
+
+for (const image of document.querySelectorAll('[data-diagram]')) {
   const revealFailure = () => {
     const figure = image.closest('.diagram');
+    if (document.documentElement.dataset.diagramRenderingDisabled === 'true') {
+      markDiagramDisabled(figure);
+      return;
+    }
     figure.querySelector('.diagram-error').hidden = false;
+    figure.querySelector('[data-diagram-retry]').hidden = false;
     figure.querySelector('.diagram-source').open = true;
   };
+  const retry = image.closest('.diagram').querySelector('[data-diagram-retry]');
+  retry.addEventListener('click', () => {
+    image.closest('.diagram').querySelector('.diagram-error').hidden = true;
+    retry.hidden = true;
+    const retryUrl = new URL(image.src, window.location.origin);
+    retryUrl.searchParams.set('retry', Date.now().toString());
+    image.src = retryUrl.toString();
+  });
   image.addEventListener('error', revealFailure);
   if (image.complete && image.naturalWidth === 0) {
     revealFailure();
   }
+}
+
+const disableRenderer = document.querySelector('[data-disable-renderer]');
+if (disableRenderer) {
+  disableRenderer.addEventListener('click', async () => {
+    disableRenderer.disabled = true;
+    try {
+      const response = await fetch('/renderer/disable', { method: 'POST' });
+      if (!response.ok) throw new Error('disable failed');
+      document.documentElement.dataset.diagramRenderingDisabled = 'true';
+      document.querySelector('[data-renderer-status]').textContent =
+        'Diagram rendering is disabled for this viewing session.';
+      for (const figure of document.querySelectorAll('[data-diagram-container]')) {
+        markDiagramDisabled(figure);
+      }
+      disableRenderer.remove();
+    } catch {
+      disableRenderer.disabled = false;
+    }
+  });
 }
 
 const documentView = document.querySelector('[data-document-id][data-document-revision]');
@@ -624,7 +843,22 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .diagram { margin: 1.5rem 0; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; }
 .diagram img { display: block; width: 100%; height: auto; }
 .diagram-error { color: #9c2f19; font-family: system-ui, sans-serif; font-weight: 700; }
+.diagram-disabled { color: #555147; font-family: system-ui, sans-serif; font-weight: 700; }
+.diagram button { margin-top: .75rem; }
 .diagram-source { margin-top: .75rem; }
+.renderer-controls { margin: 0 0 1.5rem; padding: .75rem 1rem; border-left: 4px solid #8b3f21; background: #fffdf8; font-family: system-ui, sans-serif; }
+.renderer-controls p { margin: 0; font-weight: 700; }
+.renderer-controls button { margin-top: .65rem; }
+.document-metadata { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; font-family: system-ui, sans-serif; }
+.document-metadata h2 { margin: 0 0 .75rem; font-size: 1rem; }
+.document-metadata dl { display: grid; gap: .6rem; margin: 0; }
+.document-metadata dl div { display: grid; gap: .15rem; }
+.document-metadata dt { color: #5c5a54; font-size: .8rem; font-weight: 800; }
+.document-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.document-metadata ul { margin: .25rem 0 0; padding-left: 1.2rem; }
+.document-metadata dl dl { margin: .25rem 0 0; padding-left: .75rem; border-left: 2px solid #b6b0a4; }
+.frontmatter-error { margin: 0 0 1.5rem; padding: .75rem 1rem; border-left: 4px solid #8b3f21; background: #fff4ed; font-family: system-ui, sans-serif; }
+.frontmatter-error p { margin: .35rem 0; }
 @media (max-width: 760px) { main { width: min(100% - 1rem, 920px); margin-top: 1.5rem; display: block; } .document-navigation { position: static; margin-bottom: 1.5rem; } .diagram { padding: .5rem; } }"#;
 
 #[cfg(test)]
@@ -640,10 +874,68 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        deferred_navigation_page, renderer_client, renderer_client_with_timeout, request_diagram,
-        router, viewer_state, NavigationRequest,
+        browser_command, deferred_navigation_page, renderer_client, renderer_client_with_timeout,
+        request_diagram, router, viewer_state, BrowserCommand, BrowserPlatform, NavigationRequest,
     };
-    use crate::{markdown::Diagram, plantuml::PUBLIC_SERVER, target::MarkdownDocument};
+    use crate::{
+        markdown::Diagram,
+        plantuml::{DiagramRenderer, RendererMode},
+        target::{DocumentKind, MarkdownDocument},
+    };
+
+    fn test_renderer() -> DiagramRenderer {
+        DiagramRenderer::from_mode(RendererMode::Public)
+    }
+
+    #[test]
+    fn supported_browser_platform_then_uses_its_launch_command() {
+        // Arrange
+        let url = "http://127.0.0.1:4567";
+
+        // Act
+        let commands = [
+            (
+                BrowserPlatform::Linux,
+                browser_command(BrowserPlatform::Linux, url),
+            ),
+            (
+                BrowserPlatform::MacOs,
+                browser_command(BrowserPlatform::MacOs, url),
+            ),
+            (
+                BrowserPlatform::Windows,
+                browser_command(BrowserPlatform::Windows, url),
+            ),
+        ];
+
+        // Assert
+        assert_eq!(
+            commands[0].1,
+            BrowserCommand {
+                program: "xdg-open",
+                arguments: vec![url.to_owned()],
+            }
+        );
+        assert_eq!(
+            commands[1].1,
+            BrowserCommand {
+                program: "open",
+                arguments: vec![url.to_owned()],
+            }
+        );
+        assert_eq!(
+            commands[2].1,
+            BrowserCommand {
+                program: "cmd",
+                arguments: vec![
+                    "/C".to_owned(),
+                    "start".to_owned(),
+                    String::new(),
+                    url.to_owned()
+                ],
+            }
+        );
+    }
 
     fn test_router() -> axum::Router {
         test_router_with_documents(vec![test_document("README.md", "# Lens")], 0)
@@ -657,7 +949,7 @@ mod tests {
             documents,
             initial_document,
             renderer_client().expect("test client should initialize"),
-            PUBLIC_SERVER,
+            test_renderer(),
         ))
     }
 
@@ -666,6 +958,7 @@ mod tests {
             identifier: identifier.to_owned(),
             canonical_path: PathBuf::from(identifier),
             source: source.to_owned(),
+            kind: DocumentKind::Markdown,
         }
     }
 
@@ -674,6 +967,7 @@ mod tests {
             identifier: "README.md".to_owned(),
             canonical_path: path,
             source: source.to_owned(),
+            kind: DocumentKind::Markdown,
         }
     }
 
@@ -691,7 +985,7 @@ mod tests {
             ],
             0,
             renderer_client().expect("test client should initialize"),
-            PUBLIC_SERVER,
+            test_renderer(),
         );
 
         // Act
@@ -715,7 +1009,7 @@ mod tests {
             vec![test_document("guides/<unsafe>.md", "# Guide")],
             0,
             renderer_client().expect("test client should initialize"),
-            PUBLIC_SERVER,
+            test_renderer(),
         );
 
         // Act
@@ -728,6 +1022,24 @@ mod tests {
     }
 
     #[test]
+    fn enabled_renderer_then_exposes_its_status_and_disable_control() {
+        // Arrange
+        let state = viewer_state(
+            vec![test_document("README.md", "# Read me")],
+            0,
+            renderer_client().expect("test client should initialize"),
+            test_renderer(),
+        );
+
+        // Act
+        let controls = state.renderer_controls();
+
+        // Assert
+        assert!(controls.contains("Diagram renderer: public."));
+        assert!(controls.contains("data-disable-renderer"));
+    }
+
+    #[test]
     fn more_than_result_limit_then_shows_first_page_and_next_link() {
         // Arrange
         let documents = (0..=50)
@@ -737,7 +1049,7 @@ mod tests {
             documents,
             0,
             renderer_client().expect("test client should initialize"),
-            PUBLIC_SERVER,
+            test_renderer(),
         );
 
         // Act
@@ -762,7 +1074,7 @@ mod tests {
             vec![file_backed_test_document(path.clone(), "# Before refresh")],
             0,
             renderer_client().expect("test client should initialize"),
-            PUBLIC_SERVER,
+            test_renderer(),
         );
         fs::write(&path, "# After refresh\n\nChanged content.")
             .expect("test document should update");
@@ -794,7 +1106,7 @@ mod tests {
             )],
             0,
             renderer_client().expect("test client should initialize"),
-            PUBLIC_SERVER,
+            test_renderer(),
         );
         fs::remove_file(&path).expect("test document should be removable");
 
@@ -811,7 +1123,7 @@ mod tests {
         assert!(documents[0].rendered.html.contains("Readable document"));
     }
 
-    async fn mock_renderer_url(renderer: Router) -> String {
+    async fn mock_renderer_server(renderer: Router) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("mock renderer should bind");
         let address = listener
             .local_addr()
@@ -823,7 +1135,7 @@ mod tests {
                 .await
                 .expect("mock renderer should not fail");
         });
-        format!("http://{address}/svg")
+        format!("http://{address}")
     }
 
     #[tokio::test]
@@ -910,6 +1222,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn renderer_disable_request_then_blocks_diagram_rendering_for_the_session() {
+        // Arrange
+        let state = viewer_state(
+            vec![test_document(
+                "README.md",
+                "```plantuml\n@startuml\nAlice -> Bob\n@enduml\n```",
+            )],
+            0,
+            renderer_client().expect("test client should initialize"),
+            test_renderer(),
+        );
+        let disable_request = Request::builder()
+            .method("POST")
+            .uri("/renderer/disable")
+            .body(Body::empty())
+            .expect("disable request should build");
+
+        // Act
+        let disable_response = router(state.clone())
+            .oneshot(disable_request)
+            .await
+            .expect("router should respond");
+        let diagram_request = Request::builder()
+            .uri("/diagrams/0/0")
+            .body(Body::empty())
+            .expect("diagram request should build");
+        let diagram_response = router(state)
+            .oneshot(diagram_request)
+            .await
+            .expect("router should respond");
+
+        // Assert
+        assert_eq!(
+            disable_response.status(),
+            axum::http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            diagram_response.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[tokio::test]
     async fn document_request_then_sets_restrictive_content_security_policy() {
         // Arrange
         let app = test_router();
@@ -935,16 +1290,20 @@ mod tests {
     #[tokio::test]
     async fn valid_svg_then_returns_public_renderer_response() {
         // Arrange
-        let renderer = Router::new().route(
-            "/svg",
+        let server = Router::new().route(
+            "/svg/*encoded",
             get(|| async { ([(header::CONTENT_TYPE, "image/svg+xml")], "<svg></svg>") }),
         );
         let diagram = Diagram {
-            url: mock_renderer_url(renderer).await,
+            source: "@startuml\n@enduml".to_owned(),
+        };
+        let renderer = DiagramRenderer::Public {
+            server: mock_renderer_server(server).await,
         };
 
         // Act
         let response = request_diagram(
+            &renderer,
             &renderer_client().expect("test client should initialize"),
             &diagram,
         )
@@ -958,8 +1317,8 @@ mod tests {
     #[tokio::test]
     async fn renderer_error_header_then_returns_error() {
         // Arrange
-        let renderer = Router::new().route(
-            "/svg",
+        let server = Router::new().route(
+            "/svg/*encoded",
             get(|| async {
                 (
                     [
@@ -974,11 +1333,15 @@ mod tests {
             }),
         );
         let diagram = Diagram {
-            url: mock_renderer_url(renderer).await,
+            source: "@startuml\n@enduml".to_owned(),
+        };
+        let renderer = DiagramRenderer::Public {
+            server: mock_renderer_server(server).await,
         };
 
         // Act
         let result = request_diagram(
+            &renderer,
             &renderer_client().expect("test client should initialize"),
             &diagram,
         )
@@ -991,16 +1354,20 @@ mod tests {
     #[tokio::test]
     async fn unavailable_renderer_then_returns_error() {
         // Arrange
-        let renderer = Router::new().route(
-            "/svg",
+        let server = Router::new().route(
+            "/svg/*encoded",
             get(|| async { (axum::http::StatusCode::SERVICE_UNAVAILABLE, "unavailable") }),
         );
         let diagram = Diagram {
-            url: mock_renderer_url(renderer).await,
+            source: "@startuml\n@enduml".to_owned(),
+        };
+        let renderer = DiagramRenderer::Public {
+            server: mock_renderer_server(server).await,
         };
 
         // Act
         let result = request_diagram(
+            &renderer,
             &renderer_client().expect("test client should initialize"),
             &diagram,
         )
@@ -1013,23 +1380,71 @@ mod tests {
     #[tokio::test]
     async fn delayed_renderer_then_times_out() {
         // Arrange
-        let renderer = Router::new().route(
-            "/svg",
+        let server = Router::new().route(
+            "/svg/*encoded",
             get(|| async {
                 tokio::time::sleep(Duration::from_millis(50)).await;
                 ([(header::CONTENT_TYPE, "image/svg+xml")], "<svg></svg>")
             }),
         );
         let diagram = Diagram {
-            url: mock_renderer_url(renderer).await,
+            source: "@startuml\n@enduml".to_owned(),
+        };
+        let renderer = DiagramRenderer::Public {
+            server: mock_renderer_server(server).await,
         };
         let client = renderer_client_with_timeout(Duration::from_millis(10))
             .expect("test client should initialize");
 
         // Act
-        let result = request_diagram(&client, &diagram).await;
+        let result = request_diagram(&renderer, &client, &diagram).await;
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn local_renderer_command_then_returns_its_svg_output() {
+        use std::{
+            os::unix::fs::PermissionsExt,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+
+        // Arrange
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+        let command = std::env::temp_dir().join(format!(
+            "lens-local-renderer-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::write(
+            &command,
+            "#!/bin/sh\n[ \"$(cat)\" = '@startuml\n@enduml' ] || exit 1\nprintf '%s' '<svg></svg>'\n",
+        )
+        .expect("local renderer command should be writable");
+        fs::set_permissions(&command, fs::Permissions::from_mode(0o755))
+            .expect("local renderer command should be executable");
+        let renderer = DiagramRenderer::local_with_command(command.clone());
+        let diagram = Diagram {
+            source: "@startuml\n@enduml".to_owned(),
+        };
+
+        // Act
+        let result = request_diagram(
+            &renderer,
+            &renderer_client().expect("test client should initialize"),
+            &diagram,
+        )
+        .await;
+
+        // Assert
+        assert_eq!(
+            result.expect("local renderer should produce SVG"),
+            b"<svg></svg>"
+        );
+        fs::remove_file(command).expect("local renderer command should be removable");
     }
 }
