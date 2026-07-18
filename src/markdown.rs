@@ -4,7 +4,7 @@ use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag};
 
 use crate::plantuml::svg_url;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Diagram {
     pub url: String,
 }

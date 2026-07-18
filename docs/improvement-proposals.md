@@ -38,6 +38,10 @@ identifiers locally.
 Watch discovered Markdown files and refresh the browser view when they change.
 This would support authors who use Lens to preview documentation while editing.
 
+Status: implemented in C4. Lens polls only the fixed, already authorized
+document set, preserves the last successful rendering during a failed read, and
+reloads the current browser page after its document revision advances.
+
 ## 5. Diagram Failure Controls
 
 Expose renderer status, allow a failed diagram request to be retried, and let a

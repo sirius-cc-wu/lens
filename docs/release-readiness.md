@@ -28,8 +28,8 @@ Expected result: the suite builds Lens with Cargo, starts Cargo's reported
 executable against a temporary documentation repository, uses the installed
 Google Chrome channel in headless mode, and completes without contacting the
 public PlantUML service. It verifies rendered Markdown, navigation to a
-discovered document, 404 guidance for an undiscovered document, and visible
-PlantUML success and failure behavior.
+discovered document, automatic refresh after a saved change, 404 guidance for
+an undiscovered document, and visible PlantUML success and failure behavior.
 
 ## Installation Check
 

@@ -37,6 +37,32 @@ test("controlled_renderer_and_navigation_pane_link_then_displays_selected_docume
   }
 });
 
+test("save displayed document then refreshes browser view automatically", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
+    const revision = await page.request.get(`${fixture.lens.url}/revisions/README.md`);
+    expect(revision.status()).toBe(200);
+    expect(await revision.text()).toBe("0");
+
+    // Act
+    await writeFile(
+      join(fixture.repository.directory, "README.md"),
+      "# Refreshed browser fixture\n\nChanged saved content.\n",
+    );
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Refreshed browser fixture" })).toBeVisible();
+    await expect(page.locator("article")).toContainText("Changed saved content.");
+    expect(new URL(page.url()).pathname).toBe("/");
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("document_navigation_pane_then_lists_authorized_documents_and_marks_current", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ hiddenDocument: "Confidential source" });
@@ -168,7 +194,7 @@ async function startBrowserFixture({ hiddenDocument, rendererStatus } = {}) {
     repository = await createDocumentationRepository({ hiddenDocument });
     renderer = await startRenderer({ status: rendererStatus });
     lens = await startLens(repository, renderer.url);
-    return { lens, renderer, stop };
+    return { lens, renderer, repository, stop };
   } catch (error) {
     try {
       await stop();
