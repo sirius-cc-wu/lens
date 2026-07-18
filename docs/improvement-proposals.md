@@ -88,3 +88,26 @@ text. Define a consistent presentation for common fields, preserve unknown and
 nested values safely, and show an actionable result when frontmatter is
 malformed. Add fixtures and browser tests covering valid metadata, delimiters,
 and invalid YAML.
+
+## 11. Scalable Document Navigation Search
+
+Replace the complete document list in every navigation pane with server-side
+identifier search and a capped result set. Lens would build an index from the
+active session's already authorized document identifiers when it starts, then
+return only a bounded first page of matching identifiers and allow the user to
+request further results. This would make large documentation trees practical
+without scanning the filesystem or making arbitrary paths reachable after the
+session begins. It requires revisiting ADR-006, which currently requires the
+complete catalog in every document response, and defining pagination,
+no-JavaScript navigation, result limits, and request-rate behavior.
+
+## 12. Collapsible Document Navigation Pane
+
+Let the user hide and restore the document navigation pane so the document
+content can use more of the browser window. Provide a visible, keyboard-
+operable control with an accessible expanded-state indication, and retain a
+usable way to restore the pane after it is hidden. Remembering the user's
+choice for the current viewing session would avoid making the user repeat the
+action on every document change. This changes presentation only: hiding the
+pane must not change the active session's authorized document set or document
+routes.
