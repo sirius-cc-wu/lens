@@ -1,6 +1,6 @@
 # FEAT-03: Refresh Changed Markdown Documents
 
-Status: designed in A1
+Status: implemented in C4
 
 ## System Boundary
 
@@ -92,3 +92,11 @@ Special requirements:
 - Design realization and Rust mapping: [`RZ-03` and `DCD-03`](design.md)
 - Decision: [ADR-007](../../decisions/adr-007-poll-known-document-paths.md)
 - Verification: `BTE-01`, [`tests/browser/lens.spec.mjs`](../../../tests/browser/lens.spec.mjs)
+
+## Construction Result
+
+`BTE-01` saves the displayed fixture document, observes a revision-only `0`
+response before the change, and then verifies that the browser displays the new
+heading and body without calling `page.reload()`. Viewer unit tests cover a
+successful refresh, retention after a missing-file read, and the 404 response
+for an unknown revision path.

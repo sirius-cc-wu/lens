@@ -1,6 +1,12 @@
 use std::{
-    collections::BTreeMap, fmt::Write as _, net::TcpListener, path::PathBuf, process::Command,
-    sync::Arc, time::Duration,
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
+    fs,
+    net::TcpListener,
+    path::PathBuf,
+    process::Command,
+    sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
@@ -22,12 +28,15 @@ use crate::{
 
 const MAX_DIAGRAM_BYTES: usize = 2 * 1024 * 1024;
 const RENDER_TIMEOUT: Duration = Duration::from_secs(10);
+const REFRESH_INTERVAL: Duration = Duration::from_millis(500);
 
 struct ViewerState {
-    documents: Vec<ViewerDocument>,
+    documents: RwLock<Vec<ViewerDocument>>,
     document_ids: BTreeMap<String, usize>,
+    known_documents: BTreeSet<String>,
     initial_document: usize,
     client: Client,
+    renderer_server: String,
 }
 
 impl ViewerState {
@@ -49,11 +58,73 @@ impl ViewerState {
             r#"<nav class="document-navigation" aria-label="Discovered documents" data-document-navigation><h2>Documents</h2><label for="document-filter">Filter discovered documents</label><input id="document-filter" type="search" data-document-filter aria-controls="document-catalog"><noscript><p>Filtering requires JavaScript; all discovered documents are shown.</p></noscript><p data-document-filter-empty role="status" hidden>No discovered documents match the filter.</p><ul id="document-catalog">{document_links}</ul></nav>"#
         )
     }
+
+    fn document_revision(&self, document_id: usize) -> Option<u64> {
+        self.documents
+            .read()
+            .expect("viewer documents lock should not be poisoned")
+            .get(document_id)
+            .map(|document| document.revision)
+    }
+
+    fn refresh_known_documents(&self) {
+        let documents = self
+            .documents
+            .read()
+            .expect("viewer documents lock should not be poisoned")
+            .iter()
+            .enumerate()
+            .map(|(document_id, document)| {
+                (
+                    document_id,
+                    document.identifier.clone(),
+                    document.canonical_path.clone(),
+                    document.source.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        for (document_id, identifier, canonical_path, stored_source) in documents {
+            let Ok(source) = fs::read_to_string(canonical_path) else {
+                continue;
+            };
+            if source == stored_source {
+                continue;
+            }
+
+            let rendered = render(
+                &source,
+                document_id,
+                &identifier,
+                &self.known_documents,
+                &self.renderer_server,
+            );
+            let mut documents = self
+                .documents
+                .write()
+                .expect("viewer documents lock should not be poisoned");
+            let document = &mut documents[document_id];
+            if document.source == stored_source {
+                document.replace(source, rendered);
+            }
+        }
+    }
 }
 
 struct ViewerDocument {
+    identifier: String,
     canonical_path: PathBuf,
+    source: String,
     rendered: RenderedDocument,
+    revision: u64,
+}
+
+impl ViewerDocument {
+    fn replace(&mut self, source: String, rendered: RenderedDocument) {
+        self.source = source;
+        self.rendered = rendered;
+        self.revision += 1;
+    }
 }
 
 pub async fn serve(target: MarkdownTarget) -> Result<()> {
@@ -66,6 +137,7 @@ pub async fn serve(target: MarkdownTarget) -> Result<()> {
         renderer_client()?,
         &diagram_renderer,
     );
+    tokio::spawn(watch_documents(state.clone()));
     let listener =
         TcpListener::bind("127.0.0.1:0").context("Could not start the loopback viewer")?;
     let address = listener
@@ -116,12 +188,14 @@ fn viewer_state(
         .enumerate()
         .map(|(index, document)| (document.identifier.clone(), index))
         .collect::<BTreeMap<_, _>>();
-    let known_documents = document_ids.keys().cloned().collect();
+    let known_documents = document_ids.keys().cloned().collect::<BTreeSet<_>>();
     let documents = documents
         .into_iter()
         .enumerate()
         .map(|(document_id, document)| ViewerDocument {
+            identifier: document.identifier.clone(),
             canonical_path: document.canonical_path,
+            source: document.source.clone(),
             rendered: render(
                 &document.source,
                 document_id,
@@ -129,14 +203,17 @@ fn viewer_state(
                 &known_documents,
                 renderer_server,
             ),
+            revision: 0,
         })
         .collect();
 
     Arc::new(ViewerState {
-        documents,
+        documents: RwLock::new(documents),
         document_ids,
+        known_documents,
         initial_document,
         client,
+        renderer_server: renderer_server.to_owned(),
     })
 }
 
@@ -144,6 +221,7 @@ fn router(state: Arc<ViewerState>) -> Router {
     Router::new()
         .route("/", get(initial_document_view))
         .route("/documents/*document_id", get(document_view))
+        .route("/revisions/*document_id", get(document_revision))
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
         .route("/diagrams/:document_id/:diagram_id", get(diagram))
@@ -166,15 +244,38 @@ async fn document_view(
     }
 }
 
+async fn document_revision(
+    State(state): State<Arc<ViewerState>>,
+    Path(document_id): Path<String>,
+) -> Response {
+    let document_id = document_id.trim_start_matches('/');
+    match state.document_ids.get(document_id) {
+        Some(&document_id) => (
+            [(header::CACHE_CONTROL, "no-store")],
+            state
+                .document_revision(document_id)
+                .expect("known document index should remain valid")
+                .to_string(),
+        )
+            .into_response(),
+        None => not_found().await.into_response(),
+    }
+}
+
 fn rendered_document_response(state: &ViewerState, document_id: usize) -> Response {
     let navigation = state.navigation_pane(document_id);
-    let document = &state.documents[document_id];
+    let documents = state
+        .documents
+        .read()
+        .expect("viewer documents lock should not be poisoned");
+    let document = &documents[document_id];
     (
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
         Html(page(
             &document.canonical_path.display().to_string(),
             document.rendered.html.clone(),
             navigation,
+            Some((&document.identifier, document.revision)),
         )),
     )
         .into_response()
@@ -206,14 +307,18 @@ async fn diagram(
     State(state): State<Arc<ViewerState>>,
     Path((document_id, diagram_id)): Path<(usize, usize)>,
 ) -> Response {
-    let Some(document) = state.documents.get(document_id) else {
-        return (StatusCode::NOT_FOUND, "Diagram not found").into_response();
-    };
-    let Some(diagram) = document.rendered.diagrams.get(diagram_id) else {
+    let diagram = state
+        .documents
+        .read()
+        .expect("viewer documents lock should not be poisoned")
+        .get(document_id)
+        .and_then(|document| document.rendered.diagrams.get(diagram_id))
+        .cloned();
+    let Some(diagram) = diagram else {
         return (StatusCode::NOT_FOUND, "Diagram not found").into_response();
     };
 
-    match request_diagram(&state.client, diagram).await {
+    match request_diagram(&state.client, &diagram).await {
         Ok(svg) => (
             [(
                 header::CONTENT_TYPE,
@@ -289,7 +394,28 @@ async fn shutdown_signal() {
     }
 }
 
-fn page(title: &str, document_html: String, navigation_html: String) -> String {
+async fn watch_documents(state: Arc<ViewerState>) {
+    let mut interval = tokio::time::interval(REFRESH_INTERVAL);
+    loop {
+        interval.tick().await;
+        state.refresh_known_documents();
+    }
+}
+
+fn page(
+    title: &str,
+    document_html: String,
+    navigation_html: String,
+    document_revision: Option<(&str, u64)>,
+) -> String {
+    let refresh_attributes = document_revision
+        .map(|(document_id, revision)| {
+            format!(
+                r#" data-document-id="{}" data-document-revision="{revision}""#,
+                escape_html(document_id),
+            )
+        })
+        .unwrap_or_default();
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -300,7 +426,7 @@ fn page(title: &str, document_html: String, navigation_html: String) -> String {
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <main>
+  <main{refresh_attributes}>
     {navigation_html}
     <section class="document-content">
       <header><p class="eyebrow">Lens</p><h1>{}</h1></header>
@@ -320,6 +446,7 @@ fn deferred_navigation_page() -> String {
         "Document navigation unavailable",
         "<p>Lens can display the selected document, but the requested document is not part of this viewing session.</p><p><a href=\"/\">Return to the initial document</a></p>".to_owned(),
         String::new(),
+        None,
     )
 }
 
@@ -355,6 +482,27 @@ for (const navigation of document.querySelectorAll('[data-document-navigation]')
     }
     empty.hidden = visibleEntries !== 0;
   });
+}
+
+const documentView = document.querySelector('[data-document-id][data-document-revision]');
+if (documentView) {
+  const documentId = documentView.dataset.documentId;
+  let revision = documentView.dataset.documentRevision;
+  let reloading = false;
+
+  window.setInterval(async () => {
+    try {
+      const response = await fetch(`/revisions/${encodeURIComponent(documentId)}`, { cache: 'no-store' });
+      if (!response.ok) return;
+      const currentRevision = await response.text();
+      if (currentRevision !== revision && !reloading) {
+        reloading = true;
+        window.location.reload();
+      }
+    } catch {
+      // Retain the readable document and try again on the next interval.
+    }
+  }, 500);
 }"#;
 
 const APP_STYLESHEET: &str = r#"* { box-sizing: border-box; }
@@ -384,7 +532,7 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 
 #[cfg(test)]
 mod tests {
-    use std::{net::TcpListener, path::PathBuf, time::Duration};
+    use std::{fs, net::TcpListener, path::PathBuf, time::Duration};
 
     use axum::{
         body::Body,
@@ -422,6 +570,18 @@ mod tests {
             canonical_path: PathBuf::from(identifier),
             source: source.to_owned(),
         }
+    }
+
+    fn file_backed_test_document(path: PathBuf, source: &str) -> MarkdownDocument {
+        MarkdownDocument {
+            identifier: "README.md".to_owned(),
+            canonical_path: path,
+            source: source.to_owned(),
+        }
+    }
+
+    fn temporary_document_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("lens-viewer-{}-{name}.md", std::process::id()))
     }
 
     #[test]
@@ -466,6 +626,64 @@ mod tests {
         assert!(!navigation.contains("/documents/guides/<unsafe>.md"));
     }
 
+    #[test]
+    fn changed_known_document_then_updates_rendering_and_revision() {
+        // Arrange
+        let path = temporary_document_path("changed-document");
+        fs::write(&path, "# Before refresh").expect("test document should be writable");
+        let state = viewer_state(
+            vec![file_backed_test_document(path.clone(), "# Before refresh")],
+            0,
+            renderer_client().expect("test client should initialize"),
+            PUBLIC_SERVER,
+        );
+        fs::write(&path, "# After refresh\n\nChanged content.")
+            .expect("test document should update");
+
+        // Act
+        state.refresh_known_documents();
+
+        // Assert
+        let revision = state.document_revision(0);
+        let documents = state
+            .documents
+            .read()
+            .expect("viewer documents lock should not be poisoned");
+        assert_eq!(revision, Some(1));
+        assert!(documents[0].rendered.html.contains("After refresh"));
+        assert!(documents[0].rendered.html.contains("Changed content."));
+        fs::remove_file(path).expect("test document should be removable");
+    }
+
+    #[test]
+    fn unreadable_known_document_then_retains_last_rendering_and_revision() {
+        // Arrange
+        let path = temporary_document_path("unreadable-document");
+        fs::write(&path, "# Readable document").expect("test document should be writable");
+        let state = viewer_state(
+            vec![file_backed_test_document(
+                path.clone(),
+                "# Readable document",
+            )],
+            0,
+            renderer_client().expect("test client should initialize"),
+            PUBLIC_SERVER,
+        );
+        fs::remove_file(&path).expect("test document should be removable");
+
+        // Act
+        state.refresh_known_documents();
+
+        // Assert
+        let revision = state.document_revision(0);
+        let documents = state
+            .documents
+            .read()
+            .expect("viewer documents lock should not be poisoned");
+        assert_eq!(revision, Some(0));
+        assert!(documents[0].rendered.html.contains("Readable document"));
+    }
+
     async fn mock_renderer_url(renderer: Router) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("mock renderer should bind");
         let address = listener
@@ -487,6 +705,22 @@ mod tests {
         let app = test_router();
         let request = Request::builder()
             .uri("/documents/../../etc/passwd")
+            .body(Body::empty())
+            .expect("test request should build");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn unknown_document_revision_path_then_returns_not_found() {
+        // Arrange
+        let app = test_router();
+        let request = Request::builder()
+            .uri("/revisions/.private.md")
             .body(Body::empty())
             .expect("test request should build");
 

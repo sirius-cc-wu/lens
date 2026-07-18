@@ -1,6 +1,6 @@
 # FEAT-03 Automatic Refresh Design
 
-Status: designed in A1
+Status: implemented in C4
 
 This design realizes `UC-09` while preserving the fixed authorization boundary
 of `FEAT-01`. A document revision is a monotonically increasing, session-local
@@ -35,7 +35,7 @@ Revision -> State: document_revision(document_id)
 State --> Revision: current revision
 Revision --> Browser: current revision
 Browser -> View: GET /documents/{document_id}
-View -> State: rendered_document(document_id)
+View -> State: read document representation
 State --> View: latest representation
 View --> Browser: document view
 @enduml
@@ -89,9 +89,10 @@ package "viewer" {
     -known_documents: BTreeSet<String>
     -renderer_server: String
     -refresh_known_documents(&self)
-    -document_revision(&self, document_id: &str): Option<u64>
+    -document_revision(&self, document_index: usize): Option<u64>
   }
   class "ViewerDocument" as ViewerDocument <<struct>> {
+    -identifier: String
     -canonical_path: PathBuf
     -source: String
     -rendered: RenderedDocument
@@ -130,6 +131,23 @@ Rust adaptation notes:
   refresh.
 - The revision handler is a private free function that takes Axum state and
   returns a response. It does not own refresh state, paths, or locks.
+
+## Construction Result
+
+- `ViewerState` now retains the immutable `document_ids`, `known_documents`,
+  and renderer server configuration alongside an `RwLock` holding the mutable
+  document representations. The lock is released before every filesystem read,
+  Markdown render, or diagram request.
+- Each `ViewerDocument` owns its identifier, canonical path, last successful
+  source, rendered representation, and `u64` revision. `replace` updates those
+  values together only after a successful changed-source render.
+- `watch_documents` starts once per session and polls the stored paths every
+  500 milliseconds. It ignores failed reads and paths that were never part of
+  the session.
+- `GET /revisions/{document_id}` returns a known document's revision with
+  `Cache-Control: no-store`; unknown identifiers receive the existing 404
+  guidance response. Page script compares that revision every 500 milliseconds
+  and reloads only the matching current page.
 
 ## Construction Targets
 
