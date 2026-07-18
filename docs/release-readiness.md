@@ -65,6 +65,19 @@ or checksum.
 - `Cargo.toml` identifies the public repository, homepage, and hosted
   documentation URLs used by release metadata.
 
+## Tagged Release Automation
+
+GitHub Actions runs the same formatting, Rust test, Clippy, package, and
+browser checks for pull requests and pushes to `main`. A pushed tag named
+`v<package-version>` starts the release workflow. It rejects a tag whose
+version does not match `Cargo.toml`, builds native archives on Linux, Intel
+macOS, and Windows runners, and uploads all archives and checksums to the
+GitHub Release only after every build succeeds.
+
+The release workflow is not a substitute for this checklist: a release manager
+still needs to assess native desktop behavior and verify a downloaded archive
+on each supported platform.
+
 ## Target Checks
 
 From a repository that contains `README.md` or `docs/index.md`:

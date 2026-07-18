@@ -88,6 +88,12 @@ Add GitHub Actions checks for formatting, tests, Clippy, package verification,
 tagged releases, and binary publishing. This would make each release
 repeatable and reduce regression risk.
 
+Status: implemented in P8. GitHub Actions verifies formatting, Rust tests,
+Clippy, package metadata, and the browser suite on pull requests and `main`.
+A `v<package-version>` tag starts native Linux, macOS, and Windows packaging,
+then publishes the archives and SHA-256 checksums only after every matrix job
+succeeds.
+
 ## 9. Automated Browser End-to-End Testing
 
 Add headless-browser tests that start the compiled `lens` command against a

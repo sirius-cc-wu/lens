@@ -22,6 +22,21 @@ package_version() {
   ' Cargo.toml
 }
 
+write_checksum() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1"
+    return
+  fi
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1"
+    return
+  fi
+
+  printf '%s\n' 'A SHA-256 checksum command (sha256sum or shasum) is required.' >&2
+  return 1
+}
+
 target="$(host_target)"
 output_directory="dist"
 
@@ -95,7 +110,7 @@ cp README.md LICENSE "$archive_directory"
 tar -C "$staging_directory" -czf "$archive" "$package_name"
 (
   cd "$output_directory"
-  sha256sum "${package_name}.tar.gz" > "${package_name}.tar.gz.sha256"
+  write_checksum "${package_name}.tar.gz" > "${package_name}.tar.gz.sha256"
 )
 
 printf 'Created %s and %s\n' "$archive" "$checksum"
