@@ -1,6 +1,7 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fmt::Write as _};
 
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag};
+use serde_yaml::{Mapping, Value};
 
 use crate::plantuml::DiagramRenderer;
 
@@ -22,7 +23,8 @@ pub fn render(
     known_documents: &BTreeSet<String>,
     renderer: &DiagramRenderer,
 ) -> RenderedDocument {
-    let parser = Parser::new_ext(markdown, Options::all());
+    let frontmatter = frontmatter(markdown);
+    let parser = Parser::new_ext(frontmatter.body, Options::all());
     let mut events = Vec::new();
     let mut diagrams = Vec::new();
     let mut plantuml_source: Option<String> = None;
@@ -71,9 +73,139 @@ pub fn render(
         }
     }
 
-    let mut html = String::new();
+    let mut html = frontmatter.html;
     html::push_html(&mut html, events.into_iter());
     RenderedDocument { html, diagrams }
+}
+
+struct Frontmatter<'a> {
+    body: &'a str,
+    html: String,
+}
+
+fn frontmatter(markdown: &str) -> Frontmatter<'_> {
+    let Some((opening_line, opening_end)) = next_line(markdown, 0) else {
+        return Frontmatter {
+            body: markdown,
+            html: String::new(),
+        };
+    };
+    if opening_line != "---" {
+        return Frontmatter {
+            body: markdown,
+            html: String::new(),
+        };
+    }
+
+    let mut position = opening_end;
+    while let Some((line, line_end)) = next_line(markdown, position) {
+        if matches!(line, "---" | "...") {
+            let source = &markdown[opening_end..position];
+            let body = &markdown[line_end..];
+            return parsed_frontmatter(source, body);
+        }
+        position = line_end;
+    }
+
+    Frontmatter {
+        body: markdown,
+        html: frontmatter_error("A closing `---` or `...` delimiter is required."),
+    }
+}
+
+fn next_line(source: &str, start: usize) -> Option<(&str, usize)> {
+    (start < source.len()).then(|| {
+        let remaining = &source[start..];
+        let content_end = remaining.find('\n').unwrap_or(remaining.len());
+        let line_end = start + content_end;
+        let line = source[start..line_end]
+            .strip_suffix('\r')
+            .unwrap_or(&source[start..line_end]);
+        let next_start = if line_end < source.len() {
+            line_end + 1
+        } else {
+            line_end
+        };
+        (line, next_start)
+    })
+}
+
+fn parsed_frontmatter<'a>(source: &str, body: &'a str) -> Frontmatter<'a> {
+    let html = match serde_yaml::from_str::<Value>(source) {
+        Ok(Value::Mapping(metadata)) => metadata_html(&metadata),
+        Ok(Value::Null) => empty_metadata_html(),
+        Ok(_) => frontmatter_error("YAML frontmatter must be a mapping of metadata fields."),
+        Err(error) => frontmatter_error(&error.to_string()),
+    };
+    Frontmatter { body, html }
+}
+
+fn metadata_html(metadata: &Mapping) -> String {
+    let mut html = String::from(
+        r#"<section class="document-metadata" aria-label="Document metadata"><h2>Document metadata</h2><dl>"#,
+    );
+    render_metadata_mapping(metadata, &mut html);
+    html.push_str("</dl></section>");
+    html
+}
+
+fn empty_metadata_html() -> String {
+    r#"<section class="document-metadata" aria-label="Document metadata"><h2>Document metadata</h2><p>No metadata fields were supplied.</p></section>"#.to_owned()
+}
+
+fn render_metadata_mapping(metadata: &Mapping, html: &mut String) {
+    for (key, value) in metadata {
+        write!(
+            html,
+            "<div><dt>{}</dt><dd>",
+            escape_html(&metadata_key(key))
+        )
+        .expect("writing metadata markup to a string cannot fail");
+        render_metadata_value(value, html);
+        html.push_str("</dd></div>");
+    }
+}
+
+fn metadata_key(key: &Value) -> String {
+    match key {
+        Value::Null => "null".to_owned(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => value.clone(),
+        Value::Sequence(_) | Value::Mapping(_) => "complex key".to_owned(),
+        Value::Tagged(tagged) => metadata_key(&tagged.value),
+    }
+}
+
+fn render_metadata_value(value: &Value, html: &mut String) {
+    match value {
+        Value::Null => html.push_str("None"),
+        Value::Bool(value) => html.push_str(&value.to_string()),
+        Value::Number(value) => html.push_str(&value.to_string()),
+        Value::String(value) => html.push_str(&escape_html(value)),
+        Value::Sequence(values) => {
+            html.push_str("<ul>");
+            for value in values {
+                html.push_str("<li>");
+                render_metadata_value(value, html);
+                html.push_str("</li>");
+            }
+            html.push_str("</ul>");
+        }
+        Value::Mapping(values) => {
+            html.push_str("<dl>");
+            render_metadata_mapping(values, html);
+            html.push_str("</dl>");
+        }
+        Value::Tagged(tagged) => render_metadata_value(&tagged.value, html),
+    }
+}
+
+fn frontmatter_error(problem: &str) -> String {
+    format!(
+        r#"<aside class="frontmatter-error" role="alert"><p><strong>Could not parse YAML frontmatter.</strong></p><p>{}</p><p>Fix the YAML between the opening and closing delimiters.</p></aside>"#,
+        escape_html(problem),
+    )
 }
 
 pub fn render_standalone_plantuml(
@@ -334,6 +466,116 @@ mod tests {
         // Assert
         assert!(!document.html.contains("<script>"));
         assert!(document.html.contains("&lt;script&gt;"));
+    }
+
+    #[test]
+    fn valid_frontmatter_then_renders_nested_metadata_before_markdown_body() {
+        // Arrange
+        let markdown = "---\ntitle: Lens guide\nauthor: Ada\ntags:\n  - rust\n  - docs\npublication:\n  audience: maintainers\n---\n# Guide\n\nBody text.";
+
+        // Act
+        let document = render(
+            markdown,
+            0,
+            "guide.md",
+            &BTreeSet::new(),
+            &public_renderer(),
+        );
+
+        // Assert
+        assert!(document.html.contains("class=\"document-metadata\""));
+        assert!(document.html.contains(">title</dt><dd>Lens guide</dd>"));
+        assert!(document.html.contains("<li>rust</li>"));
+        assert!(document.html.contains(">audience</dt><dd>maintainers</dd>"));
+        assert!(document.html.contains("<h1>Guide</h1>"));
+        assert!(!document.html.contains("<hr"));
+    }
+
+    #[test]
+    fn alternate_frontmatter_delimiter_then_excludes_metadata_from_markdown_body() {
+        // Arrange
+        let markdown = "---\ntitle: Alternate delimiter\n...\n# Guide";
+
+        // Act
+        let document = render(
+            markdown,
+            0,
+            "guide.md",
+            &BTreeSet::new(),
+            &public_renderer(),
+        );
+
+        // Assert
+        assert!(document
+            .html
+            .contains(">title</dt><dd>Alternate delimiter</dd>"));
+        assert!(document.html.contains("<h1>Guide</h1>"));
+        assert!(!document.html.contains("<p>title: Alternate delimiter</p>"));
+    }
+
+    #[test]
+    fn malformed_frontmatter_then_shows_actionable_error_and_renders_body() {
+        // Arrange
+        let markdown = "---\ntitle: [missing bracket\n---\n# Guide";
+
+        // Act
+        let document = render(
+            markdown,
+            0,
+            "guide.md",
+            &BTreeSet::new(),
+            &public_renderer(),
+        );
+
+        // Assert
+        assert!(document.html.contains("class=\"frontmatter-error\""));
+        assert!(document.html.contains("Could not parse YAML frontmatter."));
+        assert!(document
+            .html
+            .contains("Fix the YAML between the opening and closing delimiters."));
+        assert!(document.html.contains("<h1>Guide</h1>"));
+    }
+
+    #[test]
+    fn unknown_nested_frontmatter_value_then_escapes_its_html() {
+        // Arrange
+        let markdown = "---\ncustom:\n  note: <unsafe>\n---\n# Guide";
+
+        // Act
+        let document = render(
+            markdown,
+            0,
+            "guide.md",
+            &BTreeSet::new(),
+            &public_renderer(),
+        );
+
+        // Assert
+        assert!(document.html.contains(">custom</dt><dd><dl>"));
+        assert!(document.html.contains("&lt;unsafe&gt;"));
+        assert!(!document.html.contains("<unsafe>"));
+    }
+
+    #[test]
+    fn unclosed_frontmatter_then_explains_delimiter_and_preserves_document_source() {
+        // Arrange
+        let markdown = "---\ntitle: Unclosed metadata\n# Guide";
+
+        // Act
+        let document = render(
+            markdown,
+            0,
+            "guide.md",
+            &BTreeSet::new(),
+            &public_renderer(),
+        );
+
+        // Assert
+        assert!(document
+            .html
+            .contains("A closing `---` or `...` delimiter is required."));
+        assert!(document.html.contains("title: Unclosed metadata"));
+        assert!(document.html.contains("<h1>Guide</h1>"));
     }
 
     #[test]

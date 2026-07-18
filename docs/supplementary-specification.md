@@ -23,6 +23,11 @@ does not prescribe the implementation architecture.
   command or disabled diagram rendering for a viewing session.
 - Lens requests a rendered diagram through its local viewer and exposes the
   returned SVG only as an image, never as inline document markup.
+- Lens renders a YAML header at the beginning of a Markdown document
+  (frontmatter) as escaped metadata before the Markdown body. It preserves
+  nested and unknown values structurally, accepts `---` or `...` as the
+  closing delimiter, and presents an actionable error without hiding the body
+  when the header is malformed.
 - Lens must not collect telemetry or require an account for the initial release.
 
 ## Automated Browser Verification

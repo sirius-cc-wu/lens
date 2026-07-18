@@ -752,6 +752,16 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .renderer-controls { margin: 0 0 1.5rem; padding: .75rem 1rem; border-left: 4px solid #8b3f21; background: #fffdf8; font-family: system-ui, sans-serif; }
 .renderer-controls p { margin: 0; font-weight: 700; }
 .renderer-controls button { margin-top: .65rem; }
+.document-metadata { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; font-family: system-ui, sans-serif; }
+.document-metadata h2 { margin: 0 0 .75rem; font-size: 1rem; }
+.document-metadata dl { display: grid; gap: .6rem; margin: 0; }
+.document-metadata dl div { display: grid; gap: .15rem; }
+.document-metadata dt { color: #5c5a54; font-size: .8rem; font-weight: 800; }
+.document-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.document-metadata ul { margin: .25rem 0 0; padding-left: 1.2rem; }
+.document-metadata dl dl { margin: .25rem 0 0; padding-left: .75rem; border-left: 2px solid #b6b0a4; }
+.frontmatter-error { margin: 0 0 1.5rem; padding: .75rem 1rem; border-left: 4px solid #8b3f21; background: #fff4ed; font-family: system-ui, sans-serif; }
+.frontmatter-error p { margin: .35rem 0; }
 @media (max-width: 760px) { main { width: min(100% - 1rem, 920px); margin-top: 1.5rem; display: block; } .document-navigation { position: static; margin-bottom: 1.5rem; } .diagram { padding: .5rem; } }"#;
 
 #[cfg(test)]

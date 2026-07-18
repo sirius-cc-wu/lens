@@ -49,6 +49,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-011: Admit standalone PlantUML files to the document set](decisions/adr-011-standalone-plantuml-files.md)
 - [ADR-012: Support native browser launch and archives](decisions/adr-012-cross-platform-support.md)
 - [ADR-013: Verify and publish tagged native releases](decisions/adr-013-release-automation.md)
+- [ADR-014: Render leading YAML metadata safely](decisions/adr-014-yaml-frontmatter-rendering.md)
 - [V1 release readiness](release-readiness.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)

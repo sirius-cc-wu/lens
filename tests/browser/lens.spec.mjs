@@ -88,6 +88,51 @@ test("save displayed document then refreshes browser view automatically", async 
   }
 });
 
+test("valid frontmatter then renders nested metadata without markdown delimiters", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({
+    readme: "---\ntitle: Browser metadata\ntags:\n  - browser\n  - docs\npublication:\n  audience: maintainers\n...\n# Browser fixture\n\nA rendered document.\n",
+  });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    const metadata = page.locator(".document-metadata");
+    await expect(metadata).toContainText("title");
+    await expect(metadata).toContainText("Browser metadata");
+    await expect(metadata).toContainText("browser");
+    await expect(metadata).toContainText("audience");
+    await expect(metadata).toContainText("maintainers");
+    await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
+    await expect(page.locator("article")).not.toContainText("tags:");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("malformed frontmatter then explains correction and renders markdown body", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({
+    readme: "---\ntitle: [missing bracket\n---\n# Browser fixture\n\nA rendered document.\n",
+  });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("alert")).toContainText("Could not parse YAML frontmatter.");
+    await expect(page.getByRole("alert")).toContainText(
+      "Fix the YAML between the opening and closing delimiters.",
+    );
+    await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("document_navigation_pane_then_lists_authorized_documents_and_marks_current", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ hiddenDocument: "Confidential source" });
@@ -256,7 +301,13 @@ test("disable renderer control then blocks further rendering for the session", a
   }
 });
 
-async function startBrowserFixture({ hiddenDocument, rendererMode, rendererStatus, rendererStatuses } = {}) {
+async function startBrowserFixture({
+  hiddenDocument,
+  readme,
+  rendererMode,
+  rendererStatus,
+  rendererStatuses,
+} = {}) {
   let repository;
   let renderer;
   let lens;
@@ -282,7 +333,7 @@ async function startBrowserFixture({ hiddenDocument, rendererMode, rendererStatu
   };
 
   try {
-    repository = await createDocumentationRepository({ hiddenDocument });
+    repository = await createDocumentationRepository({ hiddenDocument, readme });
     renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
     lens = await startLens(repository, renderer.url, rendererMode);
     return { lens, renderer, repository, stop };
@@ -296,7 +347,7 @@ async function startBrowserFixture({ hiddenDocument, rendererMode, rendererStatu
   }
 }
 
-async function createDocumentationRepository({ hiddenDocument } = {}) {
+async function createDocumentationRepository({ hiddenDocument, readme } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const binDirectory = join(directory, "bin");
   let files = [];
@@ -306,7 +357,8 @@ async function createDocumentationRepository({ hiddenDocument } = {}) {
     files = [
       writeFile(
         join(directory, "README.md"),
-        "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n",
+        readme ??
+          "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n",
       ),
       writeFile(
         join(directory, "guides", "guide.md"),

@@ -70,6 +70,15 @@ diagram fails, use its **Retry diagram rendering** button after the renderer is
 available again. Use **Disable diagram rendering for this session** to stop
 further renderer requests while preserving each diagram's source.
 
+## Markdown Metadata
+
+A short YAML header at the very beginning of a Markdown document (frontmatter)
+is shown as document metadata before the rendered body. Simple fields appear as
+labels and values; lists and nested fields retain their structure. Lens removes
+the opening and closing `---` or `...` delimiters from the body. If the YAML is
+invalid, the page explains how to correct the header and still renders the
+Markdown body.
+
 ## V1 Scope
 
 Lens is a documentation viewer. It does not browse source-code files, edit

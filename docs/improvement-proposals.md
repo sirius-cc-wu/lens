@@ -117,6 +117,11 @@ nested values safely, and show an actionable result when frontmatter is
 malformed. Add fixtures and browser tests covering valid metadata, delimiters,
 and invalid YAML.
 
+Status: implemented in P10. Lens recognizes a leading `---` header and either
+`---` or `...` closing delimiter, displays scalar, list, nested, and unknown
+YAML values as escaped metadata, and retains the Markdown body with a
+correction message when the header cannot be parsed.
+
 ## 11. Scalable Document Navigation Search
 
 Replace the complete document list in every navigation pane with server-side
