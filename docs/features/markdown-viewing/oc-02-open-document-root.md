@@ -28,8 +28,8 @@ Postconditions on success:
 Postconditions on validation failure:
 
 - No viewing session was created.
-- Lens reports whether the target is missing, unreadable, unsupported, or has
-  no discoverable Markdown documents.
+- Lens reports whether the target is missing, unreadable, hidden, a symbolic
+  link, unsupported, or has no discoverable Markdown documents.
 
 Open Issues:
 

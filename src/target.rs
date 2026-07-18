@@ -39,6 +39,10 @@ pub enum TargetError {
     UnsupportedTarget { path: PathBuf },
     #[error("Target {path} contains no discoverable Markdown documents")]
     NoMarkdownDocuments { path: PathBuf },
+    #[error("Target {path} is a symbolic link; choose a directory or Markdown file directly")]
+    SymbolicLinkTarget { path: PathBuf },
+    #[error("Target {path} is hidden; choose a visible directory or Markdown file")]
+    HiddenTarget { path: PathBuf },
 }
 
 pub fn load_markdown_target(path: Option<&Path>) -> Result<MarkdownTarget, TargetError> {
@@ -49,8 +53,18 @@ pub fn load_markdown_target(path: Option<&Path>) -> Result<MarkdownTarget, Targe
             source,
         })?,
     };
+    let metadata = target_metadata(&requested_path)?;
+    if metadata.file_type().is_symlink() {
+        return Err(TargetError::SymbolicLinkTarget {
+            path: requested_path,
+        });
+    }
+    if is_hidden_target(&requested_path) {
+        return Err(TargetError::HiddenTarget {
+            path: requested_path,
+        });
+    }
     let canonical_target = canonicalize(&requested_path)?;
-    let metadata = metadata(&canonical_target)?;
 
     let (document_root, initial_path) = if metadata.is_dir() {
         (canonical_target, None)
@@ -178,6 +192,11 @@ fn is_hidden(file_name: &std::ffi::OsStr) -> bool {
         .is_some_and(|file_name| file_name.starts_with('.'))
 }
 
+fn is_hidden_target(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|file_name| file_name != "." && file_name != ".." && is_hidden(file_name))
+}
+
 fn document_identifier(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .expect("discovered documents are inside the document root")
@@ -200,10 +219,18 @@ fn canonicalize(path: &Path) -> Result<PathBuf, TargetError> {
     })
 }
 
-fn metadata(path: &Path) -> Result<fs::Metadata, TargetError> {
-    fs::metadata(path).map_err(|source| TargetError::Unreadable {
-        path: path.to_path_buf(),
-        source,
+fn target_metadata(path: &Path) -> Result<fs::Metadata, TargetError> {
+    fs::symlink_metadata(path).map_err(|source| {
+        if source.kind() == ErrorKind::NotFound {
+            TargetError::Missing {
+                path: path.to_path_buf(),
+            }
+        } else {
+            TargetError::Unreadable {
+                path: path.to_path_buf(),
+                source,
+            }
+        }
     })
 }
 
@@ -219,7 +246,19 @@ fn is_markdown_file(path: &Path) -> bool {
 mod tests {
     use std::{fs, path::Path};
 
-    use super::{load_markdown_target, MarkdownTarget, TargetError};
+    use super::{is_hidden_target, load_markdown_target, MarkdownTarget, TargetError};
+
+    #[test]
+    fn current_directory_marker_then_is_not_hidden_target() {
+        // Arrange
+        let path = Path::new(".");
+
+        // Act
+        let hidden = is_hidden_target(path);
+
+        // Assert
+        assert!(!hidden);
+    }
 
     #[test]
     fn missing_target_then_returns_missing_error() {
@@ -338,6 +377,23 @@ mod tests {
         remove_directory(directory);
     }
 
+    #[test]
+    fn hidden_markdown_target_then_returns_hidden_target_error() {
+        // Arrange
+        let directory = temporary_directory("hidden-target");
+        let hidden = directory.join(".hidden.md");
+        fs::write(&hidden, "# Hidden\n").expect("hidden fixture should be writable");
+        fs::write(directory.join("visible.md"), "# Visible\n")
+            .expect("visible fixture should be writable");
+
+        // Act
+        let result = load_markdown_target(Some(&hidden));
+
+        // Assert
+        assert!(matches!(result, Err(TargetError::HiddenTarget { .. })));
+        remove_directory(directory);
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlinked_markdown_file_then_excludes_target_outside_document_root() {
@@ -356,6 +412,31 @@ mod tests {
 
         // Assert
         assert_target(&target, 0, &["inside.md"]);
+        remove_directory(root);
+        remove_directory(outside);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symbolic_link_target_then_returns_symbolic_link_target_error() {
+        use std::os::unix::fs::symlink;
+
+        // Arrange
+        let root = temporary_directory("symbolic-link-target");
+        let outside = temporary_directory("symbolic-link-outside");
+        let outside_document = outside.join("outside.md");
+        fs::write(&outside_document, "# Outside\n").expect("outside fixture should be writable");
+        let link = root.join("outside.md");
+        symlink(&outside_document, &link).expect("symlink should be creatable");
+
+        // Act
+        let result = load_markdown_target(Some(&link));
+
+        // Assert
+        assert!(matches!(
+            result,
+            Err(TargetError::SymbolicLinkTarget { .. })
+        ));
         remove_directory(root);
         remove_directory(outside);
     }

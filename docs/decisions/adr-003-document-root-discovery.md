@@ -12,10 +12,11 @@ break the fixed-session security boundary established by ADR-002.
 
 ## Decision
 
-Lens creates a canonical document root from the current directory, a directory
-argument, or the canonical parent of a file argument. It discovers `.md` and
-`.markdown` files recursively inside that root, excluding symbolic links and
-hidden files and directories.
+Lens creates a canonical document root from the current directory, a visible
+non-symbolic-link directory argument, or the canonical parent of a visible
+non-symbolic-link file argument. It discovers `.md` and `.markdown` files
+recursively inside that root, excluding symbolic links and hidden files and
+directories.
 
 The session assigns each discovered document an identifier relative to the
 document root. It serves only known identifiers. Markdown links are rewritten

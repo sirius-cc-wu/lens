@@ -67,19 +67,18 @@ Target -> Files : canonicalize, discover, read
 Files --> Target : Markdown documents
 Target --> Main : Result<MarkdownTarget, TargetError>
 Main -> Serve : serve(target)
-Serve -> State : viewer_state(documents, initial_document, client)
+Serve -> Render : render each discovered document
+Render --> Serve : immutable HTML and diagram URLs
+Serve -> State : viewer_state(rendered documents, initial document, client)
 Serve -> Browser : xdg-open(loopback URL)
 
 Browser -> Handler : GET / or /documents/{id}
 Handler -> State : resolve known document ID
-Handler -> Render : render(source, document ID, known IDs)
-Render --> Handler : HTML and diagram URLs
 Handler --> Browser : rendered document
 
 Browser -> Handler : GET /diagrams/{document ID}/{diagram ID}
 Handler -> State : resolve known document ID
-Handler -> Render : render(source, document ID, known IDs)
-Render --> Handler : selected diagram URL
+Handler -> State : resolve cached diagram URL
 Handler -> Client : GET SVG with timeout and size limit
 Client -> PlantUML : HTTPS GET encoded SVG URL
 PlantUML --> Client : SVG or error
@@ -92,11 +91,11 @@ Responsibility notes:
 
 - `main` is the process boundary: it parses the CLI target once and delegates.
 - `target` is the information expert for canonicalization and document discovery.
-- `ViewerState` owns the in-memory document set and identifier lookup tables.
+- `ViewerState` owns pre-rendered documents and identifier lookup tables.
 - `markdown::render` is a stateless transformation; it rewrites only known
   document links and creates document-scoped diagram URLs.
-- The diagram handler re-renders the selected document to obtain a deterministic
-  diagram URL rather than storing mutable diagram state.
+- Diagram URLs are computed once at session creation and remain immutable for
+  the session lifetime.
 
 ## DCD-01: Rust Module and Type View
 
@@ -145,11 +144,14 @@ package "viewer" {
     -request_diagram(client, diagram): Result<Vec<u8>, anyhow::Error>
   }
   class ViewerState <<struct>> {
-    -documents: Vec<MarkdownDocument>
+    -documents: Vec<ViewerDocument>
     -document_ids: BTreeMap<String, usize>
-    -known_documents: BTreeSet<String>
     -initial_document: usize
     -client: reqwest::Client
+  }
+  class ViewerDocument <<struct>> {
+    -canonical_path: PathBuf
+    -rendered: RenderedDocument
   }
 }
 
@@ -180,7 +182,8 @@ TargetModule --> MarkdownTarget : creates
 MarkdownTarget *-- "1..*" MarkdownDocument : owns
 ViewerModule --> MarkdownTarget : consumes
 ViewerModule --> ViewerState : creates
-ViewerState *-- "1..*" MarkdownDocument : owns
+ViewerState *-- "1..*" ViewerDocument : owns
+ViewerDocument *-- "1" RenderedDocument : owns
 ViewerState *-- "1" "reqwest::Client" : owns
 ViewerModule ..> MarkdownModule : renders documents
 MarkdownModule --> RenderedDocument : creates

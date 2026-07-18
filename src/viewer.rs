@@ -1,8 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    net::TcpListener,
-    process::Command,
-    sync::Arc,
+    collections::BTreeMap, net::TcpListener, path::PathBuf, process::Command, sync::Arc,
     time::Duration,
 };
 
@@ -18,7 +15,7 @@ use futures_util::StreamExt;
 use reqwest::Client;
 
 use crate::{
-    markdown::{escape_html, render, Diagram},
+    markdown::{escape_html, render, Diagram, RenderedDocument},
     target::{MarkdownDocument, MarkdownTarget},
 };
 
@@ -26,11 +23,15 @@ const MAX_DIAGRAM_BYTES: usize = 2 * 1024 * 1024;
 const RENDER_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct ViewerState {
-    documents: Vec<MarkdownDocument>,
+    documents: Vec<ViewerDocument>,
     document_ids: BTreeMap<String, usize>,
-    known_documents: BTreeSet<String>,
     initial_document: usize,
     client: Client,
+}
+
+struct ViewerDocument {
+    canonical_path: PathBuf,
+    rendered: RenderedDocument,
 }
 
 pub async fn serve(target: MarkdownTarget) -> Result<()> {
@@ -87,11 +88,23 @@ fn viewer_state(
         .map(|(index, document)| (document.identifier.clone(), index))
         .collect::<BTreeMap<_, _>>();
     let known_documents = document_ids.keys().cloned().collect();
+    let documents = documents
+        .into_iter()
+        .enumerate()
+        .map(|(document_id, document)| ViewerDocument {
+            canonical_path: document.canonical_path,
+            rendered: render(
+                &document.source,
+                document_id,
+                &document.identifier,
+                &known_documents,
+            ),
+        })
+        .collect();
 
     Arc::new(ViewerState {
         documents,
         document_ids,
-        known_documents,
         initial_document,
         client,
     })
@@ -125,17 +138,11 @@ async fn document_view(
 
 fn rendered_document_response(state: &ViewerState, document_id: usize) -> Response {
     let document = &state.documents[document_id];
-    let rendered = render(
-        &document.source,
-        document_id,
-        &document.identifier,
-        &state.known_documents,
-    );
     (
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
         Html(page(
             &document.canonical_path.display().to_string(),
-            rendered.html,
+            document.rendered.html.clone(),
         )),
     )
         .into_response()
@@ -170,13 +177,7 @@ async fn diagram(
     let Some(document) = state.documents.get(document_id) else {
         return (StatusCode::NOT_FOUND, "Diagram not found").into_response();
     };
-    let rendered = render(
-        &document.source,
-        document_id,
-        &document.identifier,
-        &state.known_documents,
-    );
-    let Some(diagram) = rendered.diagrams.get(diagram_id) else {
+    let Some(diagram) = document.rendered.diagrams.get(diagram_id) else {
         return (StatusCode::NOT_FOUND, "Diagram not found").into_response();
     };
 

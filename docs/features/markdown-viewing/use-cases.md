@@ -96,9 +96,9 @@ Main success scenario:
 
 Extensions:
 
-- 1a. If the target is missing, unreadable, or neither a directory nor a
-  supported Markdown file, Lens reports an actionable error and starts no
-  viewing session.
+- 1a. If the target is missing, unreadable, hidden, a symbolic link, or neither
+  a directory nor a supported Markdown file, Lens reports an actionable error
+  and starts no viewing session.
 - 2a. If the document root has no Markdown documents, Lens reports an
   actionable error and starts no viewing session.
 
@@ -107,6 +107,7 @@ Special requirements:
 - The document root and discovered documents are canonical paths.
 - Symbolic links found during document discovery are excluded.
 - Hidden files and directories found during document discovery are excluded.
+- A direct hidden or symbolic-link target is rejected before document discovery.
 - A direct file target remains the initial document but authorizes its canonical
   parent as the document root.
 
