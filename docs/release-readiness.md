@@ -24,11 +24,12 @@ npm ci
 npm run test:browser
 ```
 
-Expected result: the suite starts `target/debug/lens` against a temporary
-documentation repository, uses the installed Google Chrome channel in headless
-mode, and completes without contacting the public PlantUML service. It verifies
-rendered Markdown, navigation to a discovered document, guidance for an
-undiscovered document, and visible PlantUML success and failure behavior.
+Expected result: the suite builds Lens with Cargo, starts Cargo's reported
+executable against a temporary documentation repository, uses the installed
+Google Chrome channel in headless mode, and completes without contacting the
+public PlantUML service. It verifies rendered Markdown, navigation to a
+discovered document, 404 guidance for an undiscovered document, and visible
+PlantUML success and failure behavior.
 
 ## Installation Check
 

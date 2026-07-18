@@ -3,23 +3,19 @@ import { once } from "node:events";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-const lensBinary = resolve("target/debug/lens");
-
 test("controlled renderer and discovered link then display rendered documents", async ({ page }) => {
   // Arrange
-  const repository = await createDocumentationRepository();
-  const renderer = await startRenderer();
-  const lens = await startLens(repository, renderer.url);
+  const fixture = await startBrowserFixture();
 
   try {
     // Act
-    await page.goto(lens.url);
+    await page.goto(fixture.lens.url);
     await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
-    await expect.poll(() => renderer.requests).toBe(1);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
     await expect
       .poll(() =>
         page.locator("img[data-diagram]").evaluate((image) => image.complete && image.naturalWidth > 0),
@@ -32,23 +28,20 @@ test("controlled renderer and discovered link then display rendered documents", 
     await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
     await expect(page.locator("article")).toContainText("The guide is a discovered document.");
   } finally {
-    await lens.stop();
-    await renderer.stop();
-    await rm(repository.directory, { force: true, recursive: true });
+    await fixture.stop();
   }
 });
 
-test("undiscovered document path then displays guidance without its source", async ({ page }) => {
+test("undiscovered document path then returns 404 guidance without its source", async ({ page }) => {
   // Arrange
-  const repository = await createDocumentationRepository({ hiddenDocument: "Confidential source" });
-  const renderer = await startRenderer();
-  const lens = await startLens(repository, renderer.url);
+  const fixture = await startBrowserFixture({ hiddenDocument: "Confidential source" });
 
   try {
     // Act
-    await page.goto(`${lens.url}/documents/.private.md`);
+    const response = await page.goto(`${fixture.lens.url}/documents/.private.md`);
 
     // Assert
+    expect(response?.status()).toBe(404);
     await expect(
       page.getByRole("heading", { level: 1, name: "Document navigation unavailable" }),
     ).toBeVisible();
@@ -58,22 +51,29 @@ test("undiscovered document path then displays guidance without its source", asy
     await expect(page.locator("article")).not.toContainText("Confidential source");
     await expect(page.getByRole("link", { name: "Return to the initial document" })).toBeVisible();
   } finally {
-    await lens.stop();
-    await renderer.stop();
-    await rm(repository.directory, { force: true, recursive: true });
+    await fixture.stop();
   }
 });
 
-test("renderer failure then reveals the source while keeping the document readable", async ({ page }) => {
+test("renderer fails before client script loads then reveals the source", async ({ page }) => {
   // Arrange
-  const repository = await createDocumentationRepository();
-  const renderer = await startRenderer({ status: 503 });
-  const lens = await startLens(repository, renderer.url);
+  const fixture = await startBrowserFixture({ rendererStatus: 503 });
 
   try {
+    await page.route("**/app.js", async (route) => {
+      await expect
+        .poll(() =>
+          page
+            .locator("img[data-diagram]")
+            .evaluate((image) => image.complete && image.naturalWidth === 0),
+        )
+        .toBe(true);
+      await route.continue();
+    });
+
     // Act
-    await page.goto(lens.url);
-    await expect.poll(() => renderer.requests).toBe(1);
+    await page.goto(fixture.lens.url);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
 
     // Assert
     await expect(page.getByText("PlantUML rendering failed. The source is shown below.")).toBeVisible();
@@ -81,34 +81,83 @@ test("renderer failure then reveals the source while keeping the document readab
     await expect(page.locator("article")).toContainText("A rendered document.");
     await expect(page.locator(".diagram-source")).toContainText("Alice -> Bob: browser fixture");
   } finally {
-    await lens.stop();
-    await renderer.stop();
-    await rm(repository.directory, { force: true, recursive: true });
+    await fixture.stop();
   }
 });
+
+async function startBrowserFixture({ hiddenDocument, rendererStatus } = {}) {
+  let repository;
+  let renderer;
+  let lens;
+  const stop = async () => {
+    const errors = [];
+    for (const cleanup of [
+      lens && (() => lens.stop()),
+      renderer && (() => renderer.stop()),
+      repository && (() => rm(repository.directory, { force: true, recursive: true })),
+    ]) {
+      if (!cleanup) {
+        continue;
+      }
+      try {
+        await cleanup();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, "Could not stop the browser test fixture");
+    }
+  };
+
+  try {
+    repository = await createDocumentationRepository({ hiddenDocument });
+    renderer = await startRenderer({ status: rendererStatus });
+    lens = await startLens(repository, renderer.url);
+    return { lens, renderer, stop };
+  } catch (error) {
+    try {
+      await stop();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Browser test fixture setup and cleanup failed");
+    }
+    throw error;
+  }
+}
 
 async function createDocumentationRepository({ hiddenDocument } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const binDirectory = join(directory, "bin");
-  await mkdir(join(directory, "guides"), { recursive: true });
-  await mkdir(binDirectory);
-  const files = [
-    writeFile(
-      join(directory, "README.md"),
-      "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n",
-    ),
-    writeFile(
-      join(directory, "guides", "guide.md"),
-      "# Guide page\n\nThe guide is a discovered document.\n",
-    ),
-    writeFile(join(binDirectory, "xdg-open"), "#!/bin/sh\nexit 0\n"),
-  ];
-  if (hiddenDocument) {
-    files.push(writeFile(join(directory, ".private.md"), hiddenDocument));
+  let files = [];
+  try {
+    await mkdir(join(directory, "guides"), { recursive: true });
+    await mkdir(binDirectory);
+    files = [
+      writeFile(
+        join(directory, "README.md"),
+        "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n",
+      ),
+      writeFile(
+        join(directory, "guides", "guide.md"),
+        "# Guide page\n\nThe guide is a discovered document.\n",
+      ),
+      writeFile(join(binDirectory, "xdg-open"), "#!/bin/sh\nexit 0\n"),
+    ];
+    if (hiddenDocument) {
+      files.push(writeFile(join(directory, ".private.md"), hiddenDocument));
+    }
+    await Promise.all(files);
+    await chmod(join(binDirectory, "xdg-open"), 0o755);
+    return { binDirectory, directory };
+  } catch (error) {
+    await Promise.allSettled(files);
+    try {
+      await rm(directory, { force: true, recursive: true });
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Repository setup and cleanup failed");
+    }
+    throw error;
   }
-  await Promise.all(files);
-  await chmod(join(binDirectory, "xdg-open"), 0o755);
-  return { binDirectory, directory };
 }
 
 async function startRenderer({ status = 200 } = {}) {
@@ -139,6 +188,10 @@ async function startRenderer({ status = 200 } = {}) {
 }
 
 async function startLens(repository, rendererUrl) {
+  const lensBinary = process.env.LENS_BROWSER_TEST_BINARY;
+  if (!lensBinary) {
+    throw new Error("Playwright global setup did not provide the Lens executable path");
+  }
   const child = spawn(lensBinary, [repository.directory], {
     env: {
       ...process.env,
@@ -147,17 +200,21 @@ async function startLens(repository, rendererUrl) {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const url = await waitForLoopbackUrl(child);
-  return {
-    url,
-    async stop() {
-      if (child.exitCode !== null) {
-        return;
-      }
-      child.kill("SIGINT");
-      await once(child, "exit");
-    },
+  const stop = async () => {
+    if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) {
+      return;
+    }
+    const closed = once(child, "close");
+    child.kill("SIGKILL");
+    await closed;
   };
+  try {
+    const url = await waitForLoopbackUrl(child);
+    return { url, stop };
+  } catch (error) {
+    await stop();
+    throw error;
+  }
 }
 
 function waitForLoopbackUrl(child) {

@@ -301,11 +301,15 @@ fn content_security_policy() -> &'static str {
 }
 
 const APP_SCRIPT: &str = r#"for (const image of document.querySelectorAll('[data-diagram]')) {
-  image.addEventListener('error', () => {
+  const revealFailure = () => {
     const figure = image.closest('.diagram');
     figure.querySelector('.diagram-error').hidden = false;
     figure.querySelector('.diagram-source').open = true;
-  });
+  };
+  image.addEventListener('error', revealFailure);
+  if (image.complete && image.naturalWidth === 0) {
+    revealFailure();
+  }
 }"#;
 
 const APP_STYLESHEET: &str = r#"* { box-sizing: border-box; }
