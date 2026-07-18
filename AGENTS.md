@@ -23,6 +23,7 @@
 - Introduce project-specific concepts and specialized technical or process jargon in plain language on first use, followed by the canonical term in parentheses.
 - Name test scenarios for the behavior being verified, not jargon such as "happy path," "gating," or "soak."
 - Prefer the concrete resource or operation over generic phrases such as "resource acquisition," while retaining exact identifiers needed to match code and logs.
+- Before completing work that adds or materially changes a PlantUML block, validate it with the configured PlantUML server. If the server is unavailable, report the skipped validation rather than claiming the diagram is verified.
 
 ## Behavior-Oriented Tests
 
