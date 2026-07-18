@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
 
 const lensBinary = resolve("target/debug/lens");
 
-test("controlled renderer and discovered link then display rendered documents", async ({ page }) => {
+test("controlled_renderer_and_navigation_pane_link_then_displays_selected_document", async ({ page }) => {
   // Arrange
   const repository = await createDocumentationRepository();
   const renderer = await startRenderer();
@@ -25,12 +25,74 @@ test("controlled renderer and discovered link then display rendered documents", 
         page.locator("img[data-diagram]").evaluate((image) => image.complete && image.naturalWidth > 0),
       )
       .toBe(true);
-    await page.getByRole("link", { name: "Open guide" }).click();
+    await page.getByRole("link", { name: "guides/guide.md" }).click();
 
     // Assert
     expect(new URL(page.url()).pathname).toBe("/documents/guides/guide.md");
     await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
     await expect(page.locator("article")).toContainText("The guide is a discovered document.");
+    await expect(
+      page.getByRole("navigation", { name: "Discovered documents" }).getByRole("link", {
+        name: "guides/guide.md",
+      }),
+    ).toHaveAttribute("aria-current", "page");
+  } finally {
+    await lens.stop();
+    await renderer.stop();
+    await rm(repository.directory, { force: true, recursive: true });
+  }
+});
+
+test("document_navigation_pane_then_lists_authorized_documents_and_marks_current", async ({ page }) => {
+  // Arrange
+  const repository = await createDocumentationRepository({ hiddenDocument: "Confidential source" });
+  const renderer = await startRenderer();
+  const lens = await startLens(repository, renderer.url);
+
+  try {
+    // Act
+    await page.goto(lens.url);
+
+    // Assert
+    const navigation = page.getByRole("navigation", { name: "Discovered documents" });
+    await expect(navigation.getByRole("link", { name: "README.md" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(navigation.getByRole("link", { name: "guides/guide.md" })).toBeVisible();
+    await expect(navigation).not.toContainText(".private.md");
+    await expect(navigation).not.toContainText("Confidential source");
+  } finally {
+    await lens.stop();
+    await renderer.stop();
+    await rm(repository.directory, { force: true, recursive: true });
+  }
+});
+
+test("filter_document_navigation_then_limits_visible_authorized_documents", async ({ page }) => {
+  // Arrange
+  const repository = await createDocumentationRepository();
+  const renderer = await startRenderer();
+  const lens = await startLens(repository, renderer.url);
+
+  try {
+    await page.goto(lens.url);
+    const navigation = page.getByRole("navigation", { name: "Discovered documents" });
+    const filter = page.getByRole("searchbox", { name: "Filter discovered documents" });
+
+    // Act
+    await filter.fill("guide");
+
+    // Assert
+    await expect(navigation.getByRole("link", { name: "README.md" })).toBeHidden();
+    await expect(navigation.getByRole("link", { name: "guides/guide.md" })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/");
+
+    // Act
+    await filter.fill("no-match");
+
+    // Assert
+    await expect(navigation.getByText("No discovered documents match the filter.")).toBeVisible();
   } finally {
     await lens.stop();
     await renderer.stop();

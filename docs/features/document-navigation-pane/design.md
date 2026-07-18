@@ -1,6 +1,6 @@
 # FEAT-02 Navigation Pane Design
 
-Status: started in N2
+Status: implemented in C3
 
 This design realizes `UC-07` and `UC-08` by reusing the document set that
 already authorizes `UC-04`. The source file is a cohesive extension to the
@@ -114,13 +114,17 @@ Rust adaptation notes:
   unearned variation point because catalog source selection is fixed by
   ADR-003.
 
-## Construction Handoff
+## Construction Result
 
-- Add `ViewerState::navigation_pane` and pass its escaped markup into `page`.
-- Render an accessible navigation landmark, a labelled client-side filter, a
-  result-status element, and `aria-current="page"` on exactly the current
-  document.
-- Extend the existing browser script and stylesheet so filtering is progressive
-  enhancement and the catalog is a sidebar on wide viewports.
-- Add unit and browser tests for the exact discovered set, active indicator,
-  filtering, and absence of an excluded document.
+- `ViewerState::navigation_pane` now derives escaped catalog markup from its
+  immutable `document_ids` map and `rendered_document_response` passes it to
+  `page`.
+- The response renders an accessible navigation landmark, labelled client-side
+  filter, live result-status element, and exactly one `aria-current="page"`
+  marker. Without scripting, a `noscript` explanation leaves all links usable.
+- The existing browser script filters only rendered catalog entries. The
+  stylesheet makes the catalog a sticky sidebar on wide viewports and returns
+  it to normal flow on narrow viewports.
+- Unit and `BTE-01` browser tests verify known-set membership, escaped
+  identifiers, active state, local filtering, selection, and exclusion of a
+  hidden document.

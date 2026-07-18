@@ -29,8 +29,9 @@ Add a sidebar containing the discovered document set, current-document
 highlighting, and search. The sidebar must use the existing authorized document
 set so it does not broaden filesystem access.
 
-Status: selected for implementation. `N1` defines its user goals and security
-constraints before design and construction.
+Status: implemented in C3. The browser-verified pane lists only the existing
+authorized document set, marks the current document, and filters those
+identifiers locally.
 
 ## 4. Automatic Refresh
 

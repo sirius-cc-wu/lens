@@ -1,6 +1,6 @@
 # FEAT-02: Browse the Discovered Document Set
 
-Status: refined in N2
+Status: implemented in C3
 
 ## System Boundary
 
@@ -109,3 +109,5 @@ Special requirements:
 - Operation contract: [`OC-03`](oc-03-request-document-catalog.md)
 - Design realization and Rust mapping: [`RZ-02` and `DCD-02`](design.md)
 - Decision: [ADR-006](../../decisions/adr-006-document-navigation-pane.md)
+- Verification: `BTE-01`,
+  [`tests/browser/lens.spec.mjs`](../../../tests/browser/lens.spec.mjs)
