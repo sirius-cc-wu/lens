@@ -38,6 +38,10 @@ identifiers locally.
 Watch discovered Markdown files and refresh the browser view when they change.
 This would support authors who use Lens to preview documentation while editing.
 
+Status: selected for A1 design and C4 construction. The selected scope refreshes
+only the fixed, already authorized document set; it does not discover files
+created after the session starts.
+
 ## 5. Diagram Failure Controls
 
 Expose renderer status, allow a failed diagram request to be retried, and let a

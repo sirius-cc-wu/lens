@@ -8,6 +8,7 @@
 | `R-04` | "Display the codebase's code and document" is too ambiguous to estimate or scope. | Product | Low | Medium | ADR-004 defines V1 as documentation-only. Any source-code browsing requires a later product decision and use case. |
 | `R-06` | Browser launch and process lifetime vary across desktop, container, and headless environments. | Technical | Medium | Medium | V1 supports Linux `xdg-open` with a manual URL fallback. Validate the release behavior in the V1 readiness check. |
 | `R-07` | A standalone distribution could be harder to install than an editor plugin. | Schedule / adoption | Medium | Medium | V1 uses `cargo install --path . --locked`; validate a local source installation before release. |
+| `R-08` | Automatic refresh could rescan or expose files outside the authorized document set, replace readable content during a partial save, or trigger browser reload loops. | Technical / security | Medium | High | A1 constrains refresh to canonical paths fixed at session creation, retains the last successful rendering on failed reads, and uses a revision-only current-document query. C4 must prove changed-content refresh, failed-read retention, and no undiscovered-document exposure. |
 
 `R-01` through `R-04` are architectural and product risks that drive the first
 elaboration iteration.
