@@ -91,7 +91,9 @@ and invalid YAML.
 
 ## 11. Scalable Document Navigation Search
 
-Status: selected for implementation in N3.
+Status: implemented in C5. Lens searches only the immutable, authorized
+session catalog through a native GET form, returns no more than 50 identifiers
+per page, and keeps pagination usable without JavaScript.
 
 Replace the complete document list in every navigation pane with server-side
 identifier search and a capped result set. Lens would build an index from the

@@ -1,6 +1,6 @@
 # FEAT-02: Browse the Discovered Document Set
 
-Status: implemented in C3; refined for construction in N4
+Status: implemented in C3; scalable search implemented in C5
 
 ## System Boundary
 

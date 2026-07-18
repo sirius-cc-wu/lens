@@ -1,6 +1,6 @@
 # FEAT-02 Navigation Pane Design
 
-Status: implemented in C3; scalable search designed in N4
+Status: implemented in C3; scalable search designed in N4 and implemented in C5
 
 This design refines `UC-07` and `UC-08` under ADR-008. The session still owns
 the only authorized document set, but each response presents a bounded search
@@ -27,7 +27,7 @@ participant "page\n<<function>>" as Page
 Browser -> Handler: GET known route?query&page
 Handler -> Catalog: known_document_index(document_id)
 Catalog --> Handler: Option<usize>
-Handler -> State: navigation_page(document_id, query, page)
+Handler -> State: navigation_pane(document_id, query, page)
 State -> Catalog: search(query, page)
 Catalog --> State: CatalogPage
 State -> Navigation: render(CatalogPage, current route)
@@ -87,7 +87,7 @@ package "viewer" {
     -documents: RwLock<Vec<ViewerDocument>>
     -catalog: DocumentCatalog
     -initial_document: usize
-    -navigation_page(&self, current_document, request, route): String
+    -navigation_pane(&self, current_document, request, route): String
   }
   class "DocumentCatalog" as Catalog <<struct>> {
     -document_ids: BTreeMap<String, usize>
@@ -152,3 +152,18 @@ Rust adaptation notes:
   document never appears or becomes reachable.
 - Keep refresh and diagram script behavior unchanged except for removing the
   obsolete client-side catalog filter.
+
+## Construction Result
+
+- `viewer::catalog::DocumentCatalog` now owns the immutable `BTreeMap` built
+  from the session's already authorized identifiers. It resolves document IDs
+  and returns owned, capped search-page values without filesystem access or
+  document-content reads.
+- The Axum document routes parse only `query` and `page` parameters, then keep
+  identifier lookup separate from page selection. The native GET form and page
+  links render at most 50 authorized identifiers and retain the selected query.
+- The former input-event filter is removed from the browser script. Diagram
+  failure handling and current-document refresh polling are unchanged.
+- Unit tests cover the result cap, case-insensitive matching, over-limit query,
+  and invalid-page behavior. `BTE-01` verifies submitted search and pagination
+  with JavaScript disabled against 51 matching fixture documents.
