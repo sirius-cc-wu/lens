@@ -20,7 +20,7 @@ One person may hold multiple roles.
 | Need | Artifact |
 |---|---|
 | Product scope and value | [Vision](vision.md) |
-| User goals and scenario detail | [Feature/use-case artifact](features/markdown-viewing.md) |
+| User goals and scenario detail | [Feature/use-case artifact](features/markdown-viewing/use-cases.md) |
 | Architectural quality constraints | [Supplementary specification](supplementary-specification.md) |
 | Shared vocabulary | [Glossary](glossary.md) |
 | Uncertainty and mitigation | [Risk list](risk-list.md) |

@@ -7,11 +7,12 @@ small and will be refined as elaboration resolves the listed risks.
 ## Current Artifacts
 
 - [Vision and business case](vision.md)
-- [Primary feature and use cases](features/markdown-viewing.md) (`FEAT-01`)
+- [Primary feature and use cases](features/markdown-viewing/use-cases.md) (`FEAT-01`)
 - [Supplementary specification](supplementary-specification.md)
 - [Glossary](glossary.md)
 - [Risk list](risk-list.md)
 - [ADR-001: Use the public PlantUML server for V1 rendering](decisions/adr-001-public-plantuml-rendering.md)
+- [ADR-002: Restrict viewing-session scope](decisions/adr-002-loopback-viewer-scope.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)
 - [Elaboration iteration records](iterations/)

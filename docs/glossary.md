@@ -4,6 +4,7 @@
 |---|---|
 | Lens | The standalone CLI and its local browser viewer. |
 | Target | The optional file or directory argument passed to `lens`; when omitted, the current working directory is the target. |
+| Viewing session | A local loopback session that exposes one selected Markdown document, fixed viewer assets, and the diagrams recognized in that document. |
 | Browser session | The local HTTP session Lens starts and opens in a browser for a resolved target. |
 | Markdown document | A supported text file whose content Lens renders as Markdown. The supported extensions are not yet finalized. |
 | PlantUML block | A fenced Markdown code block labeled `plantuml` whose contents describe a PlantUML diagram. |

@@ -24,6 +24,8 @@ renderer, a privacy-preserving alternative, or a renderer-selection setting.
   server, or a container.
 - Rendering depends on network access and the public service's availability,
   limits, and response behavior.
+- Lens proxies renderer requests through the local viewer with a 10-second
+  timeout and 2 MiB response limit.
 - Lens must keep the original source visible and show an actionable error if a
   renderer request fails.
 - The renderer output remains untrusted and must satisfy the browser-content
@@ -32,6 +34,6 @@ renderer, a privacy-preserving alternative, or a renderer-selection setting.
 ## Trace
 
 - Requirement: `UC-01` in
-  [`docs/features/markdown-viewing.md`](../features/markdown-viewing.md)
+  [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - Risk: `R-01` in [`docs/risk-list.md`](../risk-list.md)
 - Verification plan: [`E1`](../iterations/e1-safe-markdown-viewing.md)

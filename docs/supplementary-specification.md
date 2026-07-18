@@ -18,6 +18,8 @@ does not prescribe the implementation architecture.
   `https://www.plantuml.com/plantuml` for V1 rendering.
 - V1 provides no local renderer or privacy-preserving alternative for PlantUML
   source.
+- Lens requests a rendered diagram through its local viewer and exposes the
+  returned SVG only as an image, never as inline document markup.
 - Lens must not collect telemetry or require an account for the initial release.
 
 ## Rendering and Resilience
@@ -28,11 +30,14 @@ does not prescribe the implementation architecture.
   viewport without horizontal stretching.
 - Target errors and rendering errors identify the affected path or diagram and
   provide a next action where possible.
+- A PlantUML request times out after 10 seconds. Lens rejects a renderer
+  response larger than 2 MiB.
 
 ## Security Boundaries
 
-- Markdown and renderer output are untrusted content and require a defined
-  sanitization policy before insertion into the browser view.
+- Lens escapes raw Markdown HTML. PlantUML SVG is not inserted into the
+  document markup; it is served only as an image with a restrictive content
+  security policy.
 - The browser-facing server must restrict access to the resolved target scope;
   a request must not permit arbitrary filesystem reads.
 - The first release does not accept write operations through the browser view.

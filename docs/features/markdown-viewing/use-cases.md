@@ -1,6 +1,6 @@
 # FEAT-01: View Markdown with PlantUML
 
-Status: inception baseline
+Status: refined in E1
 
 ## Actors
 
@@ -68,6 +68,10 @@ Postconditions:
 - A local browser view exists for the selected Markdown document.
 - The original file remains unchanged.
 - The user can identify any diagrams that were not rendered and why.
+
+E1 scope: The executable slice accepts a direct `.md` or `.markdown` file
+target. Directory and current-directory targets remain work for `UC-02` and
+`UC-03`.
 
 ## Open Questions
 
