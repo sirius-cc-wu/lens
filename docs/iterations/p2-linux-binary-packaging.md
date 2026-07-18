@@ -19,8 +19,8 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-009`, Linux binary release artifacts:
-  [`docs/decisions/adr-009-linux-binary-release-artifacts.md`](../decisions/adr-009-linux-binary-release-artifacts.md) - fix the archive, checksum, and overwrite policy.
+- `ADR-010`, Linux binary release artifacts:
+  [`docs/decisions/adr-010-linux-binary-release-artifacts.md`](../decisions/adr-010-linux-binary-release-artifacts.md) - fix the archive, checksum, and overwrite policy.
 
 Artifacts to Refine:
 
@@ -38,12 +38,12 @@ Artifacts Consulted:
 
 Decisions to Record:
 
-- `ADR-009`: create one explicit-target archive and checksum command, then
+- `ADR-010`: create one explicit-target archive and checksum command, then
   make later tagged automation invoke it.
 
 Trace:
 
-- Proposal 2 -> `ADR-009` -> package command -> archive listing and checksum
+- Proposal 2 -> `ADR-010` -> package command -> archive listing and checksum
   verification
 
 Exit Criteria:
@@ -67,7 +67,7 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-009`, Linux binary release artifacts:
-  [`docs/decisions/adr-009-linux-binary-release-artifacts.md`](../decisions/adr-009-linux-binary-release-artifacts.md) - defines the durable artifact contract.
+- started: `ADR-010`, Linux binary release artifacts:
+  [`docs/decisions/adr-010-linux-binary-release-artifacts.md`](../decisions/adr-010-linux-binary-release-artifacts.md) - defines the durable artifact contract.
 - refined: release readiness, proposal 2, README, and `R-07` - record command
   use, verification, and the pending tagged-publication step.

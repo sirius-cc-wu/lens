@@ -8,7 +8,8 @@ Status: proposed
 
 These are candidate improvements after the V1 release. They are not release
 commitments; a future iteration should select one based on user value, risk, and
-implementation evidence.
+implementation evidence. Implemented proposals are removed from this list; the
+remaining numbers are stable and are not reused.
 
 ## 1. Local PlantUML Rendering
 
@@ -31,25 +32,6 @@ source-install path.
 Status: implemented in P2. The release-packaging command builds a target-bound
 Linux archive containing Lens, the README, and license, and writes a SHA-256
 checksum beside it. Proposal 8 will publish those verified artifacts from tags.
-
-## 3. Document Navigation Pane
-
-Add a sidebar containing the discovered document set, current-document
-highlighting, and search. The sidebar must use the existing authorized document
-set so it does not broaden filesystem access.
-
-Status: implemented in C3. The browser-verified pane lists only the existing
-authorized document set, marks the current document, and filters those
-identifiers locally.
-
-## 4. Automatic Refresh
-
-Watch discovered Markdown files and refresh the browser view when they change.
-This would support authors who use Lens to preview documentation while editing.
-
-Status: implemented in C4. Lens polls only the fixed, already authorized
-document set, preserves the last successful rendering during a failed read, and
-reloads the current browser page after its document revision advances.
 
 ## 5. Diagram Failure Controls
 
@@ -94,20 +76,6 @@ A `v<package-version>` tag starts native Linux, macOS, and Windows packaging,
 then publishes the archives and SHA-256 checksums only after every matrix job
 succeeds.
 
-## 9. Automated Browser End-to-End Testing
-
-Add headless-browser tests that start the compiled `lens` command against a
-temporary documentation repository and interact with its loopback URL. The
-tests should verify rendered Markdown, document navigation, the guidance page
-for unauthorized paths, and PlantUML success and failure states using a
-controlled renderer. This would verify the complete CLI, server, and browser
-path while keeping external renderer failures out of the test result.
-
-Status: implemented in C1 and C2. `BTE-01` starts the compiled command against
-a temporary repository and verifies rendered Markdown, document navigation, the
-guidance page for an undiscovered document, and controlled-renderer success and
-failure without contacting the public service.
-
 ## 10. YAML Frontmatter Rendering
 
 Detect YAML frontmatter at the beginning of Markdown documents and render it as
@@ -123,6 +91,10 @@ YAML values as escaped metadata, and retains the Markdown body with a
 correction message when the header cannot be parsed.
 
 ## 11. Scalable Document Navigation Search
+
+Status: implemented in C5. Lens searches only the immutable, authorized
+session catalog through a native GET form, returns no more than 50 identifiers
+per page, and keeps pagination usable without JavaScript.
 
 Replace the complete document list in every navigation pane with server-side
 identifier search and a capped result set. Lens would build an index from the

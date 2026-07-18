@@ -1,4 +1,4 @@
-# ADR-014: Render Leading YAML Metadata Safely
+# ADR-015: Render Leading YAML Metadata Safely
 
 Status: accepted
 

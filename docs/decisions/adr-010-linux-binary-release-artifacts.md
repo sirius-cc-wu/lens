@@ -1,4 +1,4 @@
-# ADR-009: Package Target-Specific Binary Release Artifacts
+# ADR-010: Package Target-Specific Binary Release Artifacts
 
 Status: accepted
 

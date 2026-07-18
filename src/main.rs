@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[command(about = "Open a Markdown file with PlantUML diagrams in a browser")]
+#[command(
+    about = "Open a Markdown file with PlantUML diagrams in a browser",
+    after_help = "Examples:\n  lens\n  lens docs\n  lens .agents/skills    View project agent skills in a hidden parent directory"
+)]
 struct Arguments {
     #[arg(value_name = "TARGET")]
     target: Option<PathBuf>,

@@ -1,4 +1,4 @@
-# ADR-010: Keep Diagram Controls Inside a Viewing Session
+# ADR-011: Keep Diagram Controls Inside a Viewing Session
 
 Status: accepted
 

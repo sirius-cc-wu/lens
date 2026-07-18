@@ -1,4 +1,4 @@
-# ADR-012: Support Native Browser Launch and Archives
+# ADR-013: Support Native Browser Launch and Archives
 
 Status: accepted
 
@@ -38,5 +38,5 @@ must run the script on a native runner for each published target.
 
 - Proposal: [Cross-Platform Support](../improvement-proposals.md#7-cross-platform-support)
 - Previous scope: [ADR-004](adr-004-v1-release-scope.md)
-- Artifact format: [ADR-009](adr-009-linux-binary-release-artifacts.md)
+- Artifact format: [ADR-010](adr-010-linux-binary-release-artifacts.md)
 - Iteration: [`P7`](../iterations/p7-cross-platform-support.md)

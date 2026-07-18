@@ -19,13 +19,13 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-012`, native browser launch and archives:
-  [`docs/decisions/adr-012-cross-platform-support.md`](../decisions/adr-012-cross-platform-support.md) - fix platform commands and native-runner packaging expectations.
+- `ADR-013`, native browser launch and archives:
+  [`docs/decisions/adr-013-cross-platform-support.md`](../decisions/adr-013-cross-platform-support.md) - fix platform commands and native-runner packaging expectations.
 
 Artifacts to Refine:
 
-- `ADR-004`, V1 release scope, and `ADR-009`, binary artifacts:
-  [`docs/decisions/adr-004-v1-release-scope.md`](../decisions/adr-004-v1-release-scope.md) and [`docs/decisions/adr-009-linux-binary-release-artifacts.md`](../decisions/adr-009-linux-binary-release-artifacts.md) - replace the Linux-only platform assumption.
+- `ADR-004`, V1 release scope, and `ADR-010`, binary artifacts:
+  [`docs/decisions/adr-004-v1-release-scope.md`](../decisions/adr-004-v1-release-scope.md) and [`docs/decisions/adr-010-linux-binary-release-artifacts.md`](../decisions/adr-010-linux-binary-release-artifacts.md) - replace the Linux-only platform assumption.
 - Release readiness, supplementary specification, README, proposal list, and risk list:
   [`docs/release-readiness.md`](../release-readiness.md), [`docs/supplementary-specification.md`](../supplementary-specification.md), [`README.md`](../../README.md), [`docs/improvement-proposals.md`](../improvement-proposals.md), and [`docs/risk-list.md`](../risk-list.md) - state launcher, artifact, and fallback behavior.
 
@@ -33,18 +33,18 @@ Artifacts Consulted:
 
 - `ADR-002`, loopback viewer scope:
   [`docs/decisions/adr-002-loopback-viewer-scope.md`](../decisions/adr-002-loopback-viewer-scope.md)
-- `ADR-009`, target-specific artifact contract:
-  [`docs/decisions/adr-009-linux-binary-release-artifacts.md`](../decisions/adr-009-linux-binary-release-artifacts.md)
+- `ADR-010`, target-specific artifact contract:
+  [`docs/decisions/adr-010-linux-binary-release-artifacts.md`](../decisions/adr-010-linux-binary-release-artifacts.md)
 
 Decisions to Record:
 
-- `ADR-012`: test browser-launch command construction independently from the
+- `ADR-013`: test browser-launch command construction independently from the
   host operating system, and package native binaries through one target-aware
   release command.
 
 Trace:
 
-- Proposal 7 -> `ADR-012` -> browser-command unit test and native-target
+- Proposal 7 -> `ADR-013` -> browser-command unit test and native-target
   package command
 
 Exit Criteria:
@@ -69,7 +69,7 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-012`, native browser launch and archives:
-  [`docs/decisions/adr-012-cross-platform-support.md`](../decisions/adr-012-cross-platform-support.md) - defines the cross-platform boundary.
+- started: `ADR-013`, native browser launch and archives:
+  [`docs/decisions/adr-013-cross-platform-support.md`](../decisions/adr-013-cross-platform-support.md) - defines the cross-platform boundary.
 - refined: release scope, artifact format, readiness, user documentation, and
   risk records - replace the Linux-only assumption with executable evidence.

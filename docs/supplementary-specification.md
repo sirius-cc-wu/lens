@@ -68,5 +68,8 @@ does not prescribe the implementation architecture.
 ## Performance
 
 - A single ordinary repository Markdown document should become readable without
-  perceptible unnecessary work. Quantitative limits will be set from `E1`
-  measurements rather than guessed in inception.
+perceptible unnecessary work. Quantitative limits will be set from `E1`
+measurements rather than guessed in inception.
+- Navigation search uses only the active session's authorized document
+  identifiers. A submitted query is at most 256 UTF-8 bytes and each response
+  contains at most 50 result links; typing alone does not issue a request.

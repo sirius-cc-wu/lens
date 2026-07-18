@@ -21,8 +21,8 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-010`, diagram failure controls:
-  [`docs/decisions/adr-010-diagram-failure-controls.md`](../decisions/adr-010-diagram-failure-controls.md) - define the fixed retry and disable boundaries.
+- `ADR-011`, diagram failure controls:
+  [`docs/decisions/adr-011-diagram-failure-controls.md`](../decisions/adr-011-diagram-failure-controls.md) - define the fixed retry and disable boundaries.
 
 Artifacts to Refine:
 
@@ -35,19 +35,19 @@ Artifacts to Refine:
 
 Artifacts Consulted:
 
-- `ADR-008`, selectable renderer:
-  [`docs/decisions/adr-008-selectable-plantuml-rendering.md`](../decisions/adr-008-selectable-plantuml-rendering.md)
+- `ADR-009`, selectable renderer:
+  [`docs/decisions/adr-009-selectable-plantuml-rendering.md`](../decisions/adr-009-selectable-plantuml-rendering.md)
 - Existing renderer failure behavior:
   [`docs/iterations/c2-browser-guidance-and-renderer-failure.md`](c2-browser-guidance-and-renderer-failure.md)
 
 Decisions to Record:
 
-- `ADR-010`: retain fixed diagram identifiers for retries and permit only one
+- `ADR-011`: retain fixed diagram identifiers for retries and permit only one
   in-memory session-disable POST mutation.
 
 Trace:
 
-- Proposal 5 -> `FEAT-01` (`UC-01`) -> `ADR-010` -> viewer-route tests and
+- Proposal 5 -> `FEAT-01` (`UC-01`) -> `ADR-011` -> viewer-route tests and
   `BTE-01` retry and disable scenarios
 
 Exit Criteria:
@@ -75,7 +75,7 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-010`, diagram failure controls:
-  [`docs/decisions/adr-010-diagram-failure-controls.md`](../decisions/adr-010-diagram-failure-controls.md) - records the retry and session-state decision.
+- started: `ADR-011`, diagram failure controls:
+  [`docs/decisions/adr-011-diagram-failure-controls.md`](../decisions/adr-011-diagram-failure-controls.md) - records the retry and session-state decision.
 - refined: `FEAT-01`, user documentation, quality constraints, risk list, and
   `BTE-01` - record the implemented recovery controls and executable evidence.

@@ -17,8 +17,8 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-014`, YAML frontmatter rendering:
-  [`docs/decisions/adr-014-yaml-frontmatter-rendering.md`](../decisions/adr-014-yaml-frontmatter-rendering.md) - defines the leading-delimiter, value-structure, and error boundaries.
+- `ADR-015`, YAML frontmatter rendering:
+  [`docs/decisions/adr-015-yaml-frontmatter-rendering.md`](../decisions/adr-015-yaml-frontmatter-rendering.md) - defines the leading-delimiter, value-structure, and error boundaries.
 
 Artifacts to Refine:
 
@@ -39,12 +39,12 @@ Artifacts Consulted:
 
 Decisions Recorded:
 
-- `ADR-014`: accept only a leading, delimiter-bounded YAML mapping and render
+- `ADR-015`: accept only a leading, delimiter-bounded YAML mapping and render
   every value through the existing HTML-escaping boundary.
 
 Trace:
 
-- Proposal 10 -> `ADR-014` -> Markdown renderer -> unit and browser checks
+- Proposal 10 -> `ADR-015` -> Markdown renderer -> unit and browser checks
 
 Test-Driven Evidence:
 
@@ -76,7 +76,7 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-014`, frontmatter rendering - records the safe metadata
+- started: `ADR-015`, frontmatter rendering - records the safe metadata
   contract.
 - refined: user and quality documentation, risk mitigation, and browser
   fixture evidence - make the rendering behavior reviewable and executable.

@@ -155,29 +155,64 @@ test("document_navigation_pane_then_lists_authorized_documents_and_marks_current
   }
 });
 
-test("filter_document_navigation_then_limits_visible_authorized_documents", async ({ page }) => {
+test("submitted_document_search_then_returns_matching_authorized_documents", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
 
   try {
     await page.goto(fixture.lens.url);
     const navigation = page.getByRole("navigation", { name: "Discovered documents" });
-    const filter = page.getByRole("searchbox", { name: "Filter discovered documents" });
+    const search = page.getByRole("searchbox", { name: "Search discovered documents" });
 
     // Act
-    await filter.fill("guide");
+    await search.fill("guide");
+    await search.press("Enter");
 
     // Assert
-    await expect(navigation.getByRole("link", { name: "README.md" })).toBeHidden();
     await expect(navigation.getByRole("link", { name: "guides/guide.md" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "README.md" })).toHaveCount(0);
     expect(new URL(page.url()).pathname).toBe("/");
+    expect(new URL(page.url()).searchParams.get("query")).toBe("guide");
 
     // Act
-    await filter.fill("no-match");
+    await search.fill("no-match");
+    await search.press("Enter");
 
     // Assert
-    await expect(navigation.getByText("No discovered documents match the filter.")).toBeVisible();
+    await expect(navigation.getByText("No discovered documents match the search.")).toBeVisible();
   } finally {
+    await fixture.stop();
+  }
+});
+
+test("submitted_search_with_multiple_pages_then_navigates_without_javascript", async ({ browser }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ extraDocumentCount: 51 });
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+
+  try {
+    await page.goto(fixture.lens.url);
+    const navigation = page.getByRole("navigation", { name: "Discovered documents" });
+    const search = page.getByRole("searchbox", { name: "Search discovered documents" });
+
+    // Act
+    await search.fill("reference");
+    await search.press("Enter");
+
+    // Assert
+    await expect(navigation.locator("[data-document-navigation-item]")).toHaveCount(50);
+    await expect(navigation.getByRole("link", { name: "Next results" })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("query")).toBe("reference");
+
+    // Act
+    await navigation.getByRole("link", { name: "Next results" }).click();
+
+    // Assert
+    await expect(navigation.getByRole("link", { name: "guides/reference-050.md" })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("page")).toBe("2");
+  } finally {
+    await context.close();
     await fixture.stop();
   }
 });
@@ -307,6 +342,7 @@ async function startBrowserFixture({
   rendererMode,
   rendererStatus,
   rendererStatuses,
+  extraDocumentCount,
 } = {}) {
   let repository;
   let renderer;
@@ -333,7 +369,7 @@ async function startBrowserFixture({
   };
 
   try {
-    repository = await createDocumentationRepository({ hiddenDocument, readme });
+    repository = await createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount });
     renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
     lens = await startLens(repository, renderer.url, rendererMode);
     return { lens, renderer, repository, stop };
@@ -347,7 +383,7 @@ async function startBrowserFixture({
   }
 }
 
-async function createDocumentationRepository({ hiddenDocument, readme } = {}) {
+async function createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount = 0 } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const binDirectory = join(directory, "bin");
   let files = [];
@@ -370,6 +406,14 @@ async function createDocumentationRepository({ hiddenDocument, readme } = {}) {
       ),
       writeFile(join(binDirectory, "xdg-open"), "#!/bin/sh\nexit 0\n"),
     ];
+    for (let index = 0; index < extraDocumentCount; index += 1) {
+      files.push(
+        writeFile(
+          join(directory, "guides", `reference-${index.toString().padStart(3, "0")}.md`),
+          `# Reference ${index}\n\nA discovered reference document.\n`,
+        ),
+      );
+    }
     if (hiddenDocument) {
       files.push(writeFile(join(directory, ".private.md"), hiddenDocument));
     }

@@ -18,8 +18,8 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-011`, standalone PlantUML files:
-  [`docs/decisions/adr-011-standalone-plantuml-files.md`](../decisions/adr-011-standalone-plantuml-files.md) - define the accepted extension and rendering boundary.
+- `ADR-012`, standalone PlantUML files:
+  [`docs/decisions/adr-012-standalone-plantuml-files.md`](../decisions/adr-012-standalone-plantuml-files.md) - define the accepted extension and rendering boundary.
 
 Artifacts to Refine:
 
@@ -34,19 +34,19 @@ Artifacts to Refine:
 
 Artifacts Consulted:
 
-- `ADR-008`, renderer selection:
-  [`docs/decisions/adr-008-selectable-plantuml-rendering.md`](../decisions/adr-008-selectable-plantuml-rendering.md)
-- `ADR-010`, diagram controls:
-  [`docs/decisions/adr-010-diagram-failure-controls.md`](../decisions/adr-010-diagram-failure-controls.md)
+- `ADR-009`, renderer selection:
+  [`docs/decisions/adr-009-selectable-plantuml-rendering.md`](../decisions/adr-009-selectable-plantuml-rendering.md)
+- `ADR-011`, diagram controls:
+  [`docs/decisions/adr-011-diagram-failure-controls.md`](../decisions/adr-011-diagram-failure-controls.md)
 
 Decisions to Record:
 
-- `ADR-011`: include only `.puml` in the existing discovery set and render it
+- `ADR-012`: include only `.puml` in the existing discovery set and render it
   as one diagram through the existing route and renderer boundary.
 
 Trace:
 
-- Proposal 6 -> `UC-10` -> `ADR-011` -> target, Markdown-rendering, and
+- Proposal 6 -> `UC-10` -> `ADR-012` -> target, Markdown-rendering, and
   `BTE-01` standalone-diagram checks
 
 Exit Criteria:
@@ -74,7 +74,7 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-011`, standalone PlantUML files:
-  [`docs/decisions/adr-011-standalone-plantuml-files.md`](../decisions/adr-011-standalone-plantuml-files.md) - establishes the supported source-format boundary.
+- started: `ADR-012`, standalone PlantUML files:
+  [`docs/decisions/adr-012-standalone-plantuml-files.md`](../decisions/adr-012-standalone-plantuml-files.md) - establishes the supported source-format boundary.
 - refined: `FEAT-01`, `ADR-003`, `OC-02`, user documentation, risk list, and
   `BTE-01` - record the constrained `.puml` target and navigation behavior.

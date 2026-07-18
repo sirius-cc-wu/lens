@@ -19,8 +19,8 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-013`, release automation:
-  [`docs/decisions/adr-013-release-automation.md`](../decisions/adr-013-release-automation.md) - defines verification, tag, matrix, and publish boundaries.
+- `ADR-014`, release automation:
+  [`docs/decisions/adr-014-release-automation.md`](../decisions/adr-014-release-automation.md) - defines verification, tag, matrix, and publish boundaries.
 
 Artifacts to Refine:
 
@@ -34,19 +34,19 @@ Artifacts to Refine:
 
 Artifacts Consulted:
 
-- `ADR-009`, target-specific release artifacts:
-  [`docs/decisions/adr-009-linux-binary-release-artifacts.md`](../decisions/adr-009-linux-binary-release-artifacts.md)
-- `ADR-012`, native browser launch and archives:
-  [`docs/decisions/adr-012-cross-platform-support.md`](../decisions/adr-012-cross-platform-support.md)
+- `ADR-010`, target-specific release artifacts:
+  [`docs/decisions/adr-010-linux-binary-release-artifacts.md`](../decisions/adr-010-linux-binary-release-artifacts.md)
+- `ADR-013`, native browser launch and archives:
+  [`docs/decisions/adr-013-cross-platform-support.md`](../decisions/adr-013-cross-platform-support.md)
 
 Decisions Recorded:
 
-- `ADR-013`: preserve one package command, verify the manifest-tag match, and
+- `ADR-014`: preserve one package command, verify the manifest-tag match, and
   publish only the complete set of native artifacts.
 
 Trace:
 
-- Proposal 8 -> `ADR-013` -> verification workflow and native tag-release workflow
+- Proposal 8 -> `ADR-014` -> verification workflow and native tag-release workflow
 
 Exit Criteria:
 
@@ -69,6 +69,6 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-013`, release automation - records the durable workflow policy.
+- started: `ADR-014`, release automation - records the durable workflow policy.
 - refined: packaging portability and release-readiness evidence - connect the
   local package contract to tag publication.

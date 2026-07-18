@@ -19,8 +19,8 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-008`, selectable PlantUML rendering:
-  [`docs/decisions/adr-008-selectable-plantuml-rendering.md`](../decisions/adr-008-selectable-plantuml-rendering.md) - define the session-fixed renderer boundary.
+- `ADR-009`, selectable PlantUML rendering:
+  [`docs/decisions/adr-009-selectable-plantuml-rendering.md`](../decisions/adr-009-selectable-plantuml-rendering.md) - define the session-fixed renderer boundary.
 
 Artifacts to Refine:
 
@@ -40,12 +40,12 @@ Artifacts Consulted:
 
 Decisions to Record:
 
-- `ADR-008`: make renderer selection an explicit CLI input captured once in
+- `ADR-009`: make renderer selection an explicit CLI input captured once in
   `ViewerState`; do not accept renderer configuration from browser routes.
 
 Trace:
 
-- Proposal 1 -> `FEAT-01` (`UC-01`) -> `ADR-008` -> renderer-mode tests and
+- Proposal 1 -> `FEAT-01` (`UC-01`) -> `ADR-009` -> renderer-mode tests and
   `BTE-01`
 
 Exit Criteria:
@@ -71,8 +71,8 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-008`, selectable PlantUML rendering:
-  [`docs/decisions/adr-008-selectable-plantuml-rendering.md`](../decisions/adr-008-selectable-plantuml-rendering.md) - records the session-boundary decision.
+- started: `ADR-009`, selectable PlantUML rendering:
+  [`docs/decisions/adr-009-selectable-plantuml-rendering.md`](../decisions/adr-009-selectable-plantuml-rendering.md) - records the session-boundary decision.
 - refined: `FEAT-01`, Markdown viewing use cases:
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md) - specifies public, local, and disabled behavior.
 - refined: proposal 1, risk list, glossary, README, and `BTE-01` - record the

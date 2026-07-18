@@ -56,6 +56,15 @@ only when their target is a discovered Markdown document; all other local paths
 receive a Lens guidance page without filesystem access. A standalone `.puml`
 file appears in the same navigation pane and renders as one diagram.
 
+### Agent skills
+
+Lens does not scan the hidden `.agents` directory when the repository is the
+document root. To view project agent skills, open the skills directory directly:
+
+```bash
+lens .agents/skills
+```
+
 ## PlantUML
 
 Lens uses the public PlantUML server by default. A failed diagram request leaves

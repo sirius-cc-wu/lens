@@ -1,4 +1,4 @@
-# ADR-008: Select a PlantUML Renderer per Viewing Session
+# ADR-009: Select a PlantUML Renderer per Viewing Session
 
 Status: accepted
 

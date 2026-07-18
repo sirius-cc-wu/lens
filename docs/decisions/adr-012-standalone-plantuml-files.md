@@ -1,4 +1,4 @@
-# ADR-011: Admit Standalone PlantUML Files to the Document Set
+# ADR-012: Admit Standalone PlantUML Files to the Document Set
 
 Status: accepted
 

@@ -1,6 +1,6 @@
 # ADR-004: Release V1 as a Linux Documentation Viewer
 
-Status: superseded in platform scope by ADR-012
+Status: superseded in platform scope by ADR-013
 
 Date: 2026-07-18
 
@@ -25,7 +25,7 @@ requires a later use case, authorization model, and release decision.
   navigation, PlantUML rendering and failure behavior, and loopback browser
   launch fallback.
 - The initial Linux-only platform boundary is retained as historical context;
-  ADR-012 adds tested macOS and Windows launch behavior and target artifacts.
+  ADR-013 adds tested macOS and Windows launch behavior and target artifacts.
 - `cargo install --path . --locked` is the supported source-install command.
 - No code-file route or code-syntax dependency is added to the viewing session.
 

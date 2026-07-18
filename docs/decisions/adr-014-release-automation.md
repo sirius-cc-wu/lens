@@ -1,4 +1,4 @@
-# ADR-013: Verify and Publish Tagged Native Releases
+# ADR-014: Verify and Publish Tagged Native Releases
 
 Status: accepted
 
@@ -43,6 +43,6 @@ and checksums and uses the repository-scoped `GITHUB_TOKEN` with
 ## Trace
 
 - Proposal: [Release Automation](../improvement-proposals.md#8-release-automation)
-- Artifact contract: [ADR-009](adr-009-linux-binary-release-artifacts.md)
-- Platform support: [ADR-012](adr-012-cross-platform-support.md)
+- Artifact contract: [ADR-010](adr-010-linux-binary-release-artifacts.md)
+- Platform support: [ADR-013](adr-013-cross-platform-support.md)
 - Iteration: [`P8`](../iterations/p8-release-automation.md)
