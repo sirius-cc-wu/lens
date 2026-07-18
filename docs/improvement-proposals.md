@@ -67,9 +67,10 @@ for unauthorized paths, and PlantUML success and failure states using a
 controlled renderer. This would verify the complete CLI, server, and browser
 path while keeping external renderer failures out of the test result.
 
-Status: selected for C1 and C2. C1 establishes the deterministic browser
-harness, rendered Markdown, document navigation, and renderer-success path;
-C2 covers the guidance page and renderer-failure path.
+Status: implemented in C1 and C2. `BTE-01` starts the compiled command against
+a temporary repository and verifies rendered Markdown, document navigation, the
+guidance page for an undiscovered document, and controlled-renderer success and
+failure without contacting the public service.
 
 ## 10. YAML Frontmatter Rendering
 

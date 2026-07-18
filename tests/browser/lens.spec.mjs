@@ -38,12 +38,61 @@ test("controlled renderer and discovered link then display rendered documents", 
   }
 });
 
-async function createDocumentationRepository() {
+test("undiscovered document path then displays guidance without its source", async ({ page }) => {
+  // Arrange
+  const repository = await createDocumentationRepository({ hiddenDocument: "Confidential source" });
+  const renderer = await startRenderer();
+  const lens = await startLens(repository, renderer.url);
+
+  try {
+    // Act
+    await page.goto(`${lens.url}/documents/.private.md`);
+
+    // Assert
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Document navigation unavailable" }),
+    ).toBeVisible();
+    await expect(page.locator("article")).toContainText(
+      "requested document is not part of this viewing session",
+    );
+    await expect(page.locator("article")).not.toContainText("Confidential source");
+    await expect(page.getByRole("link", { name: "Return to the initial document" })).toBeVisible();
+  } finally {
+    await lens.stop();
+    await renderer.stop();
+    await rm(repository.directory, { force: true, recursive: true });
+  }
+});
+
+test("renderer failure then reveals the source while keeping the document readable", async ({ page }) => {
+  // Arrange
+  const repository = await createDocumentationRepository();
+  const renderer = await startRenderer({ status: 503 });
+  const lens = await startLens(repository, renderer.url);
+
+  try {
+    // Act
+    await page.goto(lens.url);
+    await expect.poll(() => renderer.requests).toBe(1);
+
+    // Assert
+    await expect(page.getByText("PlantUML rendering failed. The source is shown below.")).toBeVisible();
+    await expect(page.locator(".diagram-source")).toHaveJSProperty("open", true);
+    await expect(page.locator("article")).toContainText("A rendered document.");
+    await expect(page.locator(".diagram-source")).toContainText("Alice -> Bob: browser fixture");
+  } finally {
+    await lens.stop();
+    await renderer.stop();
+    await rm(repository.directory, { force: true, recursive: true });
+  }
+});
+
+async function createDocumentationRepository({ hiddenDocument } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const binDirectory = join(directory, "bin");
   await mkdir(join(directory, "guides"), { recursive: true });
   await mkdir(binDirectory);
-  await Promise.all([
+  const files = [
     writeFile(
       join(directory, "README.md"),
       "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n",
@@ -53,17 +102,26 @@ async function createDocumentationRepository() {
       "# Guide page\n\nThe guide is a discovered document.\n",
     ),
     writeFile(join(binDirectory, "xdg-open"), "#!/bin/sh\nexit 0\n"),
-  ]);
+  ];
+  if (hiddenDocument) {
+    files.push(writeFile(join(directory, ".private.md"), hiddenDocument));
+  }
+  await Promise.all(files);
   await chmod(join(binDirectory, "xdg-open"), 0o755);
   return { binDirectory, directory };
 }
 
-async function startRenderer() {
+async function startRenderer({ status = 200 } = {}) {
   let requests = 0;
   const server = createServer((_request, response) => {
     requests += 1;
-    response.writeHead(200, { "content-type": "image/svg+xml" });
-    response.end('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>');
+    if (status === 200) {
+      response.writeHead(200, { "content-type": "image/svg+xml" });
+      response.end('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>');
+      return;
+    }
+    response.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Controlled renderer failure");
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
