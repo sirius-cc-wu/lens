@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fmt::Write as _,
     fs,
     net::TcpListener,
@@ -11,7 +11,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, RawQuery, State},
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -19,6 +19,12 @@ use axum::{
 };
 use futures_util::StreamExt;
 use reqwest::Client;
+
+mod catalog;
+
+use catalog::{
+    CatalogPage, CatalogResults, DocumentCatalog, NavigationRequest, MAX_QUERY_BYTES, RESULT_LIMIT,
+};
 
 use crate::{
     markdown::{escape_html, render, Diagram, RenderedDocument},
@@ -32,7 +38,7 @@ const REFRESH_INTERVAL: Duration = Duration::from_millis(500);
 
 struct ViewerState {
     documents: RwLock<Vec<ViewerDocument>>,
-    document_ids: BTreeMap<String, usize>,
+    catalog: DocumentCatalog,
     known_documents: BTreeSet<String>,
     initial_document: usize,
     client: Client,
@@ -40,22 +46,16 @@ struct ViewerState {
 }
 
 impl ViewerState {
-    fn navigation_pane(&self, current_document: usize) -> String {
-        let mut document_links = String::new();
-        for (identifier, &document_index) in &self.document_ids {
-            let current = (document_index == current_document)
-                .then_some(r#" aria-current="page""#)
-                .unwrap_or_default();
-            let identifier = escape_html(identifier);
-            write!(
-                document_links,
-                r#"<li data-document-navigation-item><a href="/documents/{identifier}"{current}>{identifier}</a></li>"#
-            )
-            .expect("writing navigation markup to a string cannot fail");
-        }
-
-        format!(
-            r#"<nav class="document-navigation" aria-label="Discovered documents" data-document-navigation><h2>Documents</h2><label for="document-filter">Filter discovered documents</label><input id="document-filter" type="search" data-document-filter aria-controls="document-catalog"><noscript><p>Filtering requires JavaScript; all discovered documents are shown.</p></noscript><p data-document-filter-empty role="status" hidden>No discovered documents match the filter.</p><ul id="document-catalog">{document_links}</ul></nav>"#
+    fn navigation_pane(
+        &self,
+        current_document: usize,
+        request: &NavigationRequest,
+        current_route: &str,
+    ) -> String {
+        navigation_pane(
+            self.catalog.search(request),
+            current_document,
+            current_route,
         )
     }
 
@@ -183,12 +183,13 @@ fn viewer_state(
     client: Client,
     renderer_server: &str,
 ) -> Arc<ViewerState> {
-    let document_ids = documents
-        .iter()
-        .enumerate()
-        .map(|(index, document)| (document.identifier.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    let known_documents = document_ids.keys().cloned().collect::<BTreeSet<_>>();
+    let catalog = DocumentCatalog::new(
+        documents
+            .iter()
+            .enumerate()
+            .map(|(index, document)| (document.identifier.clone(), index)),
+    );
+    let known_documents = catalog.known_document_ids();
     let documents = documents
         .into_iter()
         .enumerate()
@@ -209,7 +210,7 @@ fn viewer_state(
 
     Arc::new(ViewerState {
         documents: RwLock::new(documents),
-        document_ids,
+        catalog,
         known_documents,
         initial_document,
         client,
@@ -229,17 +230,26 @@ fn router(state: Arc<ViewerState>) -> Router {
         .with_state(state)
 }
 
-async fn initial_document_view(State(state): State<Arc<ViewerState>>) -> Response {
-    rendered_document_response(&state, state.initial_document)
+async fn initial_document_view(
+    State(state): State<Arc<ViewerState>>,
+    RawQuery(raw_query): RawQuery,
+) -> Response {
+    let request = NavigationRequest::from_raw_query(raw_query.as_deref());
+    rendered_document_response(&state, state.initial_document, &request, "/")
 }
 
 async fn document_view(
     State(state): State<Arc<ViewerState>>,
     Path(document_id): Path<String>,
+    RawQuery(raw_query): RawQuery,
 ) -> Response {
     let document_id = document_id.trim_start_matches('/');
-    match state.document_ids.get(document_id) {
-        Some(&document_id) => rendered_document_response(&state, document_id),
+    let request = NavigationRequest::from_raw_query(raw_query.as_deref());
+    match state.catalog.known_document_index(document_id) {
+        Some(known_document) => {
+            let route = format!("/documents/{document_id}");
+            rendered_document_response(&state, known_document, &request, &route)
+        }
         None => not_found().await.into_response(),
     }
 }
@@ -249,8 +259,8 @@ async fn document_revision(
     Path(document_id): Path<String>,
 ) -> Response {
     let document_id = document_id.trim_start_matches('/');
-    match state.document_ids.get(document_id) {
-        Some(&document_id) => (
+    match state.catalog.known_document_index(document_id) {
+        Some(document_id) => (
             [(header::CACHE_CONTROL, "no-store")],
             state
                 .document_revision(document_id)
@@ -262,8 +272,13 @@ async fn document_revision(
     }
 }
 
-fn rendered_document_response(state: &ViewerState, document_id: usize) -> Response {
-    let navigation = state.navigation_pane(document_id);
+fn rendered_document_response(
+    state: &ViewerState,
+    document_id: usize,
+    request: &NavigationRequest,
+    current_route: &str,
+) -> Response {
+    let navigation = state.navigation_pane(document_id, request, current_route);
     let documents = state
         .documents
         .read()
@@ -279,6 +294,104 @@ fn rendered_document_response(state: &ViewerState, document_id: usize) -> Respon
         )),
     )
         .into_response()
+}
+
+fn navigation_pane(page: CatalogPage, current_document: usize, current_route: &str) -> String {
+    let (query, status, document_links, page_links) = match page {
+        CatalogPage::QueryTooLong { query } => (
+            query,
+            format!("Search queries are limited to {MAX_QUERY_BYTES} UTF-8 bytes."),
+            String::new(),
+            String::new(),
+        ),
+        CatalogPage::Results(results) => {
+            let status = catalog_status(&results);
+            let document_links = catalog_result_links(&results, current_document);
+            let page_links = catalog_page_links(&results, current_route);
+            (results.query, status, document_links, page_links)
+        }
+    };
+
+    format!(
+        r#"<nav class="document-navigation" aria-label="Discovered documents"><h2>Documents</h2>{}<p role="status">{status}</p><ul id="document-catalog">{document_links}</ul>{page_links}</nav>"#,
+        catalog_search_form(&query, current_route),
+    )
+}
+
+fn catalog_search_form(query: &str, current_route: &str) -> String {
+    format!(
+        r#"<form class="document-search" method="get" action="{}"><label for="document-search">Search discovered documents</label><input id="document-search" name="query" type="search" value="{}" maxlength="{MAX_QUERY_BYTES}"><button type="submit">Search</button></form>"#,
+        escape_html(current_route),
+        escape_html(query),
+    )
+}
+
+fn catalog_status(results: &CatalogResults) -> String {
+    if results.total == 0 {
+        return "No discovered documents match the search.".to_owned();
+    }
+
+    let first_result = (results.page - 1) * RESULT_LIMIT + 1;
+    let last_result = first_result + results.entries.len() - 1;
+    if results.query.is_empty() {
+        format!(
+            "Showing {first_result}–{last_result} of {} discovered documents.",
+            results.total
+        )
+    } else {
+        format!(
+            "Showing {first_result}–{last_result} of {} discovered documents matching \"{}\".",
+            results.total,
+            escape_html(&results.query),
+        )
+    }
+}
+
+fn catalog_result_links(results: &CatalogResults, current_document: usize) -> String {
+    let mut document_links = String::new();
+    let page_query = escape_html(&results.page_query(results.page));
+    for entry in &results.entries {
+        let current = (entry.document_index == current_document)
+            .then_some(r#" aria-current="page""#)
+            .unwrap_or_default();
+        let identifier = escape_html(&entry.identifier);
+        write!(
+            document_links,
+            r#"<li data-document-navigation-item><a href="/documents/{identifier}?{page_query}"{current}>{identifier}</a></li>"#
+        )
+        .expect("writing navigation markup to a string cannot fail");
+    }
+    document_links
+}
+
+fn catalog_page_links(results: &CatalogResults, current_route: &str) -> String {
+    let mut page_links = String::new();
+    if results.has_previous_page() {
+        write!(
+            page_links,
+            r#"<a href="{}?{}" rel="prev">Previous results</a>"#,
+            escape_html(current_route),
+            escape_html(&results.page_query(results.page - 1)),
+        )
+        .expect("writing navigation markup to a string cannot fail");
+    }
+    if results.has_next_page() {
+        if !page_links.is_empty() {
+            page_links.push(' ');
+        }
+        write!(
+            page_links,
+            r#"<a href="{}?{}" rel="next">Next results</a>"#,
+            escape_html(current_route),
+            escape_html(&results.page_query(results.page + 1)),
+        )
+        .expect("writing navigation markup to a string cannot fail");
+    }
+
+    page_links
+        .is_empty()
+        .then(String::new)
+        .unwrap_or_else(|| format!(r#"<p class="document-result-pages">{page_links}</p>"#))
 }
 
 async fn stylesheet() -> impl IntoResponse {
@@ -466,24 +579,6 @@ const APP_SCRIPT: &str = r#"for (const image of document.querySelectorAll('[data
   }
 }
 
-for (const navigation of document.querySelectorAll('[data-document-navigation]')) {
-  const filter = navigation.querySelector('[data-document-filter]');
-  const empty = navigation.querySelector('[data-document-filter-empty]');
-  const entries = navigation.querySelectorAll('[data-document-navigation-item]');
-  if (!filter || !empty) continue;
-
-  filter.addEventListener('input', () => {
-    const query = filter.value.trim().toLocaleLowerCase();
-    let visibleEntries = 0;
-    for (const entry of entries) {
-      const matches = entry.textContent.toLocaleLowerCase().includes(query);
-      entry.hidden = !matches;
-      if (matches) visibleEntries += 1;
-    }
-    empty.hidden = visibleEntries !== 0;
-  });
-}
-
 const documentView = document.querySelector('[data-document-id][data-document-revision]');
 if (documentView) {
   const documentId = documentView.dataset.documentId;
@@ -512,11 +607,13 @@ main { width: min(1200px, calc(100% - 2rem)); margin: 3rem auto 5rem; display: g
 .document-navigation h2 { margin: 0 0 .75rem; font-size: 1rem; }
 .document-navigation label { display: block; font-size: .8rem; font-weight: 700; }
 .document-navigation input { width: 100%; margin: .25rem 0 .75rem; padding: .4rem; border: 1px solid #8d897e; font: inherit; }
+.document-search button { padding: .35rem .65rem; border: 1px solid #1d2826; background: #1d2826; color: #fffdf8; font: inherit; }
 .document-navigation ul { margin: 0; padding: 0; list-style: none; }
 .document-navigation li + li { margin-top: .35rem; }
 .document-navigation a { color: #1d2826; overflow-wrap: anywhere; }
 .document-navigation a[aria-current="page"] { color: #8b3f21; font-weight: 800; text-decoration-thickness: .18em; }
 .document-navigation [role="status"] { margin: .75rem 0; color: #8b3f21; font-size: .875rem; }
+.document-result-pages { display: flex; gap: .75rem; margin: .75rem 0 0; }
 .document-content { min-width: 0; }
 header { border-bottom: 3px solid #1d2826; margin-bottom: 2rem; }
 h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; margin: 0 0 1.2rem; overflow-wrap: anywhere; }
@@ -544,7 +641,7 @@ mod tests {
 
     use super::{
         deferred_navigation_page, renderer_client, renderer_client_with_timeout, request_diagram,
-        router, viewer_state,
+        router, viewer_state, NavigationRequest,
     };
     use crate::{markdown::Diagram, plantuml::PUBLIC_SERVER, target::MarkdownDocument};
 
@@ -598,12 +695,15 @@ mod tests {
         );
 
         // Act
-        let navigation = state.navigation_pane(1);
+        let request = NavigationRequest::from_raw_query(None);
+        let navigation = state.navigation_pane(1, &request, "/documents/guides/intro.md");
 
         // Assert
         assert!(navigation.contains("aria-label=\"Discovered documents\""));
-        assert!(navigation.contains("href=\"/documents/README.md\""));
-        assert!(navigation.contains("href=\"/documents/guides/intro.md\" aria-current=\"page\""));
+        assert!(navigation.contains("href=\"/documents/README.md?query=&amp;page=1\""));
+        assert!(navigation.contains(
+            "href=\"/documents/guides/intro.md?query=&amp;page=1\" aria-current=\"page\""
+        ));
         assert!(!navigation.contains(".private.md"));
         assert_eq!(navigation.matches("aria-current=\"page\"").count(), 1);
     }
@@ -619,11 +719,38 @@ mod tests {
         );
 
         // Act
-        let navigation = state.navigation_pane(0);
+        let request = NavigationRequest::from_raw_query(None);
+        let navigation = state.navigation_pane(0, &request, "/");
 
         // Assert
         assert!(navigation.contains("/documents/guides/&lt;unsafe&gt;.md"));
         assert!(!navigation.contains("/documents/guides/<unsafe>.md"));
+    }
+
+    #[test]
+    fn more_than_result_limit_then_shows_first_page_and_next_link() {
+        // Arrange
+        let documents = (0..=50)
+            .map(|index| test_document(&format!("guides/{index:03}.md"), "# Guide"))
+            .collect();
+        let state = viewer_state(
+            documents,
+            0,
+            renderer_client().expect("test client should initialize"),
+            PUBLIC_SERVER,
+        );
+
+        // Act
+        let request = NavigationRequest::from_raw_query(None);
+        let navigation = state.navigation_pane(0, &request, "/");
+
+        // Assert
+        assert_eq!(
+            navigation.matches("data-document-navigation-item").count(),
+            50
+        );
+        assert!(navigation.contains("Next results"));
+        assert!(!navigation.contains("guides/050.md"));
     }
 
     #[test]

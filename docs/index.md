@@ -43,6 +43,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-005: Use a controlled PlantUML renderer in browser tests](decisions/adr-005-controlled-renderer-browser-tests.md)
 - [ADR-006: Derive the navigation pane from the session document set](decisions/adr-006-document-navigation-pane.md)
 - [ADR-007: Poll only known document paths for automatic refresh](decisions/adr-007-poll-known-document-paths.md)
+- [ADR-008: Search the session document catalog in bounded pages](decisions/adr-008-paginated-session-catalog-search.md)
 - [V1 release readiness](release-readiness.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)
