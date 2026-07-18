@@ -18,6 +18,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Install Rust 1.75
         uses: dtolnay/rust-toolchain@1.75
+        with:
+          components: rustfmt, clippy
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
