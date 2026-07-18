@@ -1,6 +1,6 @@
 # FEAT-02: Browse the Discovered Document Set
 
-Status: started in N1
+Status: refined in N2
 
 ## System Boundary
 
@@ -105,4 +105,7 @@ Special requirements:
 - Existing safe-navigation basis: `UC-04`,
   [`FEAT-01`](../markdown-viewing/use-cases.md), and
   [ADR-003](../../decisions/adr-003-document-root-discovery.md)
-- Planned system sequence and contract: `SSD-03` and `OC-03`
+- System sequence: [`SSD-03`](ssd-03-browse-document-catalog.md)
+- Operation contract: [`OC-03`](oc-03-request-document-catalog.md)
+- Design realization and Rust mapping: [`RZ-02` and `DCD-02`](design.md)
+- Decision: [ADR-006](../../decisions/adr-006-document-navigation-pane.md)
