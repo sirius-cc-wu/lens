@@ -36,6 +36,15 @@ hidden entries and symbolic links. Relative links resolve only when their target
 is a discovered Markdown document; all other local paths receive a Lens guidance
 page without filesystem access.
 
+### Agent skills
+
+Lens does not scan the hidden `.agents` directory when the repository is the
+document root. To view project agent skills, open the skills directory directly:
+
+```bash
+lens .agents/skills
+```
+
 ## PlantUML
 
 Lens sends PlantUML block source to the public PlantUML server. A failed diagram
