@@ -26,6 +26,8 @@ filesystem path or arbitrary renderer URL.
 - A failed automatic browser launch can safely report the loopback URL for
   manual opening.
 - Browser requests cannot select other repository or host files.
+- Unknown document paths return a Lens-owned 404 guidance page instead of a
+  browser-generated error. The page links only to the selected document.
 - Directory browsing requires a new target-root authorization decision before
   it can be added.
 

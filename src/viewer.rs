@@ -29,7 +29,7 @@ struct ViewerState {
 pub async fn serve(target: MarkdownTarget) -> Result<()> {
     let document = render(&target.source);
     let state = Arc::new(ViewerState {
-        html: page(&target, document.html),
+        html: page(&target.canonical_path.display().to_string(), document.html),
         diagrams: document.diagrams,
         client: renderer_client()?,
     });
@@ -81,6 +81,7 @@ fn router(state: Arc<ViewerState>) -> Router {
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
         .route("/diagrams/:diagram_id", get(diagram))
+        .fallback(not_found)
         .with_state(state)
 }
 
@@ -102,6 +103,14 @@ async fn script() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         APP_SCRIPT,
+    )
+}
+
+async fn not_found() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
+        Html(deferred_navigation_page()),
     )
 }
 
@@ -186,7 +195,7 @@ async fn shutdown_signal() {
     }
 }
 
-fn page(target: &MarkdownTarget, document_html: String) -> String {
+fn page(title: &str, document_html: String) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -204,8 +213,15 @@ fn page(target: &MarkdownTarget, document_html: String) -> String {
   <script src="/app.js"></script>
 </body>
 </html>"#,
-        escape_html(&target.canonical_path.display().to_string()),
-        escape_html(&target.canonical_path.display().to_string()),
+        escape_html(title),
+        escape_html(title),
+    )
+}
+
+fn deferred_navigation_page() -> String {
+    page(
+        "Document navigation unavailable",
+        "<p>Lens can display the selected document, but navigating to another repository document is not available yet.</p><p><a href=\"/\">Return to the selected document</a></p>".to_owned(),
     )
 }
 
@@ -248,7 +264,10 @@ mod tests {
     };
     use tower::ServiceExt;
 
-    use super::{renderer_client, renderer_client_with_timeout, router, ViewerState};
+    use super::{
+        deferred_navigation_page, renderer_client, renderer_client_with_timeout, router,
+        ViewerState,
+    };
     use crate::markdown::{render, Diagram};
 
     fn test_router() -> axum::Router {
@@ -301,6 +320,19 @@ mod tests {
 
         // Assert
         assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn deferred_document_navigation_then_explains_how_to_return() {
+        // Arrange
+        let expected_message = "navigating to another repository document is not available yet";
+
+        // Act
+        let page = deferred_navigation_page();
+
+        // Assert
+        assert!(page.contains(expected_message));
+        assert!(page.contains("href=\"/\""));
     }
 
     #[tokio::test]

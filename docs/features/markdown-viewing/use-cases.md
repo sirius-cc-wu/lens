@@ -73,6 +73,11 @@ E1 scope: The executable slice accepts a direct `.md` or `.markdown` file
 target. Directory and current-directory targets remain work for `UC-02` and
 `UC-03`.
 
+Until `UC-04` is implemented, a link to another repository document receives a
+Lens-owned 404 page that explains document navigation is unavailable and links
+back to the selected document. Lens must not resolve that link into a filesystem
+path during E1.
+
 ## Open Questions
 
 - Does "codebase code and document" require a code-file navigator in the first
