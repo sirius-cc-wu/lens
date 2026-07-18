@@ -88,12 +88,10 @@ fn diagram_placeholder(
                 r#"<img src="/diagrams/{document_id}/{diagram_id}" alt="Rendered PlantUML diagram" data-diagram>"#
             )
         })
-        .unwrap_or_else(|| {
-            "<p class=\"diagram-disabled\">PlantUML rendering is disabled for this viewing session.</p>"
-                .to_owned()
-        });
+        .unwrap_or_default();
+    let disabled_status = rendering_enabled.then_some(" hidden").unwrap_or_default();
     format!(
-        r#"<figure class="diagram">{image}<p class="diagram-error" hidden>PlantUML rendering failed. The source is shown below.</p><details class="diagram-source"><summary>PlantUML source</summary><pre><code>{}</code></pre></details></figure>"#,
+        r#"<figure class="diagram" data-diagram-container>{image}<p class="diagram-error" hidden>PlantUML rendering failed. The source is shown below.</p><p class="diagram-disabled" data-diagram-disabled{disabled_status}>PlantUML rendering is disabled for this viewing session.</p><button type="button" data-diagram-retry hidden>Retry diagram rendering</button><details class="diagram-source"><summary>PlantUML source</summary><pre><code>{}</code></pre></details></figure>"#,
         escape_html(source),
     )
 }
@@ -217,7 +215,7 @@ mod tests {
         let document = render(markdown, 0, "document.md", &BTreeSet::new(), &renderer);
 
         // Assert
-        assert!(!document.html.contains("data-diagram"));
+        assert!(!document.html.contains("<img"));
         assert!(document
             .html
             .contains("PlantUML rendering is disabled for this viewing session."));

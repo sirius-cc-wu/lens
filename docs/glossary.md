@@ -12,4 +12,5 @@
 | Markdown document | A supported text file whose content Lens renders as Markdown. The supported extensions are not yet finalized. |
 | PlantUML block | A fenced Markdown code block labeled `plantuml` whose contents describe a PlantUML diagram. |
 | Diagram renderer | The session-fixed PlantUML conversion choice: the default public server, the installed local `plantuml` command, or disabled rendering that leaves source visible. |
+| Renderer status | The document-page message identifying the selected renderer or confirming that rendering is disabled for the current viewing session. |
 | Loopback address | A network address reachable only from the same machine, such as `127.0.0.1`; Lens should use it for its browser session by default. |

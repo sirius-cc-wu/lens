@@ -174,7 +174,7 @@ test("disabled renderer then preserves plantuml source without a diagram request
     await page.goto(fixture.lens.url);
 
     // Assert
-    await expect(page.getByText("PlantUML rendering is disabled for this viewing session.")).toBeVisible();
+    await expect(page.locator(".diagram-disabled")).toBeVisible();
     await expect(page.locator("img[data-diagram]")).toHaveCount(0);
     await expect(page.locator(".diagram-source")).toContainText("Alice -> Bob: browser fixture");
     await expect.poll(() => fixture.renderer.requests).toBe(0);
@@ -183,7 +183,55 @@ test("disabled renderer then preserves plantuml source without a diagram request
   }
 });
 
-async function startBrowserFixture({ hiddenDocument, rendererMode, rendererStatus } = {}) {
+test("renderer failure then retry button loads the diagram", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ rendererStatuses: [503, 200] });
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect(page.getByText("PlantUML rendering failed. The source is shown below.")).toBeVisible();
+
+    // Act
+    await page.getByRole("button", { name: "Retry diagram rendering" }).click();
+
+    // Assert
+    await expect.poll(() => fixture.renderer.requests).toBe(2);
+    await expect
+      .poll(() =>
+        page.locator("img[data-diagram]").evaluate((image) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true);
+    await expect(page.getByText("PlantUML rendering failed. The source is shown below.")).toBeHidden();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("disable renderer control then blocks further rendering for the session", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
+    await expect(page.getByText("Diagram renderer: public.")).toBeVisible();
+
+    // Act
+    await page.getByRole("button", { name: "Disable diagram rendering for this session" }).click();
+
+    // Assert
+    await expect(page.getByText("Diagram rendering is disabled for this viewing session.")).toBeVisible();
+    await expect(page.locator(".diagram-disabled")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Disable diagram rendering for this session" })).toHaveCount(0);
+    const diagramResponse = await page.request.get(`${fixture.lens.url}/diagrams/0/0`);
+    expect(diagramResponse.status()).toBe(503);
+    expect(fixture.renderer.requests).toBe(1);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+async function startBrowserFixture({ hiddenDocument, rendererMode, rendererStatus, rendererStatuses } = {}) {
   let repository;
   let renderer;
   let lens;
@@ -210,7 +258,7 @@ async function startBrowserFixture({ hiddenDocument, rendererMode, rendererStatu
 
   try {
     repository = await createDocumentationRepository({ hiddenDocument });
-    renderer = await startRenderer({ status: rendererStatus });
+    renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
     lens = await startLens(repository, renderer.url, rendererMode);
     return { lens, renderer, repository, stop };
   } catch (error) {
@@ -258,16 +306,17 @@ async function createDocumentationRepository({ hiddenDocument } = {}) {
   }
 }
 
-async function startRenderer({ status = 200 } = {}) {
+async function startRenderer({ status = 200, statuses } = {}) {
   let requests = 0;
   const server = createServer((_request, response) => {
+    const responseStatus = (statuses ?? [status])[Math.min(requests, (statuses ?? [status]).length - 1)];
     requests += 1;
-    if (status === 200) {
+    if (responseStatus === 200) {
       response.writeHead(200, { "content-type": "image/svg+xml" });
       response.end('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>');
       return;
     }
-    response.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+    response.writeHead(responseStatus, { "content-type": "text/plain; charset=utf-8" });
     response.end("Controlled renderer failure");
   });
   server.listen(0, "127.0.0.1");

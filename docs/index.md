@@ -45,6 +45,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-007: Poll only known document paths for automatic refresh](decisions/adr-007-poll-known-document-paths.md)
 - [ADR-008: Select a PlantUML renderer per viewing session](decisions/adr-008-selectable-plantuml-rendering.md)
 - [ADR-009: Package Linux binary release artifacts](decisions/adr-009-linux-binary-release-artifacts.md)
+- [ADR-010: Keep diagram controls inside a viewing session](decisions/adr-010-diagram-failure-controls.md)
 - [V1 release readiness](release-readiness.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)

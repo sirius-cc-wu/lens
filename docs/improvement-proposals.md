@@ -57,6 +57,10 @@ Expose renderer status, allow a failed diagram request to be retried, and let a
 user disable diagram rendering for a session. These controls would make public
 renderer failures clearer and give users a predictable fallback.
 
+Status: implemented in P5. Each document exposes its renderer status, a failed
+diagram presents a retry control, and a session disable control stops future
+renderer requests while leaving PlantUML source readable.
+
 ## 6. Standalone PlantUML Files
 
 Allow Lens to open `.puml` files directly as well as PlantUML blocks embedded in

@@ -38,6 +38,14 @@ impl DiagramRenderer {
         !matches!(self, Self::Disabled)
     }
 
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            Self::Public { .. } => "public",
+            Self::Local { .. } => "local",
+            Self::Disabled => "disabled",
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn local_with_command(command: PathBuf) -> Self {
         Self::Local { command }

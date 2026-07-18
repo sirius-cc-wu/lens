@@ -61,6 +61,11 @@ source over that command's standard input and does not send it to a renderer
 service. Select `--renderer disabled` to display PlantUML source without
 requesting a rendered diagram for the viewing session.
 
+Every document page identifies the selected renderer. When an individual
+diagram fails, use its **Retry diagram rendering** button after the renderer is
+available again. Use **Disable diagram rendering for this session** to stop
+further renderer requests while preserving each diagram's source.
+
 ## V1 Scope
 
 V1 is a documentation viewer. It does not browse source-code files, edit

@@ -1,6 +1,6 @@
 # FEAT-01: View Markdown with PlantUML
 
-Status: refined in P1
+Status: refined in P5
 
 ## Actors
 
@@ -67,12 +67,19 @@ Extensions:
   the block source on standard input and keeps it off the renderer network.
 - 6d. With `--renderer disabled`, Lens does not request a diagram image and
   instead displays the original PlantUML source with a disabled status.
+- 6e. Each document identifies the active renderer. After one diagram fails,
+  the user can retry only that diagram without changing its source or renderer
+  selection.
+- 6f. The user can disable diagram rendering for the active viewing session.
+  Lens stops future renderer requests and keeps every diagram's source visible.
 
 Postconditions:
 
 - A local browser view exists for the selected Markdown document.
 - The original file remains unchanged.
 - The user can identify any diagrams that were not rendered and why.
+- The user can determine whether the selected renderer is public, local, or
+  disabled for the current viewing session.
 
 E1 scope: The executable slice accepts a direct `.md` or `.markdown` file
 target. Directory and current-directory targets remain work for `UC-02` and

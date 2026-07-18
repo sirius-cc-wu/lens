@@ -5,7 +5,10 @@ use std::{
     net::TcpListener,
     path::PathBuf,
     process::{Command, Stdio},
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
     time::Duration,
 };
 
@@ -14,7 +17,7 @@ use axum::{
     extract::{Path, State},
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use futures_util::StreamExt;
@@ -38,6 +41,7 @@ struct ViewerState {
     initial_document: usize,
     client: Client,
     renderer: DiagramRenderer,
+    rendering_disabled: AtomicBool,
 }
 
 impl ViewerState {
@@ -58,6 +62,25 @@ impl ViewerState {
         format!(
             r#"<nav class="document-navigation" aria-label="Discovered documents" data-document-navigation><h2>Documents</h2><label for="document-filter">Filter discovered documents</label><input id="document-filter" type="search" data-document-filter aria-controls="document-catalog"><noscript><p>Filtering requires JavaScript; all discovered documents are shown.</p></noscript><p data-document-filter-empty role="status" hidden>No discovered documents match the filter.</p><ul id="document-catalog">{document_links}</ul></nav>"#
         )
+    }
+
+    fn rendering_enabled(&self) -> bool {
+        self.renderer.is_enabled() && !self.rendering_disabled.load(Ordering::Acquire)
+    }
+
+    fn disable_rendering(&self) {
+        self.rendering_disabled.store(true, Ordering::Release);
+    }
+
+    fn renderer_controls(&self) -> String {
+        if self.rendering_enabled() {
+            format!(
+                r#"<section class="renderer-controls" data-renderer-controls><p role="status" data-renderer-status>Diagram renderer: {}.</p><button type="button" data-disable-renderer>Disable diagram rendering for this session</button></section>"#,
+                self.renderer.label()
+            )
+        } else {
+            r#"<section class="renderer-controls" data-renderer-controls><p role="status" data-renderer-status>Diagram rendering is disabled for this viewing session.</p></section>"#.to_owned()
+        }
     }
 
     fn document_revision(&self, document_id: usize) -> Option<u64> {
@@ -215,6 +238,7 @@ fn viewer_state(
         initial_document,
         client,
         renderer,
+        rendering_disabled: AtomicBool::new(false),
     })
 }
 
@@ -226,6 +250,7 @@ fn router(state: Arc<ViewerState>) -> Router {
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
         .route("/diagrams/:document_id/:diagram_id", get(diagram))
+        .route("/renderer/disable", post(disable_renderer))
         .fallback(not_found)
         .with_state(state)
 }
@@ -265,6 +290,7 @@ async fn document_revision(
 
 fn rendered_document_response(state: &ViewerState, document_id: usize) -> Response {
     let navigation = state.navigation_pane(document_id);
+    let renderer_controls = state.renderer_controls();
     let documents = state
         .documents
         .read()
@@ -276,6 +302,8 @@ fn rendered_document_response(state: &ViewerState, document_id: usize) -> Respon
             &document.canonical_path.display().to_string(),
             document.rendered.html.clone(),
             navigation,
+            renderer_controls,
+            !state.rendering_enabled(),
             Some((&document.identifier, document.revision)),
         )),
     )
@@ -308,6 +336,13 @@ async fn diagram(
     State(state): State<Arc<ViewerState>>,
     Path((document_id, diagram_id)): Path<(usize, usize)>,
 ) -> Response {
+    if !state.rendering_enabled() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "PlantUML rendering is disabled for this viewing session.",
+        )
+            .into_response();
+    }
     let diagram = state
         .documents
         .read()
@@ -337,6 +372,11 @@ async fn diagram(
                 .into_response()
         }
     }
+}
+
+async fn disable_renderer(State(state): State<Arc<ViewerState>>) -> StatusCode {
+    state.disable_rendering();
+    StatusCode::NO_CONTENT
 }
 
 async fn request_diagram(
@@ -465,6 +505,8 @@ fn page(
     title: &str,
     document_html: String,
     navigation_html: String,
+    renderer_controls: String,
+    rendering_disabled: bool,
     document_revision: Option<(&str, u64)>,
 ) -> String {
     let refresh_attributes = document_revision
@@ -475,9 +517,12 @@ fn page(
             )
         })
         .unwrap_or_default();
+    let rendering_disabled_attribute = rendering_disabled
+        .then_some(r#" data-diagram-rendering-disabled="true""#)
+        .unwrap_or_default();
     format!(
         r#"<!doctype html>
-<html lang="en">
+<html lang="en"{rendering_disabled_attribute}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -489,6 +534,7 @@ fn page(
     {navigation_html}
     <section class="document-content">
       <header><p class="eyebrow">Lens</p><h1>{}</h1></header>
+      {renderer_controls}
       <article>{document_html}</article>
     </section>
   </main>
@@ -505,6 +551,8 @@ fn deferred_navigation_page() -> String {
         "Document navigation unavailable",
         "<p>Lens can display the selected document, but the requested document is not part of this viewing session.</p><p><a href=\"/\">Return to the initial document</a></p>".to_owned(),
         String::new(),
+        String::new(),
+        false,
         None,
     )
 }
@@ -513,16 +561,58 @@ fn content_security_policy() -> &'static str {
     "default-src 'self'; base-uri 'none'; img-src 'self'; object-src 'none'; script-src 'self'; style-src 'self'"
 }
 
-const APP_SCRIPT: &str = r#"for (const image of document.querySelectorAll('[data-diagram]')) {
+const APP_SCRIPT: &str = r#"const markDiagramDisabled = (figure) => {
+  const image = figure.querySelector('[data-diagram]');
+  if (image) image.removeAttribute('src');
+  figure.querySelector('.diagram-error').hidden = true;
+  figure.querySelector('[data-diagram-retry]').hidden = true;
+  figure.querySelector('[data-diagram-disabled]').hidden = false;
+  figure.querySelector('.diagram-source').open = true;
+};
+
+for (const image of document.querySelectorAll('[data-diagram]')) {
   const revealFailure = () => {
     const figure = image.closest('.diagram');
+    if (document.documentElement.dataset.diagramRenderingDisabled === 'true') {
+      markDiagramDisabled(figure);
+      return;
+    }
     figure.querySelector('.diagram-error').hidden = false;
+    figure.querySelector('[data-diagram-retry]').hidden = false;
     figure.querySelector('.diagram-source').open = true;
   };
+  const retry = image.closest('.diagram').querySelector('[data-diagram-retry]');
+  retry.addEventListener('click', () => {
+    image.closest('.diagram').querySelector('.diagram-error').hidden = true;
+    retry.hidden = true;
+    const retryUrl = new URL(image.src, window.location.origin);
+    retryUrl.searchParams.set('retry', Date.now().toString());
+    image.src = retryUrl.toString();
+  });
   image.addEventListener('error', revealFailure);
   if (image.complete && image.naturalWidth === 0) {
     revealFailure();
   }
+}
+
+const disableRenderer = document.querySelector('[data-disable-renderer]');
+if (disableRenderer) {
+  disableRenderer.addEventListener('click', async () => {
+    disableRenderer.disabled = true;
+    try {
+      const response = await fetch('/renderer/disable', { method: 'POST' });
+      if (!response.ok) throw new Error('disable failed');
+      document.documentElement.dataset.diagramRenderingDisabled = 'true';
+      document.querySelector('[data-renderer-status]').textContent =
+        'Diagram rendering is disabled for this viewing session.';
+      for (const figure of document.querySelectorAll('[data-diagram-container]')) {
+        markDiagramDisabled(figure);
+      }
+      disableRenderer.remove();
+    } catch {
+      disableRenderer.disabled = false;
+    }
+  });
 }
 
 for (const navigation of document.querySelectorAll('[data-document-navigation]')) {
@@ -587,7 +677,11 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .diagram img { display: block; width: 100%; height: auto; }
 .diagram-error { color: #9c2f19; font-family: system-ui, sans-serif; font-weight: 700; }
 .diagram-disabled { color: #555147; font-family: system-ui, sans-serif; font-weight: 700; }
+.diagram button { margin-top: .75rem; }
 .diagram-source { margin-top: .75rem; }
+.renderer-controls { margin: 0 0 1.5rem; padding: .75rem 1rem; border-left: 4px solid #8b3f21; background: #fffdf8; font-family: system-ui, sans-serif; }
+.renderer-controls p { margin: 0; font-weight: 700; }
+.renderer-controls button { margin-top: .65rem; }
 @media (max-width: 760px) { main { width: min(100% - 1rem, 920px); margin-top: 1.5rem; display: block; } .document-navigation { position: static; margin-bottom: 1.5rem; } .diagram { padding: .5rem; } }"#;
 
 #[cfg(test)]
@@ -692,6 +786,24 @@ mod tests {
         // Assert
         assert!(navigation.contains("/documents/guides/&lt;unsafe&gt;.md"));
         assert!(!navigation.contains("/documents/guides/<unsafe>.md"));
+    }
+
+    #[test]
+    fn enabled_renderer_then_exposes_its_status_and_disable_control() {
+        // Arrange
+        let state = viewer_state(
+            vec![test_document("README.md", "# Read me")],
+            0,
+            renderer_client().expect("test client should initialize"),
+            test_renderer(),
+        );
+
+        // Act
+        let controls = state.renderer_controls();
+
+        // Assert
+        assert!(controls.contains("Diagram renderer: public."));
+        assert!(controls.contains("data-disable-renderer"));
     }
 
     #[test]
@@ -848,6 +960,49 @@ mod tests {
 
         // Assert
         assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn renderer_disable_request_then_blocks_diagram_rendering_for_the_session() {
+        // Arrange
+        let state = viewer_state(
+            vec![test_document(
+                "README.md",
+                "```plantuml\n@startuml\nAlice -> Bob\n@enduml\n```",
+            )],
+            0,
+            renderer_client().expect("test client should initialize"),
+            test_renderer(),
+        );
+        let disable_request = Request::builder()
+            .method("POST")
+            .uri("/renderer/disable")
+            .body(Body::empty())
+            .expect("disable request should build");
+
+        // Act
+        let disable_response = router(state.clone())
+            .oneshot(disable_request)
+            .await
+            .expect("router should respond");
+        let diagram_request = Request::builder()
+            .uri("/diagrams/0/0")
+            .body(Body::empty())
+            .expect("diagram request should build");
+        let diagram_response = router(state)
+            .oneshot(diagram_request)
+            .await
+            .expect("router should respond");
+
+        // Assert
+        assert_eq!(
+            disable_response.status(),
+            axum::http::StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            diagram_response.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 
     #[tokio::test]
