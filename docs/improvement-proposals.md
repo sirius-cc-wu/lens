@@ -29,6 +29,9 @@ Add a sidebar containing the discovered document set, current-document
 highlighting, and search. The sidebar must use the existing authorized document
 set so it does not broaden filesystem access.
 
+Status: selected for implementation. `N1` defines its user goals and security
+constraints before design and construction.
+
 ## 4. Automatic Refresh
 
 Watch discovered Markdown files and refresh the browser view when they change.
