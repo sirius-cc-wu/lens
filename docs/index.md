@@ -28,6 +28,7 @@ small and will be refined as elaboration resolves the listed risks.
 ## Current Artifacts
 
 - [Vision and business case](vision.md)
+- [Improvement proposals](improvement-proposals.md)
 - [Primary feature and use cases](features/markdown-viewing/use-cases.md) (`FEAT-01`)
 - [V1 UML design views](features/markdown-viewing/uml-design.md)
 - [Supplementary specification](supplementary-specification.md)
