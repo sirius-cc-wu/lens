@@ -27,13 +27,15 @@ response contains at most 50 matching identifiers and native previous/next
 links preserve the query and page. The current document is marked only when it
 is present in that returned page.
 
-Lens accepts at most 256 UTF-8 bytes of query text and treats a missing, zero,
-malformed, or out-of-range page as the first result page. The browser submits a
-search only when the user submits the form or follows a page link; Lens sends
-no request for each keystroke and adds no background search polling or separate
-search route. There is no independent rate limiter for this loopback,
-single-session page request: the fixed in-memory index, query limit, and
-50-item response cap bound the work and output of each search request.
+Lens accepts at most 256 UTF-8 bytes of query text. A longer query leaves the
+current document readable and reports the limit without searching the index. A
+missing, zero, malformed, or out-of-range page becomes the first result page.
+The browser submits a search only when the user submits the form or follows a
+page link; Lens sends no request for each keystroke and adds no background
+search polling or separate search route. There is no independent rate limiter
+for this loopback, single-session page request: the fixed in-memory index,
+query limit, and 50-item response cap bound the work and output of each search
+request.
 
 The existing document route remains the only route that can select a document.
 An unknown document identifier keeps the ADR-003 guidance response regardless
