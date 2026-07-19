@@ -1,6 +1,7 @@
 # FEAT-02 Navigation Pane Design
 
-Status: implemented in C3; scalable search designed in N4 and implemented in C5
+Status: implemented in C3; scalable search designed in N4 and implemented in
+C5; collapsible pane implemented in C6
 
 This design refines `UC-07` and `UC-08` under ADR-008. The session still owns
 the only authorized document set, but each response presents a bounded search
@@ -167,3 +168,28 @@ Rust adaptation notes:
 - Unit tests cover the result cap, case-insensitive matching, over-limit query,
   and invalid-page behavior. `BTE-01` verifies submitted search and pagination
   with JavaScript disabled against 51 matching fixture documents.
+
+## RZ-04: Toggle Navigation Presentation Without Changing the Session
+
+Use-case realization: `UC-11`
+
+The server-rendered page supplies the navigation pane with a stable ID and a
+button outside that pane. The button starts hidden so a browser without
+scripting retains a complete, usable navigation pane instead of an inert
+control. When the application script loads, it reveals the button and applies
+the remembered state.
+
+The application script owns the presentation preference. It stores only a
+Boolean in the browser tab's temporary storage (`sessionStorage`) under the
+current loopback origin, so it persists through ordinary document navigation
+in that tab but does not become server-side `ViewerState`. The script toggles
+the pane's `hidden` property, synchronizes the button's `aria-expanded` value
+and label, and marks the page layout as collapsed so the document column can
+grow. If storage is unavailable, the current page still toggles and later pages
+fall back to the visible default.
+
+`navigation_pane`, `DocumentCatalog`, the Axum handlers, and known-document
+routes keep their existing responsibilities. They receive no visibility input,
+make no new request, and never change the authorized identifier set. The
+button remains outside the hidden pane, which preserves a keyboard-reachable
+restore path.

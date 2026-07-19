@@ -155,6 +155,51 @@ test("document_navigation_pane_then_lists_authorized_documents_and_marks_current
   }
 });
 
+test("navigation_pane_toggle_then_persists_visibility_and_restores_the_pane", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    await page.goto(fixture.lens.url);
+    const navigation = page.locator("#document-navigation");
+    const navigationToggle = page.locator("[data-document-navigation-toggle]");
+    const documentContent = page.locator(".document-content");
+    const expandedContentWidth = await documentContent.evaluate((content) => content.getBoundingClientRect().width);
+
+    // Act
+    await navigationToggle.press("Enter");
+
+    // Assert
+    await expect(navigationToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(navigation).toBeHidden();
+    expect(await documentContent.evaluate((content) => content.getBoundingClientRect().width)).toBeGreaterThan(
+      expandedContentWidth,
+    );
+
+    // Act
+    await page.goto(`${fixture.lens.url}/documents/guides/guide.md`);
+
+    // Assert
+    await expect(navigationToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(navigationToggle).toHaveText("Show documents");
+    await expect(navigation).toBeHidden();
+    await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
+
+    // Act
+    await navigationToggle.press("Enter");
+
+    // Assert
+    await expect(navigationToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(navigation).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "guides/guide.md" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("submitted_document_search_then_returns_matching_authorized_documents", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();

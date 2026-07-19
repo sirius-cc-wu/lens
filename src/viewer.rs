@@ -412,7 +412,7 @@ fn navigation_pane(page: CatalogPage, current_document: usize, current_route: &s
     };
 
     format!(
-        r#"<nav class="document-navigation" aria-label="Discovered documents"><h2>Documents</h2>{}<p role="status">{status}</p><ul id="document-catalog">{document_links}</ul>{page_links}</nav>"#,
+        r#"<nav id="document-navigation" class="document-navigation" aria-label="Discovered documents"><h2>Documents</h2>{}<p role="status">{status}</p><ul id="document-catalog">{document_links}</ul>{page_links}</nav>"#,
         catalog_search_form(&query, current_route),
     )
 }
@@ -692,6 +692,11 @@ fn page(
     rendering_disabled: bool,
     document_revision: Option<(&str, u64)>,
 ) -> String {
+    let navigation_control = if navigation_html.is_empty() {
+        String::new()
+    } else {
+        document_navigation_control().to_owned()
+    };
     let refresh_attributes = document_revision
         .map(|(document_id, revision)| {
             format!(
@@ -714,6 +719,7 @@ fn page(
 </head>
 <body>
   <main{refresh_attributes}>
+    {navigation_control}
     {navigation_html}
     <section class="document-content">
       <header><p class="eyebrow">Lens</p><h1>{}</h1></header>
@@ -727,6 +733,10 @@ fn page(
         escape_html(title),
         escape_html(title),
     )
+}
+
+fn document_navigation_control() -> &'static str {
+    r#"<div class="document-navigation-control" data-document-navigation-control hidden><button type="button" data-document-navigation-toggle aria-controls="document-navigation" aria-expanded="true">Hide documents</button></div>"#
 }
 
 fn deferred_navigation_page() -> String {
@@ -752,6 +762,37 @@ const APP_SCRIPT: &str = r#"const markDiagramDisabled = (figure) => {
   figure.querySelector('[data-diagram-disabled]').hidden = false;
   figure.querySelector('.diagram-source').open = true;
 };
+
+const navigationControl = document.querySelector('[data-document-navigation-control]');
+const navigationToggle = document.querySelector('[data-document-navigation-toggle]');
+const navigationPane = document.querySelector('#document-navigation');
+const documentLayout = document.querySelector('main');
+if (navigationControl && navigationToggle && navigationPane && documentLayout) {
+  const navigationPaneStateKey = 'lens.documentNavigationCollapsed';
+  const setNavigationPaneCollapsed = (collapsed) => {
+    navigationPane.hidden = collapsed;
+    documentLayout.dataset.documentNavigationCollapsed = String(collapsed);
+    navigationToggle.setAttribute('aria-expanded', String(!collapsed));
+    navigationToggle.textContent = collapsed ? 'Show documents' : 'Hide documents';
+  };
+  let collapsed = false;
+  try {
+    collapsed = sessionStorage.getItem(navigationPaneStateKey) === 'true';
+  } catch {
+    // Keep the navigation pane visible when browser session storage is unavailable.
+  }
+  setNavigationPaneCollapsed(collapsed);
+  navigationControl.hidden = false;
+  navigationToggle.addEventListener('click', () => {
+    collapsed = !navigationPane.hidden;
+    setNavigationPaneCollapsed(collapsed);
+    try {
+      sessionStorage.setItem(navigationPaneStateKey, String(collapsed));
+    } catch {
+      // Retain the current page's visibility when browser session storage is unavailable.
+    }
+  });
+}
 
 for (const image of document.querySelectorAll('[data-diagram]')) {
   const revealFailure = () => {
@@ -822,7 +863,9 @@ if (documentView) {
 const APP_STYLESHEET: &str = r#"* { box-sizing: border-box; }
 body { margin: 0; background: #f4f1ea; color: #1d2826; font-family: Georgia, serif; line-height: 1.55; }
 main { width: min(1200px, calc(100% - 2rem)); margin: 3rem auto 5rem; display: grid; grid-template-columns: minmax(13rem, .35fr) minmax(0, 920px); gap: 2rem; align-items: start; }
-.document-navigation { position: sticky; top: 1rem; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; font-family: system-ui, sans-serif; }
+.document-navigation-control { grid-column: 1; grid-row: 1; }
+.document-navigation-control button { padding: .35rem .65rem; border: 1px solid #1d2826; background: #1d2826; color: #fffdf8; font: inherit; }
+.document-navigation { position: sticky; top: 1rem; grid-column: 1; grid-row: 2; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; font-family: system-ui, sans-serif; }
 .document-navigation h2 { margin: 0 0 .75rem; font-size: 1rem; }
 .document-navigation label { display: block; font-size: .8rem; font-weight: 700; }
 .document-navigation input { width: 100%; margin: .25rem 0 .75rem; padding: .4rem; border: 1px solid #8d897e; font: inherit; }
@@ -833,7 +876,8 @@ main { width: min(1200px, calc(100% - 2rem)); margin: 3rem auto 5rem; display: g
 .document-navigation a[aria-current="page"] { color: #8b3f21; font-weight: 800; text-decoration-thickness: .18em; }
 .document-navigation [role="status"] { margin: .75rem 0; color: #8b3f21; font-size: .875rem; }
 .document-result-pages { display: flex; gap: .75rem; margin: .75rem 0 0; }
-.document-content { min-width: 0; }
+.document-content { grid-column: 2; grid-row: 1 / span 2; min-width: 0; }
+main[data-document-navigation-collapsed="true"] { grid-template-columns: auto minmax(0, 1fr); }
 header { border-bottom: 3px solid #1d2826; margin-bottom: 2rem; }
 h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; margin: 0 0 1.2rem; overflow-wrap: anywhere; }
 .eyebrow { color: #8b3f21; font-family: system-ui, sans-serif; font-size: .75rem; font-weight: 800; letter-spacing: .14em; margin: 0 0 .4rem; text-transform: uppercase; }
@@ -859,7 +903,7 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .document-metadata dl dl { margin: .25rem 0 0; padding-left: .75rem; border-left: 2px solid #b6b0a4; }
 .frontmatter-error { margin: 0 0 1.5rem; padding: .75rem 1rem; border-left: 4px solid #8b3f21; background: #fff4ed; font-family: system-ui, sans-serif; }
 .frontmatter-error p { margin: .35rem 0; }
-@media (max-width: 760px) { main { width: min(100% - 1rem, 920px); margin-top: 1.5rem; display: block; } .document-navigation { position: static; margin-bottom: 1.5rem; } .diagram { padding: .5rem; } }"#;
+@media (max-width: 760px) { main { width: min(100% - 1rem, 920px); margin-top: 1.5rem; display: block; } .document-navigation-control { margin-bottom: 1rem; } .document-navigation { position: static; margin-bottom: 1.5rem; } .diagram { padding: .5rem; } }"#;
 
 #[cfg(test)]
 mod tests {
@@ -874,8 +918,9 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        browser_command, deferred_navigation_page, renderer_client, renderer_client_with_timeout,
-        request_diagram, router, viewer_state, BrowserCommand, BrowserPlatform, NavigationRequest,
+        browser_command, deferred_navigation_page, page, renderer_client,
+        renderer_client_with_timeout, request_diagram, router, viewer_state, BrowserCommand,
+        BrowserPlatform, NavigationRequest,
     };
     use crate::{
         markdown::Diagram,
@@ -1000,6 +1045,36 @@ mod tests {
         ));
         assert!(!navigation.contains(".private.md"));
         assert_eq!(navigation.matches("aria-current=\"page\"").count(), 1);
+    }
+
+    #[test]
+    fn document_page_with_navigation_then_exposes_an_accessible_visibility_control() {
+        // Arrange
+        let state = viewer_state(
+            vec![test_document("README.md", "# Read me")],
+            0,
+            renderer_client().expect("test client should initialize"),
+            test_renderer(),
+        );
+        let request = NavigationRequest::from_raw_query(None);
+        let navigation = state.navigation_pane(0, &request, "/");
+
+        // Act
+        let document_page = page(
+            "README.md",
+            String::new(),
+            navigation,
+            String::new(),
+            false,
+            None,
+        );
+
+        // Assert
+        assert!(document_page.contains("data-document-navigation-control hidden"));
+        assert!(document_page.contains("data-document-navigation-toggle"));
+        assert!(document_page.contains("aria-controls=\"document-navigation\""));
+        assert!(document_page.contains("aria-expanded=\"true\""));
+        assert!(document_page.contains("<nav id=\"document-navigation\""));
     }
 
     #[test]

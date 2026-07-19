@@ -56,6 +56,11 @@ only when their target is a discovered Markdown document; all other local paths
 receive a Lens guidance page without filesystem access. A standalone `.puml`
 file appears in the same navigation pane and renders as one diagram.
 
+Use **Hide documents** to give the current document more room, and **Show
+documents** to restore the pane. Lens remembers that choice while the same
+browser tab views documents from the current loopback session; it does not
+change which documents are available.
+
 ### Agent skills
 
 Lens does not scan the hidden `.agents` directory when the repository is the

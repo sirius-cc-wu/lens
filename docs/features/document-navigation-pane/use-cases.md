@@ -1,6 +1,7 @@
 # FEAT-02: Browse the Discovered Document Set
 
-Status: implemented in C3; scalable search implemented in C5
+Status: implemented in C3; scalable search implemented in C5; collapsible pane
+implemented in C6
 
 ## System Boundary
 
@@ -22,6 +23,7 @@ system boundary except where Lens supplies their content.
 |---|---|---|
 | `UC-07` | Browse the discovered document set | High |
 | `UC-08` | Search the discovered document set | High |
+| `UC-11` | Toggle the document navigation pane | Medium |
 
 `UC-07` extends the safe linked-document navigation of `UC-04`. It gives the
 user a session-scoped way to reach documents without requiring a Markdown link
@@ -115,10 +117,53 @@ Special requirements:
 - Lens sends no search request until the user submits the form or follows a
   result-page link. It sends no search request while the user types.
 
+## UC-11: Toggle the Document Navigation Pane
+
+Primary actor: Developer or technical writer
+
+Goal: Make more room for the current document without losing a way to return to
+the session's authorized document navigation.
+
+Preconditions:
+
+- The browser displays a Lens document with its navigation pane.
+
+Main success scenario:
+
+1. Lens displays a visible control for the navigation pane.
+2. The user activates the control to hide the pane.
+3. The browser hides the pane, gives the control a collapsed state, and leaves
+   that control available to restore the pane.
+4. The user opens another authorized document in the same browser tab.
+5. The browser keeps the pane hidden for that document.
+6. The user activates the control again.
+7. The browser restores the pane and exposes the expanded state.
+
+Extensions:
+
+- 1a. If browser scripting is unavailable, Lens leaves the pane visible and
+  does not expose the otherwise non-functional control, so document navigation
+  remains usable.
+- 4a. If the browser cannot use its per-tab temporary storage, the selected
+  visibility still applies to the current page; a later document response uses
+  the default visible pane.
+
+Special requirements:
+
+- The control is a keyboard-operable button. It names the navigation pane with
+  `aria-controls` and reports whether that pane is exposed with
+  `aria-expanded`.
+- Hiding the pane removes it from the browser accessibility tree while keeping
+  the restore control available.
+- The browser stores only the collapsed/expanded presentation preference. It
+  must not send a request, alter the session's authorized document set, or
+  change a document route.
+
 ## Trace
 
-- Proposals: [Document Navigation Pane](../../improvement-proposals.md#3-document-navigation-pane)
-  and [Scalable Document Navigation Search](../../improvement-proposals.md#11-scalable-document-navigation-search)
+- Proposals: [Document Navigation Pane](../../improvement-proposals.md#3-document-navigation-pane),
+  [Scalable Document Navigation Search](../../improvement-proposals.md#11-scalable-document-navigation-search),
+  and [Collapsible Document Navigation Pane](../../improvement-proposals.md#12-collapsible-document-navigation-pane)
 - Implementation: [C3 document navigation pane](../../iterations/c3-document-navigation-pane.md)
 - Existing safe-navigation basis: `UC-04`,
   [`FEAT-01`](../markdown-viewing/use-cases.md), and
@@ -127,5 +172,6 @@ Special requirements:
 - Operation contract: [`OC-03`](oc-03-request-document-catalog.md)
 - Design realization and Rust mapping: [`RZ-02` and `DCD-02`](design.md)
 - Decision: [ADR-008](../../decisions/adr-008-paginated-session-catalog-search.md)
+- Presentation decision: [ADR-016](../../decisions/adr-016-collapsible-document-navigation-pane.md)
 - Verification: `BTE-01`,
   [`tests/browser/lens.spec.mjs`](../../../tests/browser/lens.spec.mjs)

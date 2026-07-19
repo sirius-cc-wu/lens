@@ -48,6 +48,9 @@ does not prescribe the implementation architecture.
   for the remaining viewing session.
 - Rendered diagrams should preserve aspect ratio and fit within the document
   viewport without horizontal stretching.
+- A user can hide and restore the document navigation pane with an accessible
+  control. That presentation preference lasts only in the current browser tab
+  and does not alter the viewing session's authorized documents or routes.
 - Target errors and rendering errors identify the affected path or diagram and
   provide a next action where possible.
 - A PlantUML request times out after 10 seconds. Lens rejects a renderer
