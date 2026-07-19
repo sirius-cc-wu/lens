@@ -108,6 +108,10 @@ no-JavaScript navigation, result limits, and request-rate behavior.
 
 ## 12. Collapsible Document Navigation Pane
 
+Status: implemented in C6. Lens provides a browser-operated hide/show control
+for the navigation pane, exposes its state to assistive technology, and keeps
+the preference while the same browser tab views other authorized documents.
+
 Let the user hide and restore the document navigation pane so the document
 content can use more of the browser window. Provide a visible, keyboard-
 operable control with an accessible expanded-state indication, and retain a
