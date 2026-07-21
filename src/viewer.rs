@@ -4,7 +4,7 @@ use std::{
     fs,
     net::TcpListener,
     path::PathBuf,
-    process::{Command, Stdio},
+    process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
@@ -24,8 +24,10 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use tokio::{io::AsyncWriteExt, process::Command as TokioCommand};
 
+mod browser;
 mod catalog;
 
+use browser::open_browser;
 use catalog::{
     CatalogPage, CatalogResults, DocumentCatalog, NavigationRequest, MAX_QUERY_BYTES, RESULT_LIMIT,
 };
@@ -48,20 +50,6 @@ struct ViewerState {
     client: Client,
     renderer: DiagramRenderer,
     rendering_disabled: AtomicBool,
-}
-
-#[allow(dead_code)] // Each variant is constructed by its supported target build.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BrowserPlatform {
-    Linux,
-    MacOs,
-    Windows,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct BrowserCommand {
-    program: &'static str,
-    arguments: Vec<String>,
 }
 
 impl ViewerState {
@@ -198,59 +186,6 @@ pub async fn serve(target: MarkdownTarget, renderer_mode: RendererMode) -> Resul
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("The loopback viewer stopped unexpectedly")
-}
-
-fn open_browser(url: &str) -> std::io::Result<()> {
-    let command = browser_command(current_browser_platform()?, url);
-    Command::new(command.program)
-        .args(command.arguments)
-        .spawn()
-        .map(|_| ())
-}
-
-fn browser_command(platform: BrowserPlatform, url: &str) -> BrowserCommand {
-    match platform {
-        BrowserPlatform::Linux => BrowserCommand {
-            program: "xdg-open",
-            arguments: vec![url.to_owned()],
-        },
-        BrowserPlatform::MacOs => BrowserCommand {
-            program: "open",
-            arguments: vec![url.to_owned()],
-        },
-        BrowserPlatform::Windows => BrowserCommand {
-            program: "cmd",
-            arguments: vec![
-                "/C".to_owned(),
-                "start".to_owned(),
-                String::new(),
-                url.to_owned(),
-            ],
-        },
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn current_browser_platform() -> std::io::Result<BrowserPlatform> {
-    Ok(BrowserPlatform::Linux)
-}
-
-#[cfg(target_os = "macos")]
-fn current_browser_platform() -> std::io::Result<BrowserPlatform> {
-    Ok(BrowserPlatform::MacOs)
-}
-
-#[cfg(target_os = "windows")]
-fn current_browser_platform() -> std::io::Result<BrowserPlatform> {
-    Ok(BrowserPlatform::Windows)
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn current_browser_platform() -> std::io::Result<BrowserPlatform> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Lens does not support automatic browser launch on this platform",
-    ))
 }
 
 fn viewer_state(
@@ -918,9 +853,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        browser_command, deferred_navigation_page, page, renderer_client,
-        renderer_client_with_timeout, request_diagram, router, viewer_state, BrowserCommand,
-        BrowserPlatform, NavigationRequest,
+        deferred_navigation_page, page, renderer_client, renderer_client_with_timeout,
+        request_diagram, router, viewer_state, NavigationRequest,
     };
     use crate::{
         markdown::Diagram,
@@ -930,56 +864,6 @@ mod tests {
 
     fn test_renderer() -> DiagramRenderer {
         DiagramRenderer::from_mode(RendererMode::Public)
-    }
-
-    #[test]
-    fn supported_browser_platform_then_uses_its_launch_command() {
-        // Arrange
-        let url = "http://127.0.0.1:4567";
-
-        // Act
-        let commands = [
-            (
-                BrowserPlatform::Linux,
-                browser_command(BrowserPlatform::Linux, url),
-            ),
-            (
-                BrowserPlatform::MacOs,
-                browser_command(BrowserPlatform::MacOs, url),
-            ),
-            (
-                BrowserPlatform::Windows,
-                browser_command(BrowserPlatform::Windows, url),
-            ),
-        ];
-
-        // Assert
-        assert_eq!(
-            commands[0].1,
-            BrowserCommand {
-                program: "xdg-open",
-                arguments: vec![url.to_owned()],
-            }
-        );
-        assert_eq!(
-            commands[1].1,
-            BrowserCommand {
-                program: "open",
-                arguments: vec![url.to_owned()],
-            }
-        );
-        assert_eq!(
-            commands[2].1,
-            BrowserCommand {
-                program: "cmd",
-                arguments: vec![
-                    "/C".to_owned(),
-                    "start".to_owned(),
-                    String::new(),
-                    url.to_owned()
-                ],
-            }
-        );
     }
 
     fn test_router() -> axum::Router {
