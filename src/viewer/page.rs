@@ -7,11 +7,18 @@ const APP_SCRIPT: &str = include_str!("assets/app.js");
 const APP_STYLESHEET: &str = include_str!("assets/app.css");
 
 pub(super) fn app_script() -> &'static str {
-    APP_SCRIPT.strip_suffix('\n').unwrap_or(APP_SCRIPT)
+    embedded_asset(APP_SCRIPT)
 }
 
 pub(super) fn app_stylesheet() -> &'static str {
-    APP_STYLESHEET.strip_suffix('\n').unwrap_or(APP_STYLESHEET)
+    embedded_asset(APP_STYLESHEET)
+}
+
+fn embedded_asset(asset: &'static str) -> &'static str {
+    asset
+        .strip_suffix("\r\n")
+        .or_else(|| asset.strip_suffix('\n'))
+        .unwrap_or(asset)
 }
 
 pub(super) fn page(
@@ -214,6 +221,18 @@ mod tests {
         );
         let request = NavigationRequest::from_raw_query(None);
         navigation_pane(catalog.search(&request), current_document, current_route)
+    }
+
+    #[test]
+    fn embedded_asset_with_repository_newline_then_omits_only_final_line_ending() {
+        // Arrange
+        let assets = ["content\n", "content\r\n", "content"];
+
+        // Act
+        let bodies = assets.map(super::embedded_asset);
+
+        // Assert
+        assert_eq!(bodies, ["content", "content", "content"]);
     }
 
     #[test]

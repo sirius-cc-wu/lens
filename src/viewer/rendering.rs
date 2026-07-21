@@ -121,7 +121,7 @@ fn renderer_client_with_timeout(timeout: Duration) -> Result<Client> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, net::TcpListener, time::Duration};
+    use std::{net::TcpListener, time::Duration};
 
     use axum::{http::header, routing::get, Router};
 
@@ -263,6 +263,7 @@ mod tests {
     #[tokio::test]
     async fn local_renderer_command_then_returns_its_svg_output() {
         use std::{
+            fs,
             os::unix::fs::PermissionsExt,
             time::{SystemTime, UNIX_EPOCH},
         };

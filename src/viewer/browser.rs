@@ -78,37 +78,28 @@ mod tests {
 
         // Act
         let commands = [
-            (
-                BrowserPlatform::Linux,
-                browser_command(BrowserPlatform::Linux, url),
-            ),
-            (
-                BrowserPlatform::MacOs,
-                browser_command(BrowserPlatform::MacOs, url),
-            ),
-            (
-                BrowserPlatform::Windows,
-                browser_command(BrowserPlatform::Windows, url),
-            ),
+            browser_command(BrowserPlatform::Linux, url),
+            browser_command(BrowserPlatform::MacOs, url),
+            browser_command(BrowserPlatform::Windows, url),
         ];
 
         // Assert
         assert_eq!(
-            commands[0].1,
+            commands[0],
             BrowserCommand {
                 program: "xdg-open",
                 arguments: vec![url.to_owned()],
             }
         );
         assert_eq!(
-            commands[1].1,
+            commands[1],
             BrowserCommand {
                 program: "open",
                 arguments: vec![url.to_owned()],
             }
         );
         assert_eq!(
-            commands[2].1,
+            commands[2],
             BrowserCommand {
                 program: "cmd",
                 arguments: vec![

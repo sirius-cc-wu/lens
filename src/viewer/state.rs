@@ -186,6 +186,7 @@ mod tests {
     use crate::{
         plantuml::{DiagramRenderer, RendererMode},
         target::{DocumentKind, MarkdownDocument},
+        viewer::rendering::renderer_client,
     };
 
     fn test_renderer() -> DiagramRenderer {
@@ -213,7 +214,7 @@ mod tests {
         let state = viewer_state(
             vec![file_backed_test_document(path.clone(), "# Before refresh")],
             0,
-            super::super::rendering::renderer_client().expect("test client should initialize"),
+            renderer_client().expect("test client should initialize"),
             test_renderer(),
         );
         fs::write(&path, "# After refresh\n\nChanged content.")
@@ -245,7 +246,7 @@ mod tests {
                 "# Readable document",
             )],
             0,
-            super::super::rendering::renderer_client().expect("test client should initialize"),
+            renderer_client().expect("test client should initialize"),
             test_renderer(),
         );
         fs::remove_file(&path).expect("test document should be removable");

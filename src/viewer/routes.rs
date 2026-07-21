@@ -80,8 +80,7 @@ fn rendered_document_response(
     current_route: &str,
 ) -> Response {
     let navigation = navigation_pane(state.catalog.search(request), document_id, current_route);
-    let rendering_enabled = state.rendering_enabled();
-    let renderer_controls = renderer_controls(state.renderer.label(), rendering_enabled);
+    let renderer_controls = renderer_controls(state.renderer.label(), state.rendering_enabled());
     let documents = state
         .documents
         .read()
@@ -94,7 +93,7 @@ fn rendered_document_response(
             document.rendered.html.clone(),
             navigation,
             renderer_controls,
-            !rendering_enabled,
+            !state.rendering_enabled(),
             Some((&document.identifier, document.revision)),
         )),
     )
