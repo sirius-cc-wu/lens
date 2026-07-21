@@ -8,8 +8,8 @@ Status: proposed
 
 These are candidate improvements after the V1 release. They are not release
 commitments; a future iteration should select one based on user value, risk, and
-implementation evidence. Implemented proposals are removed from this list; the
-remaining numbers are stable and are not reused.
+implementation evidence. Implemented proposals remain as historical context
+with their status recorded, and proposal numbers are stable and are not reused.
 
 ## 1. Local PlantUML Rendering
 
@@ -120,3 +120,106 @@ choice for the current viewing session would avoid making the user repeat the
 action on every document change. This changes presentation only: hiding the
 pane must not change the active session's authorized document set or document
 routes.
+
+## 13. Modular Viewer Responsibilities
+
+Split the viewer implementation along its existing capability boundaries while
+preserving behavior and the public `lens::serve` path. The current viewer module
+owns session state, document refresh, browser launching, HTTP routes, navigation
+markup, PlantUML requests, JavaScript, CSS, and their tests. These concerns can
+change independently and already have distinct types, dependencies, and test
+scenarios.
+
+Keep session and refresh state together, move route handlers and page
+composition into cohesive modules, isolate public and local diagram rendering,
+and place browser-launch construction with its platform tests. Store the
+JavaScript and CSS as dedicated assets embedded into the binary at compile time.
+Make the extraction mechanical: do not rename public APIs or redesign behavior,
+and retain tests with the module that owns each behavior. Verify the split with
+the complete Rust and browser suites.
+
+## 14. Measured Large-Repository Scalability
+
+Define performance budgets, meaning maximum acceptable time and resource use,
+for repositories containing 1,000 and 10,000 discovered documents. Measure
+startup discovery time, idle refresh work, memory use, and catalog-search
+latency before selecting an optimization.
+
+Current discovery reads every supported document eagerly, automatic refresh
+rereads every known document every 500 milliseconds, and each catalog search
+scans the complete identifier set. Candidate changes include checking file
+metadata before reading content, retaining normalized search keys, completing a
+search count and result page in one traversal, and using filesystem events.
+Any event-based design must filter changes through the immutable set of
+canonical document paths authorized when the session starts. Add repeatable
+performance fixtures and record the accepted budgets as release evidence.
+
+## 15. Bounded and Adversarial Input Handling
+
+Define explicit limits for document size, discovered document count, directory
+depth, and YAML frontmatter nesting. When a repository exceeds a limit, report
+the affected resource and corrective action instead of allowing unbounded
+startup memory or parsing work. Keep the existing query-size and diagram-output
+limits consistent with this policy.
+
+Add adversarial tests, meaning tests built from malicious or unusually extreme
+input, for relative-path traversal, percent-encoded and Unicode identifiers,
+deep or malformed YAML, oversized Markdown and PlantUML sources, deeply nested
+directories, and partial document saves. Add generated-input tests for path
+normalization and frontmatter parsing so that broad classes of inputs supplement
+the existing hand-selected examples. Preserve the fixed session authorization
+boundary and last-readable-document behavior in every failure case.
+
+## 16. Explicit Public Diagram Rendering Consent
+
+Make sending PlantUML source to a public rendering service an explicit user
+choice. A future breaking release should either default to disabled rendering
+or automatically select an available local renderer and otherwise remain
+disabled. Public rendering would require `--renderer public`, with CLI and page
+text explaining that diagram source is sent to the configured service.
+
+Do not issue a public renderer request before that choice has been made. Retain
+the current timeout, response-size limit, failure fallback, retry control, and
+session disable behavior for users who select the public service. Document the
+default change prominently in release notes and installation examples.
+
+## 17. Headless and Automated Serving Controls
+
+Support headless environments, meaning sessions without a desktop browser, and
+scripted use without weakening the loopback-only default. Add `--no-open` to
+suppress browser launching and `--port <PORT>` to select a predictable loopback
+port, with port zero retaining the current operating-system-assigned behavior.
+Provide a stable machine-readable way to obtain the serving URL.
+
+Define actionable behavior for an unavailable requested port and keep printing
+the manual URL for ordinary browser-launch failures. Add CLI tests for argument
+parsing and browser suppression, plus an integration scenario that starts Lens
+on a selected loopback port. External network binding should require a separate
+security and product decision rather than being introduced by this proposal.
+
+## 18. Reading-Context-Preserving Refresh
+
+Preserve the reader's location and local page state when automatic refresh
+detects a saved document change. Before reloading, retain the current fragment,
+scroll position, focused element when practical, and the open state of document
+disclosures. Restore that context after the refreshed page becomes readable.
+
+Keep the revision endpoint small and retain the current fallback when revision
+polling fails. Add a browser scenario that scrolls within a long document,
+opens a disclosure, saves a change, and verifies that the refreshed content and
+reading context are both preserved. Avoid a partial page-update design unless
+measurement shows that a full reload with state restoration is insufficient.
+
+## 19. Release and Dependency Maintenance
+
+Make compatibility and supply-chain maintenance routine. Test both Rust 1.75,
+the minimum supported Rust version (MSRV), and the current stable Rust release
+in continuous integration. Add scheduled dependency advisory and license
+checks, and configure automated dependency-update pull requests whose changes
+must pass the existing locked Rust and browser suites.
+
+Establish a post-V1 release record with a changelog and a package-version bump
+before the next tag. Update package metadata and introductory documentation to
+describe Linux, macOS, and Windows consistently. Keep completed proposals as
+clearly marked historical evidence or move them to a dedicated history section
+so that active proposals are immediately distinguishable.
