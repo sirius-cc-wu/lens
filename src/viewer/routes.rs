@@ -1,6 +1,5 @@
-use std::{net::TcpListener, sync::Arc};
+use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use axum::{
     extract::{Path, RawQuery, State},
     http::{header, HeaderValue, StatusCode},
@@ -8,59 +7,18 @@ use axum::{
     routing::{get, post},
     Router,
 };
-mod browser;
-mod catalog;
-mod page;
-mod rendering;
-mod state;
 
-use browser::open_browser;
-use catalog::NavigationRequest;
-use page::{
-    app_script, app_stylesheet, content_security_policy, deferred_navigation_page, navigation_pane,
-    page, renderer_controls,
-};
-use rendering::{renderer_client, request_diagram};
-use state::{viewer_state, watch_documents, ViewerState};
-
-use crate::{
-    plantuml::{DiagramRenderer, RendererMode},
-    target::MarkdownTarget,
+use super::{
+    catalog::NavigationRequest,
+    page::{
+        app_script, app_stylesheet, content_security_policy, deferred_navigation_page,
+        navigation_pane, page, renderer_controls,
+    },
+    rendering::request_diagram,
+    state::ViewerState,
 };
 
-pub async fn serve(target: MarkdownTarget, renderer_mode: RendererMode) -> Result<()> {
-    let (documents, initial_document) = target.into_parts();
-    let initial_path = documents[initial_document].canonical_path.clone();
-    let diagram_renderer = DiagramRenderer::from_mode(renderer_mode);
-    let state = viewer_state(
-        documents,
-        initial_document,
-        renderer_client()?,
-        diagram_renderer,
-    );
-    tokio::spawn(watch_documents(state.clone()));
-    let listener =
-        TcpListener::bind("127.0.0.1:0").context("Could not start the loopback viewer")?;
-    let address = listener
-        .local_addr()
-        .context("Could not determine the loopback viewer address")?;
-    let url = format!("http://{address}");
-
-    println!("Lens is serving {} at {url}", initial_path.display());
-    if let Err(error) = open_browser(&url) {
-        eprintln!("Could not open a browser automatically: {error}");
-        eprintln!("Open {url} manually.");
-    }
-
-    axum::Server::from_tcp(listener)
-        .context("Could not serve the loopback viewer")?
-        .serve(router(state).into_make_service())
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("The loopback viewer stopped unexpectedly")
-}
-
-fn router(state: Arc<ViewerState>) -> Router {
+pub(super) fn router(state: Arc<ViewerState>) -> Router {
     Router::new()
         .route("/", get(initial_document_view))
         .route("/documents/*document_id", get(document_view))
@@ -212,12 +170,6 @@ async fn disable_renderer(State(state): State<Arc<ViewerState>>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-async fn shutdown_signal() {
-    if let Err(error) = tokio::signal::ctrl_c().await {
-        eprintln!("Could not listen for Ctrl-C: {error}");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -225,10 +177,11 @@ mod tests {
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
 
-    use super::{renderer_client, router, viewer_state};
+    use super::router;
     use crate::{
         plantuml::{DiagramRenderer, RendererMode},
         target::{DocumentKind, MarkdownDocument},
+        viewer::{rendering::renderer_client, state::viewer_state},
     };
 
     fn test_renderer() -> DiagramRenderer {

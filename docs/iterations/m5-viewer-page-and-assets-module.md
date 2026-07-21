@@ -34,7 +34,7 @@ Artifacts to Refine:
 - Page composition and owned tests:
   [`src/viewer/page.rs`](../../src/viewer/page.rs)
 - Viewer response coordination:
-  [`src/viewer.rs`](../../src/viewer.rs) - delegate markup composition and serve embedded assets.
+  [`src/viewer/routes.rs`](../../src/viewer/routes.rs) - delegate markup composition and serve embedded assets.
 
 Artifacts Consulted:
 

@@ -31,7 +31,7 @@ Artifacts to Refine:
 - Diagram rendering implementation and tests:
   [`src/viewer/rendering.rs`](../../src/viewer/rendering.rs)
 - Viewer route coordination:
-  [`src/viewer.rs`](../../src/viewer.rs) - delegate the existing diagram request.
+  [`src/viewer/routes.rs`](../../src/viewer/routes.rs) - delegate the existing diagram request.
 
 Artifacts Consulted:
 

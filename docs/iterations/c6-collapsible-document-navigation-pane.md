@@ -42,8 +42,10 @@ Artifacts Consulted:
 
 - `ADR-008`, bounded session-catalog search:
   [`docs/decisions/adr-008-paginated-session-catalog-search.md`](../decisions/adr-008-paginated-session-catalog-search.md) - retain the existing authorized-catalog and document-route boundary.
-- Viewer page composition:
-  [`src/viewer.rs`](../../src/viewer.rs) - retain its existing loopback routes and session state.
+- Viewer implementation:
+  [`src/viewer/mod.rs`](../../src/viewer/mod.rs),
+  [`src/viewer/routes.rs`](../../src/viewer/routes.rs), and
+  [`src/viewer/state.rs`](../../src/viewer/state.rs) - retain the loopback lifecycle, routes, and session state.
 
 Decisions Recorded:
 

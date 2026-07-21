@@ -37,7 +37,7 @@ Artifacts Consulted:
 - Proposal 13, modular viewer responsibilities:
   [`docs/improvement-proposals.md`](../improvement-proposals.md)
 - Viewer implementation and owned tests:
-  [`src/viewer.rs`](../../src/viewer.rs)
+  [`src/viewer/mod.rs`](../../src/viewer/mod.rs)
 - `R-01`, `R-02`, `R-03`, and `R-08`, renderer, browser-content,
   authorization, and refresh risks: [`docs/risk-list.md`](../risk-list.md)
 - `BTE-01`, complete browser suite:

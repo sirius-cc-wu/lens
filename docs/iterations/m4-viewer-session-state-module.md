@@ -31,7 +31,8 @@ Artifacts to Refine:
 - Viewer session state and refresh tests:
   [`src/viewer/state.rs`](../../src/viewer/state.rs)
 - Viewer composition and route coordination:
-  [`src/viewer.rs`](../../src/viewer.rs) - use the extracted session state.
+  [`src/viewer/mod.rs`](../../src/viewer/mod.rs) and
+  [`src/viewer/routes.rs`](../../src/viewer/routes.rs) - use the extracted session state.
 
 Artifacts Consulted:
 

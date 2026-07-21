@@ -1,11 +1,11 @@
 # Viewer UML Design Views
 
-Status: target implementation design for proposal 13
+Status: implemented design for proposal 13
 
 These diagrams complement the black-box [SSD-01](ssd-01-open-markdown-target.md)
 and [SSD-02](ssd-02-open-document-root.md). They show the runtime collaborators
-and the Rust modules selected for proposal 13, including owned state. They do
-not introduce additional behavior or abstractions.
+and implemented Rust modules, including owned state. They do not introduce
+additional behavior or abstractions.
 
 ## CMP-01: Component and Deployment View
 

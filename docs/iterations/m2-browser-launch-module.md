@@ -28,7 +28,7 @@ Artifacts to Refine:
 - Browser launch implementation and tests:
   [`src/viewer/browser.rs`](../../src/viewer/browser.rs)
 - Viewer composition root:
-  [`src/viewer.rs`](../../src/viewer.rs) - delegate the existing launch call to the new module.
+  [`src/viewer/mod.rs`](../../src/viewer/mod.rs) - delegate the existing launch call to the new module.
 
 Artifacts Consulted:
 
