@@ -123,6 +123,8 @@ routes.
 
 ## 13. Modular Viewer Responsibilities
 
+Status: implemented in M2 through M6.
+
 Split the viewer implementation along its existing capability boundaries while
 preserving behavior and the public `lens::serve` path. The current viewer module
 owns session state, document refresh, browser launching, HTTP routes, navigation

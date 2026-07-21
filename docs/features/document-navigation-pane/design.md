@@ -73,8 +73,10 @@ for this feature. A trait or asynchronous search service would add an unearned
 variation point. `DocumentCatalog`, `CatalogPage`, and their focused tests have
 their own state and helpers, while loopback routes and document rendering
 change independently; therefore C5 will place them in
-`src/viewer/catalog.rs`. The existing `src/viewer.rs` remains the cohesive
-Axum/session/page module and declares that submodule.
+`src/viewer/catalog.rs`. Proposal 13 later separated the independently changing
+Axum controllers, session state, and page composition into `viewer::routes`,
+`viewer::state`, and `viewer::page`, with `src/viewer/mod.rs` as their thin
+composition root.
 
 ## DCD-02: Rust Design View
 
@@ -88,7 +90,6 @@ package "viewer" {
     -documents: RwLock<Vec<ViewerDocument>>
     -catalog: DocumentCatalog
     -initial_document: usize
-    -navigation_pane(&self, current_document, request, route): String
   }
   class "DocumentCatalog" as Catalog <<struct>> {
     -document_ids: BTreeMap<String, usize>
@@ -121,9 +122,9 @@ package "viewer" {
 ViewerState *-- "1" Catalog : owns immutable index
 ViewerState *-- "1..*" ViewerDocument : owns refreshable documents
 DocumentView --> Catalog : resolves identifier
-DocumentView --> ViewerState : composes response
-ViewerState --> Navigation : supplies result page
-Navigation --> Page : inserts markup
+DocumentView --> ViewerState : reads session state
+DocumentView --> Navigation : supplies result page
+DocumentView --> Page : inserts document and navigation markup
 @enduml
 ```
 
@@ -137,9 +138,10 @@ Rust adaptation notes:
   composition and keep the `RwLock` limited to refreshable documents.
 - `navigation_pane` remains a private free function because it has no invariant
   bearing receiver; `document_view` remains a thin async controller function.
-- `DocumentCatalog` lives in a nested module with its helpers and unit tests.
-  This isolates the new independently changing search concern from loopback
-  transport and rendering without creating pass-through modules or traits.
+- `DocumentCatalog`, `document_view`, and `navigation_pane` live with their
+  helpers and tests in the cohesive `viewer::catalog`, `viewer::routes`, and
+  `viewer::page` modules. This isolates independently changing search,
+  transport, and presentation concerns without pass-through modules or traits.
 
 ## Construction Targets
 
