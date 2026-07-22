@@ -1,3 +1,11 @@
+---
+type: "Vision and Business Case"
+title: "Lens Vision and Business Case"
+description: "Defines Lens's product vision, business case, scope, stakeholders, and release outcomes."
+status: "active"
+tags: [inception, vision]
+---
+
 # Lens Vision and Business Case
 
 ## Problem

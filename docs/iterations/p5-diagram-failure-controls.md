@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: P5 Diagram Failure Controls"
+description: "Implements renderer status, retry, and session-disable controls for diagram failures."
+id: "P5"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: P5 Diagram Failure Controls
 
 Status: completed

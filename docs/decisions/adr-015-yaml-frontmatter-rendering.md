@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-015: Render Leading YAML Metadata Safely"
+description: "Defines safe structured rendering for leading YAML frontmatter and actionable handling of malformed metadata."
+id: "ADR-015"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, markdown]
+---
+
 # ADR-015: Render Leading YAML Metadata Safely
 
 Status: accepted

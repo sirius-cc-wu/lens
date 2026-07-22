@@ -1,3 +1,14 @@
+---
+type: "Operation Contract"
+title: "OC-01: Open a Markdown Target"
+description: "Specifies the viewing-session state and authorized resources established when Lens opens one Markdown target."
+id: "OC-01"
+operation: "open_markdown_target(target_path)"
+traces: [UC-01, SSD-01]
+status: "active"
+tags: [analysis, operation-contract]
+---
+
 # OC-01: Open a Markdown Target
 
 Operation: `open_markdown_target(target_path)`

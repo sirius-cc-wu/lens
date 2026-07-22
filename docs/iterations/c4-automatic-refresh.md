@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: C4 Automatic Refresh"
+description: "Implements and verifies safe refresh of the displayed known Markdown document after a successful save."
+id: "C4"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: C4 Automatic Refresh
 
 Status: completed

@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: C3 Document Navigation Pane"
+description: "Implements and verifies navigation over the active viewing session's authorized document set."
+id: "C3"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: C3 Document Navigation Pane
 
 Status: completed

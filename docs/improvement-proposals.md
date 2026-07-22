@@ -1,5 +1,9 @@
 ---
+type: "Improvement Proposals"
 title: Lens Improvement Proposals
+description: "Tracks stable post-V1 improvement proposals, their rationale, and implementation status."
+status: "proposed"
+tags: [planning, proposals]
 ---
 
 # Lens Improvement Proposals

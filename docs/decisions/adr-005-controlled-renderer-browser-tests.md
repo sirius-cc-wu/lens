@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-005: Use a Controlled PlantUML Renderer in Browser Tests"
+description: "Uses a controlled local renderer to make browser-level PlantUML verification deterministic."
+id: "ADR-005"
+status: "accepted"
+date: "2026-07-18"
+tags: [architecture, decision, testing]
+---
+
 # ADR-005: Use a Controlled PlantUML Renderer in Browser Tests
 
 Status: accepted

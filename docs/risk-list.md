@@ -1,3 +1,11 @@
+---
+type: "Risk List"
+title: "Lens Risk List"
+description: "Tracks Lens's ranked product, security, performance, adoption, and delivery risks with mitigation evidence."
+status: "active"
+tags: [risk, planning]
+---
+
 # Risk List
 
 | ID | Risk | Type | Likelihood | Impact | Mitigation and evidence needed |

@@ -1,3 +1,14 @@
+---
+type: "Operation Contract"
+title: "OC-03: Request a Bounded Document Catalog Page"
+description: "Specifies bounded identifier search and paging over the immutable authorized document catalog."
+id: "OC-03"
+operation: "request_document(document_id, query?, page?)"
+traces: [UC-07, UC-08, SSD-03, ADR-003]
+status: "active"
+tags: [analysis, operation-contract, navigation]
+---
+
 # OC-03: Request a Bounded Document Catalog Page
 
 Operation: `request_document(document_id, query?, page?)`

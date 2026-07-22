@@ -1,3 +1,11 @@
+---
+type: "Glossary"
+title: "Lens Glossary"
+description: "Defines the project-specific vocabulary used in Lens requirements, design, implementation, and verification artifacts."
+status: "active"
+tags: [reference, glossary]
+---
+
 # Glossary
 
 | Term | Meaning |

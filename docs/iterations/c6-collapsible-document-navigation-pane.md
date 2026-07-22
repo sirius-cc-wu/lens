@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: C6 Collapsible Document Navigation Pane"
+description: "Implements accessible browser-tab persistence for hiding and restoring the document navigation pane."
+id: "C6"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: C6 Collapsible Document Navigation Pane
 
 Status: completed

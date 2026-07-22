@@ -1,3 +1,14 @@
+---
+type: "Operation Contract"
+title: "OC-04: Refresh a Changed Markdown Document"
+description: "Specifies rendering and revision changes after Lens observes a changed authorized document."
+id: "OC-04"
+operation: "observe_document_change(document_id)"
+traces: [UC-09, SSD-04, ADR-007]
+status: "active"
+tags: [analysis, operation-contract, refresh]
+---
+
 # OC-04: Refresh a Changed Markdown Document
 
 Operation: `observe_document_change(document_id)`

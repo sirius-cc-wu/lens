@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: P6 Standalone PlantUML Files"
+description: "Extends the authorized document model to visible standalone PlantUML files."
+id: "P6"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: P6 Standalone PlantUML Files
 
 Status: completed

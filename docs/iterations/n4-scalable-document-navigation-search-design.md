@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: N4 Scalable Document Navigation Search Design"
+description: "Turns bounded navigation requirements into traceable system behavior, Rust responsibilities, and construction targets."
+id: "N4"
+phase: "elaboration"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: N4 Scalable Document Navigation Search Design
 
 Status: completed

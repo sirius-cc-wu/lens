@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-009: Select a PlantUML Renderer per Viewing Session"
+description: "Defines public, local, and disabled PlantUML renderer choices fixed for each viewing session."
+id: "ADR-009"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, plantuml]
+---
+
 # ADR-009: Select a PlantUML Renderer per Viewing Session
 
 Status: accepted

@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: A1 Automatic Refresh Design"
+description: "Designs automatic refresh for the displayed authorized document while preserving readable content and session scope."
+id: "A1"
+phase: "elaboration"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: A1 Automatic Refresh Design
 
 Status: completed

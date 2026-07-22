@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-016: Persist Navigation Pane Visibility in the Browser Tab"
+description: "Keeps navigation-pane visibility as accessible browser-tab presentation state without changing authorization."
+id: "ADR-016"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, navigation]
+---
+
 # ADR-016: Persist Navigation Pane Visibility in the Browser Tab
 
 Status: accepted

@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: C1 Browser End-to-End Harness"
+description: "Establishes deterministic compiled-command browser verification for rendering and discovered-document navigation."
+id: "C1"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: C1 Browser End-to-End Harness
 
 Status: completed

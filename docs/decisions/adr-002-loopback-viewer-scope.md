@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-002: Restrict a Viewing Session to Loopback and Fixed Resources"
+description: "Restricts each Lens viewing session to loopback networking and a fixed set of authorized resources."
+id: "ADR-002"
+status: "accepted"
+date: "2026-07-18"
+tags: [architecture, decision, security]
+---
+
 # ADR-002: Restrict a Viewing Session to Loopback and Fixed Resources
 
 Status: accepted

@@ -1,3 +1,14 @@
+---
+type: "System Sequence Diagram"
+title: "SSD-03: Search an Authorized Document Catalog"
+description: "Shows bounded catalog search, page selection, and document navigation within one authorized viewing session."
+id: "SSD-03"
+use_case: [UC-07, UC-08]
+scenario: "Search the authorized document catalog, move through a result page, and open a known document."
+status: "active"
+tags: [analysis, ssd, navigation]
+---
+
 # SSD-03: Search an Authorized Document Catalog
 
 Use cases: `UC-07` and `UC-08`

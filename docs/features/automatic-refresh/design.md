@@ -1,3 +1,13 @@
+---
+type: "Software Design"
+title: "FEAT-03 Automatic Refresh Design"
+description: "Realizes safe automatic refresh through Rust responsibilities, known-document state, revision polling, and rendering."
+feature: "FEAT-03"
+status: "implemented"
+language: "Rust"
+tags: [design, use-case-realization, refresh]
+---
+
 # FEAT-03 Automatic Refresh Design
 
 Status: implemented in C4

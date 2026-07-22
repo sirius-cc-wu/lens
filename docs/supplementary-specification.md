@@ -1,3 +1,11 @@
+---
+type: "Supplementary Specification"
+title: "Lens Supplementary Specification"
+description: "Defines the cross-cutting quality constraints for portability, safety, rendering, resilience, and verification."
+status: "active"
+tags: [requirements, quality]
+---
+
 # Supplementary Specification
 
 This specification captures quality constraints with architectural impact. It

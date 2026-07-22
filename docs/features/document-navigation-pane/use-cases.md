@@ -1,3 +1,13 @@
+---
+type: "Use Case Model"
+title: "FEAT-02: Browse the Discovered Document Set"
+description: "Defines browsing, searching, and presentation-control goals over the authorized Lens document set."
+id: "FEAT-02"
+status: "active"
+scope: "Lens"
+tags: [requirements, use-case, navigation]
+---
+
 # FEAT-02: Browse the Discovered Document Set
 
 Status: implemented in C3; scalable search implemented in C5; collapsible pane

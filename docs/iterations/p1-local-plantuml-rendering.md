@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: P1 Local PlantUML Rendering"
+description: "Implements selectable public, local, or disabled PlantUML rendering for one viewing session."
+id: "P1"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: P1 Local PlantUML Rendering
 
 Status: completed

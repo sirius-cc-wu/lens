@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: N2 Document Navigation Pane Design"
+description: "Designs document-catalog presentation and filtering within the existing viewing-session boundary."
+id: "N2"
+phase: "elaboration"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: N2 Document Navigation Pane Design
 
 Status: completed

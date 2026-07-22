@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: E1 Safe Markdown Viewing"
+description: "Establishes a safe file-target vertical slice with controlled Markdown and PlantUML rendering."
+id: "E1"
+phase: "elaboration"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: E1 Safe Markdown Viewing
 
 Status: completed

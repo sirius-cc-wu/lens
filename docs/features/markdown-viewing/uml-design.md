@@ -1,3 +1,13 @@
+---
+type: "Software Design"
+title: "Lens V1 UML Design Views"
+description: "Summarizes the implemented Rust components, runtime collaboration, modules, types, and ownership relationships for V1."
+feature: "FEAT-01"
+status: "implemented"
+language: "Rust"
+tags: [design, uml]
+---
+
 # V1 UML Design Views
 
 Status: V1 implementation snapshot

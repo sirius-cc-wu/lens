@@ -1,3 +1,13 @@
+---
+type: "Software Design"
+title: "FEAT-02 Navigation Pane Design"
+description: "Realizes bounded authorized-catalog navigation through Rust responsibilities, collaborations, and design types."
+feature: "FEAT-02"
+status: "implemented"
+language: "Rust"
+tags: [design, use-case-realization, navigation]
+---
+
 # FEAT-02 Navigation Pane Design
 
 Status: implemented in C3; scalable search designed in N4 and implemented in

@@ -1,3 +1,14 @@
+---
+type: "Operation Contract"
+title: "OC-02: Open a Document Root"
+description: "Specifies document-root discovery, selection, and viewing-session state after opening a supported target."
+id: "OC-02"
+operation: "open_document_root(target_path?)"
+traces: [UC-02, UC-03, SSD-02]
+status: "active"
+tags: [analysis, operation-contract]
+---
+
 # OC-02: Open a Document Root
 
 Operation: `open_document_root(target_path?)`

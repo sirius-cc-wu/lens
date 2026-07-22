@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-011: Keep Diagram Controls Inside a Viewing Session"
+description: "Keeps renderer status, retry, and disable controls within the authority of an existing viewing session."
+id: "ADR-011"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, resilience]
+---
+
 # ADR-011: Keep Diagram Controls Inside a Viewing Session
 
 Status: accepted

@@ -1,3 +1,13 @@
+---
+type: "Use Case Model"
+title: "FEAT-01: View Markdown with PlantUML"
+description: "Defines the actors, goals, scenarios, and failure behavior for viewing Markdown and PlantUML documents with Lens."
+id: "FEAT-01"
+status: "active"
+scope: "Lens"
+tags: [requirements, use-case]
+---
+
 # FEAT-01: View Markdown with PlantUML
 
 Status: refined in P6

@@ -1,3 +1,14 @@
+---
+type: "Architecture Decision"
+title: "ADR-001: Use the Public PlantUML Server for V1 Rendering"
+description: "Records the original V1 decision to use the public PlantUML server for diagram rendering."
+id: "ADR-001"
+status: "superseded"
+superseded_by: "ADR-009"
+date: "2026-07-18"
+tags: [architecture, decision]
+---
+
 # ADR-001: Use the Public PlantUML Server for V1 Rendering
 
 Status: superseded by ADR-009

@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: P7 Cross-Platform Support"
+description: "Implements tested native browser launch and archive preparation across supported platforms."
+id: "P7"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: P7 Cross-Platform Support
 
 Status: completed

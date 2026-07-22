@@ -1,3 +1,14 @@
+---
+type: "System Sequence Diagram"
+title: "SSD-01: Open a Markdown Target"
+description: "Shows the developer, browser, Lens, and PlantUML renderer interactions for opening one Markdown target."
+id: "SSD-01"
+use_case: "UC-01"
+scenario: "Open a readable Markdown file containing one or more PlantUML blocks."
+status: "active"
+tags: [analysis, ssd]
+---
+
 # SSD-01: Open a Markdown Target
 
 Use case: `UC-01`, View a Markdown File with PlantUML Blocks

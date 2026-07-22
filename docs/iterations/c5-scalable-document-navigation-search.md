@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: C5 Scalable Document Navigation Search"
+description: "Implements bounded server-rendered identifier search over the authorized document catalog."
+id: "C5"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: C5 Scalable Document Navigation Search
 
 Status: completed

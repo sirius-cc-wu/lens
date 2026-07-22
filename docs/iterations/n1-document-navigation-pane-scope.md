@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: N1 Document Navigation Pane Scope"
+description: "Defines the navigation pane's user value, authorization constraints, and durable requirements artifacts."
+id: "N1"
+phase: "inception"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: N1 Document Navigation Pane Scope
 
 Status: completed

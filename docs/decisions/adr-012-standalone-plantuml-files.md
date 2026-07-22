@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-012: Admit Standalone PlantUML Files to the Document Set"
+description: "Admits visible standalone PlantUML files without broadening Lens into a general source-code viewer."
+id: "ADR-012"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, plantuml]
+---
+
 # ADR-012: Admit Standalone PlantUML Files to the Document Set
 
 Status: accepted

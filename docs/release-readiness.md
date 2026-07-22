@@ -1,3 +1,11 @@
+---
+type: "Verification Evidence"
+title: "Lens V1 Release Readiness"
+description: "Defines the automated, browser, installation, packaging, and manual checks required for a Lens V1 release."
+status: "active"
+tags: [release, verification]
+---
+
 # V1 Release Readiness
 
 Lens V1 is ready for a Linux source release when every check below has current
