@@ -61,13 +61,14 @@ documents** to restore the pane. Lens remembers that choice while the same
 browser tab views documents from the current loopback session; it does not
 change which documents are available.
 
-### Agent skills
+### Hidden directories
 
-Lens does not scan the hidden `.agents` directory when the repository is the
-document root. To view project agent skills, open the skills directory directly:
+Lens does not scan hidden directories when the repository is the document root.
+To view documents beneath a hidden parent directory, open a visible nested
+directory directly:
 
 ```bash
-lens .agents/skills
+lens .hidden/docs
 ```
 
 ## PlantUML

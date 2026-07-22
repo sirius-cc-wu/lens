@@ -18,7 +18,7 @@ fn help_flag_then_describes_optional_target() {
     let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
     assert!(stdout.contains("Usage: lens [OPTIONS] [TARGET]"));
     assert!(stdout.contains("--renderer <RENDERER>"));
-    assert!(stdout.contains("lens .agents/skills"));
+    assert!(stdout.contains("lens .hidden/docs"));
 }
 
 #[test]
