@@ -88,6 +88,26 @@ test("save displayed document then refreshes browser view automatically", async 
   }
 });
 
+test("document_view_then_shows_compact_repository_relative_path", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    await page.goto(fixture.lens.url);
+
+    // Act
+    await page.getByRole("link", { name: "guides/guide.md" }).click();
+
+    // Assert
+    const documentPath = page.locator(".document-header").getByRole("heading", { level: 1 });
+    await expect(documentPath).toHaveText("guides/guide.md");
+    await expect(page).toHaveTitle("Lens: guides/guide.md");
+    expect((await documentPath.boundingBox()).height).toBeLessThan(32);
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("valid_frontmatter_then_renders_compact_semantic_metadata_table_without_delimiters", async ({
   page,
 }) => {

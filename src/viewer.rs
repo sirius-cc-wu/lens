@@ -384,7 +384,7 @@ fn rendered_document_response(
     (
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
         Html(page(
-            &document.canonical_path.display().to_string(),
+            &document.identifier,
             document.rendered.html.clone(),
             navigation,
             renderer_controls,
@@ -722,7 +722,7 @@ fn page(
     {navigation_control}
     {navigation_html}
     <section class="document-content">
-      <header><p class="eyebrow">Lens</p><h1>{}</h1></header>
+      <header class="document-header"><p class="eyebrow">Lens</p><h1>{}</h1></header>
       {renderer_controls}
       <article>{document_html}</article>
     </section>
@@ -878,9 +878,10 @@ main { width: min(1200px, calc(100% - 2rem)); margin: 3rem auto 5rem; display: g
 .document-result-pages { display: flex; gap: .75rem; margin: .75rem 0 0; }
 .document-content { grid-column: 2; grid-row: 1 / span 2; min-width: 0; }
 main[data-document-navigation-collapsed="true"] { grid-template-columns: auto minmax(0, 1fr); }
-header { border-bottom: 3px solid #1d2826; margin-bottom: 2rem; }
-h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; margin: 0 0 1.2rem; overflow-wrap: anywhere; }
-.eyebrow { color: #8b3f21; font-family: system-ui, sans-serif; font-size: .75rem; font-weight: 800; letter-spacing: .14em; margin: 0 0 .4rem; text-transform: uppercase; }
+.document-header { display: flex; gap: .75rem; align-items: baseline; margin-bottom: 1.25rem; padding-bottom: .6rem; border-bottom: 3px solid #1d2826; }
+.document-header h1 { margin: 0; color: #555147; font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+article h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; margin: 0 0 1.2rem; overflow-wrap: anywhere; }
+.eyebrow { flex: none; margin: 0; color: #8b3f21; font-family: system-ui, sans-serif; font-size: .75rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 article > :first-child { margin-top: 0; }
 pre { overflow: auto; padding: 1rem; background: #e5e0d7; }
 code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
