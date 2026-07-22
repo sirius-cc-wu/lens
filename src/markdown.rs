@@ -142,15 +142,49 @@ fn parsed_frontmatter<'a>(source: &str, body: &'a str) -> Frontmatter<'a> {
 
 fn metadata_html(metadata: &Mapping) -> String {
     let mut html = String::from(
-        r#"<section class="document-metadata" aria-label="Document metadata"><h2>Document metadata</h2><dl>"#,
+        r#"<section class="document-metadata" aria-label="Document metadata"><table><caption>Document metadata</caption><tbody>"#,
     );
-    render_metadata_mapping(metadata, &mut html);
-    html.push_str("</dl></section>");
+    render_metadata_table(metadata, &mut html);
+    html.push_str("</tbody></table></section>");
     html
 }
 
 fn empty_metadata_html() -> String {
-    r#"<section class="document-metadata" aria-label="Document metadata"><h2>Document metadata</h2><p>No metadata fields were supplied.</p></section>"#.to_owned()
+    r#"<section class="document-metadata" aria-label="Document metadata"><table><caption>Document metadata</caption><tbody><tr><td class="document-metadata-empty" colspan="4">No metadata fields were supplied.</td></tr></tbody></table></section>"#.to_owned()
+}
+
+fn render_metadata_table(metadata: &Mapping, html: &mut String) {
+    let mut fields = metadata.iter();
+    while let Some((key, value)) = fields.next() {
+        html.push_str("<tr>");
+        let second_field = fields.next();
+        render_metadata_table_field(key, value, second_field.is_none(), html);
+        if let Some((second_key, second_value)) = second_field {
+            render_metadata_table_field(second_key, second_value, false, html);
+        }
+        html.push_str("</tr>");
+    }
+}
+
+fn render_metadata_table_field(
+    key: &Value,
+    value: &Value,
+    spans_remaining_columns: bool,
+    html: &mut String,
+) {
+    write!(
+        html,
+        "<th scope=\"row\">{}</th><td{}>",
+        escape_html(&metadata_key(key)),
+        if spans_remaining_columns {
+            " colspan=\"3\""
+        } else {
+            ""
+        },
+    )
+    .expect("writing metadata markup to a string cannot fail");
+    render_metadata_value(value, html);
+    html.push_str("</td>");
 }
 
 fn render_metadata_mapping(metadata: &Mapping, html: &mut String) {
@@ -484,7 +518,12 @@ mod tests {
 
         // Assert
         assert!(document.html.contains("class=\"document-metadata\""));
-        assert!(document.html.contains(">title</dt><dd>Lens guide</dd>"));
+        assert!(document
+            .html
+            .contains("<caption>Document metadata</caption>"));
+        assert!(document
+            .html
+            .contains("<th scope=\"row\">title</th><td>Lens guide</td>"));
         assert!(document.html.contains("<li>rust</li>"));
         assert!(document.html.contains(">audience</dt><dd>maintainers</dd>"));
         assert!(document.html.contains("<h1>Guide</h1>"));
@@ -508,7 +547,7 @@ mod tests {
         // Assert
         assert!(document
             .html
-            .contains(">title</dt><dd>Alternate delimiter</dd>"));
+            .contains("<th scope=\"row\">title</th><td colspan=\"3\">Alternate delimiter</td>"));
         assert!(document.html.contains("<h1>Guide</h1>"));
         assert!(!document.html.contains("<p>title: Alternate delimiter</p>"));
     }
@@ -551,7 +590,9 @@ mod tests {
         );
 
         // Assert
-        assert!(document.html.contains(">custom</dt><dd><dl>"));
+        assert!(document
+            .html
+            .contains("<th scope=\"row\">custom</th><td colspan=\"3\"><dl>"));
         assert!(document.html.contains("&lt;unsafe&gt;"));
         assert!(!document.html.contains("<unsafe>"));
     }

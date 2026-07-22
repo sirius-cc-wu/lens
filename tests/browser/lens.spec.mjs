@@ -88,7 +88,9 @@ test("save displayed document then refreshes browser view automatically", async 
   }
 });
 
-test("valid frontmatter then renders nested metadata without markdown delimiters", async ({ page }) => {
+test("valid_frontmatter_then_renders_compact_semantic_metadata_table_without_delimiters", async ({
+  page,
+}) => {
   // Arrange
   const fixture = await startBrowserFixture({
     readme: "---\ntitle: Browser metadata\ntags:\n  - browser\n  - docs\npublication:\n  audience: maintainers\n...\n# Browser fixture\n\nA rendered document.\n",
@@ -105,6 +107,22 @@ test("valid frontmatter then renders nested metadata without markdown delimiters
     await expect(metadata).toContainText("browser");
     await expect(metadata).toContainText("audience");
     await expect(metadata).toContainText("maintainers");
+    const table = page.getByRole("table", { name: "Document metadata" });
+    await expect(table).toBeVisible();
+    await expect(table.locator("tbody > tr").first().locator("th, td")).toHaveCount(4);
+    const tagItems = metadata.locator("li");
+    expect(await tagItems.first().evaluate((item) => getComputedStyle(item).listStyleType)).toBe(
+      "none",
+    );
+    expect(
+      await tagItems.evaluateAll((items) =>
+        items.map((item) => getComputedStyle(item, "::after").content),
+      ),
+    ).toEqual(['","', "none"]);
+    const tagSpacing = await tagItems.evaluateAll(([first, second]) =>
+      Math.round(second.getBoundingClientRect().left - first.getBoundingClientRect().right),
+    );
+    expect(tagSpacing).toBeLessThan(8);
     await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
     await expect(page.locator("article")).not.toContainText("tags:");
   } finally {
