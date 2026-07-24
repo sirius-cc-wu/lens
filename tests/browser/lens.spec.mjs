@@ -397,6 +397,77 @@ test("direct_file_link_outside_parent_then_displays_repository_document", async 
   }
 });
 
+test("directory_target_link_outside_directory_then_displays_repository_document", async ({
+  page,
+}) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ targetRelativePath: "guides" });
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
+
+    // Act
+    await page.getByRole("link", { name: "Iteration evidence" }).click();
+
+    // Assert
+    expect(new URL(page.url()).pathname).toBe("/documents/iterations/evidence.md");
+    await expect(page.getByRole("heading", { level: 1, name: "Iteration evidence" })).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("current_directory_link_outside_directory_then_displays_repository_document", async ({
+  page,
+}) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ currentDirectoryRelativePath: "guides" });
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
+
+    // Act
+    await page.getByRole("link", { name: "Iteration evidence" }).click();
+
+    // Assert
+    expect(new URL(page.url()).pathname).toBe("/documents/iterations/evidence.md");
+    await expect(page.getByRole("heading", { level: 1, name: "Iteration evidence" })).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("target_scoped_directory_link_outside_directory_then_returns_guidance_without_source", async ({
+  page,
+}) => {
+  // Arrange
+  const fixture = await startBrowserFixture({
+    targetRelativePath: "guides",
+    scope: "target",
+  });
+
+  try {
+    await page.goto(fixture.lens.url);
+
+    // Act
+    const [response] = await Promise.all([
+      page.waitForResponse((candidate) => candidate.request().isNavigationRequest()),
+      page.getByRole("link", { name: "Iteration evidence" }).click(),
+    ]);
+
+    // Assert
+    expect(response.status()).toBe(404);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Document navigation unavailable" }),
+    ).toBeVisible();
+    await expect(page.locator("article")).not.toContainText("Repository-scoped document.");
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("direct_file_link_outside_repository_then_returns_guidance_without_source", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ targetRelativePath: "guides/guide.md" });
@@ -525,6 +596,8 @@ async function startBrowserFixture({
   rendererStatuses,
   extraDocumentCount,
   targetRelativePath,
+  currentDirectoryRelativePath,
+  scope,
 } = {}) {
   let repository;
   let renderer;
@@ -554,7 +627,14 @@ async function startBrowserFixture({
   try {
     repository = await createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount });
     renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
-    lens = await startLens(repository, renderer.url, rendererMode, targetRelativePath);
+    lens = await startLens(
+      repository,
+      renderer.url,
+      rendererMode,
+      targetRelativePath,
+      currentDirectoryRelativePath,
+      scope,
+    );
     return { lens, renderer, repository, stop };
   } catch (error) {
     try {
@@ -651,18 +731,31 @@ async function startRenderer({ status = 200, statuses } = {}) {
   };
 }
 
-async function startLens(repository, rendererUrl, rendererMode, targetRelativePath) {
+async function startLens(
+  repository,
+  rendererUrl,
+  rendererMode,
+  targetRelativePath,
+  currentDirectoryRelativePath,
+  scope,
+) {
   const lensBinary = process.env.LENS_BROWSER_TEST_BINARY;
   if (!lensBinary) {
     throw new Error("Playwright global setup did not provide the Lens executable path");
   }
-  const commandArguments = [
-    targetRelativePath ? join(repository.directory, targetRelativePath) : repository.directory,
-  ];
+  const commandArguments = currentDirectoryRelativePath
+    ? []
+    : [targetRelativePath ? join(repository.directory, targetRelativePath) : repository.directory];
   if (rendererMode) {
     commandArguments.push("--renderer", rendererMode);
   }
+  if (scope) {
+    commandArguments.push("--scope", scope);
+  }
   const child = spawn(lensBinary, commandArguments, {
+    cwd: currentDirectoryRelativePath
+      ? join(repository.directory, currentDirectoryRelativePath)
+      : undefined,
     env: {
       ...process.env,
       LENS_PLANTUML_SERVER: rendererUrl,

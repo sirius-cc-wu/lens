@@ -117,3 +117,5 @@ easier to explain and verify.
 - Risks: [`R-03` and `R-09`](../risk-list.md)
 - Design iteration:
   [`D3`](../iterations/d3-repository-scoped-target-design.md)
+- Construction iteration:
+  [`D4`](../iterations/d4-repository-scoped-target-sessions.md)

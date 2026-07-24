@@ -43,17 +43,21 @@ lens docs/features/markdown-viewing/oc-02-open-document-root.md
 lens diagrams/architecture.puml
 lens --renderer local docs
 lens --renderer disabled docs
+lens --scope target docs/features/markdown-viewing
 ```
 
-With no argument, Lens uses the current directory as the document root. A
-directory argument uses that directory. A Markdown or `.puml` file inside a
-Git repository uses the nearest enclosing repository as its document root; a
-file outside a recognized repository uses its canonical parent. Lens recognizes
+By default, a current-directory, directory, Markdown, or `.puml` target inside
+a Git repository uses the nearest enclosing repository as its document root. A
+directory or current-directory target outside a recognized repository remains
+its own root; a supported file uses its canonical parent. Lens recognizes
 ordinary repositories, worktrees, and submodules from a non-symbolic-link
-`.git` directory or regular `.git` file without running Git. A directly named
-file remains the initial document. Directory and current-directory sessions
-initially open a root `README`, then `docs/index`, then the first discovered
-document.
+`.git` directory or regular `.git` file without running Git.
+
+A directly named file remains the initial document. A selected directory
+initially prefers its own root `README`, then its `docs/index`, then its first
+discovered document. When that repository-scoped directory contains no
+supported document, Lens falls back to the repository's normal initial
+selection.
 
 Lens discovers `.md`, `.markdown`, and `.puml` files under the document root.
 It excludes hidden entries and symbolic links. Relative Markdown links resolve
@@ -61,9 +65,10 @@ only when their target is a discovered Markdown document; all other local paths
 receive a Lens guidance page without filesystem access. A standalone `.puml`
 file appears in the same navigation pane and renders as one diagram.
 
-A repository-scoped direct-file session reads supported visible documents
-throughout that repository during discovery and refresh. Pass a directory
-instead when the viewing session should remain narrower.
+A repository-scoped session reads supported visible documents throughout that
+repository during discovery and refresh. Use `--scope target` when the viewing
+session should remain limited to the selected directory, current directory, or
+selected file's parent.
 
 Use **Hide documents** to give the current document more room, and **Show
 documents** to restore the pane. Lens remembers that choice while the same
@@ -74,10 +79,10 @@ change which documents are available.
 
 Lens does not scan hidden directories when a repository is the document root.
 To view documents beneath a hidden parent directory, open a visible nested
-directory directly:
+directory with target scope:
 
 ```bash
-lens .hidden/docs
+lens --scope target .hidden/docs
 ```
 
 ## PlantUML

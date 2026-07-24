@@ -3,13 +3,13 @@ type: "Improvement Proposal"
 title: "Scope Repository Target Sessions to the Nearest Repository"
 description: "Makes repository-internal links work consistently for file, directory, and current-directory targets while retaining an explicit narrow scope."
 id: "PROP-REPOSITORY-SCOPED-DIRECT-FILES"
-status: "selected"
+status: "implemented"
 tags: [proposal, navigation, security, target]
 ---
 
 # Scope Repository Target Sessions to the Nearest Repository
 
-Status: selected for D4; the direct-file slice was implemented in D2
+Status: implemented in D4; the direct-file slice was implemented in D2
 
 ## Summary
 
@@ -277,6 +277,10 @@ target and follow a link into another repository directory.
 - D3 elaboration result:
   [`docs/iterations/d3-repository-scoped-target-design.md`](../iterations/d3-repository-scoped-target-design.md)
   accepts the unified default and explicit target scope for D4 construction.
+- D4 construction result:
+  [`docs/iterations/d4-repository-scoped-target-sessions.md`](../iterations/d4-repository-scoped-target-sessions.md)
+  implements and verifies directory, current-directory, and target-scoped
+  sessions.
 
 ## Out of Scope
 
