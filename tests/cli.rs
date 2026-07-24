@@ -4,8 +4,26 @@ fn lens_command() -> Command {
     Command::new(env!("CARGO_BIN_EXE_lens"))
 }
 
+fn accepts_server_configured_serve<F, Fut>(_serve: F)
+where
+    F: FnOnce(lens::MarkdownTarget) -> Fut,
+{
+}
+
 #[test]
-fn help_flag_then_describes_optional_target() {
+fn public_serve_entry_point_then_accepts_only_target() {
+    // Arrange
+    let serve = lens::serve;
+
+    // Act
+    accepts_server_configured_serve(serve);
+
+    // Assert
+    // The function bound is the compile-time public API assertion.
+}
+
+#[test]
+fn help_flag_then_describes_optional_target_without_renderer_selection() {
     // Arrange
     let mut command = lens_command();
     command.arg("--help");
@@ -16,9 +34,27 @@ fn help_flag_then_describes_optional_target() {
     // Assert
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
-    assert!(stdout.contains("Usage: lens [OPTIONS] [TARGET]"));
-    assert!(stdout.contains("--renderer <RENDERER>"));
+    assert!(stdout.contains("Usage: lens [TARGET]"));
+    assert!(!stdout.contains("--renderer"));
     assert!(stdout.contains("lens .hidden/docs"));
+}
+
+#[test]
+fn renderer_argument_then_reports_unknown_argument() {
+    // Arrange
+    let missing_target = unique_path("renderer-argument-target.md");
+    let mut command = lens_command();
+    command.args(["--renderer", "public"]);
+    command.arg(missing_target);
+
+    // Act
+    let output = command.output().expect("Lens command should run");
+
+    // Assert
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("error output should be UTF-8");
+    assert!(stderr.contains("unexpected argument '--renderer' found"));
+    assert!(!stderr.contains("does not exist"));
 }
 
 #[test]

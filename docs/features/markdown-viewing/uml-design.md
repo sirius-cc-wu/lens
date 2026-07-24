@@ -3,19 +3,25 @@ type: "Software Design"
 title: "Lens V1 UML Design Views"
 description: "Summarizes the implemented Rust components, runtime collaboration, modules, types, and ownership relationships for V1."
 feature: "FEAT-01"
-status: "implemented"
+status: "partially superseded"
+superseded_in_part_by: "C7"
 language: "Rust"
 tags: [design, uml]
 ---
 
 # V1 UML Design Views
 
-Status: V1 implementation snapshot
+Status: V1 implementation snapshot; renderer portions superseded by C7
 
 These diagrams complement the black-box [SSD-01](ssd-01-open-markdown-target.md)
 and [SSD-02](ssd-02-open-document-root.md). They show the implemented Rust
 modules, owned state, and runtime collaborators for developer discussion. They
 do not introduce additional behavior or abstractions.
+
+The current server-rendering collaboration is modeled separately in the
+[server-only PlantUML rendering design](server-rendering-design.md). C7
+supersedes the renderer-specific portions of this implementation snapshot,
+while the document-root responsibilities here remain active.
 
 ## CMP-01: Component and Deployment View
 

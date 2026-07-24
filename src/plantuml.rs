@@ -1,60 +1,16 @@
-use std::{env, io::Write, path::PathBuf};
+use std::{env, io::Write};
 
-use clap::ValueEnum;
 use flate2::{write::DeflateEncoder, Compression};
 
 pub const PUBLIC_SERVER: &str = "https://www.plantuml.com/plantuml";
 pub const SERVER_ENVIRONMENT_VARIABLE: &str = "LENS_PLANTUML_SERVER";
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
-pub enum RendererMode {
-    #[default]
-    Public,
-    Local,
-    Disabled,
+pub(crate) fn server() -> String {
+    server_from_value(env::var(SERVER_ENVIRONMENT_VARIABLE).ok().as_deref())
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum DiagramRenderer {
-    Public { server: String },
-    Local { command: PathBuf },
-    Disabled,
-}
-
-impl DiagramRenderer {
-    pub(crate) fn from_mode(mode: RendererMode) -> Self {
-        match mode {
-            RendererMode::Public => Self::Public {
-                server: renderer_server(),
-            },
-            RendererMode::Local => Self::Local {
-                command: PathBuf::from("plantuml"),
-            },
-            RendererMode::Disabled => Self::Disabled,
-        }
-    }
-
-    pub(crate) fn is_enabled(&self) -> bool {
-        !matches!(self, Self::Disabled)
-    }
-
-    pub(crate) fn label(&self) -> &'static str {
-        match self {
-            Self::Public { .. } => "public",
-            Self::Local { .. } => "local",
-            Self::Disabled => "disabled",
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn local_with_command(command: PathBuf) -> Self {
-        Self::Local { command }
-    }
-}
-
-fn renderer_server() -> String {
-    env::var(SERVER_ENVIRONMENT_VARIABLE)
-        .ok()
+fn server_from_value(value: Option<&str>) -> String {
+    value
         .map(|server| server.trim().trim_end_matches('/').to_owned())
         .filter(|server| !server.is_empty())
         .unwrap_or_else(|| PUBLIC_SERVER.to_owned())
@@ -105,7 +61,43 @@ fn encode_six_bits(value: u8) -> char {
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_six_bits, svg_url, PUBLIC_SERVER};
+    use super::{encode_six_bits, server_from_value, svg_url, PUBLIC_SERVER};
+
+    #[test]
+    fn missing_plantuml_server_override_then_uses_default_server() {
+        // Arrange
+        let configured_server = None;
+
+        // Act
+        let server = server_from_value(configured_server);
+
+        // Assert
+        assert_eq!(server, PUBLIC_SERVER);
+    }
+
+    #[test]
+    fn empty_plantuml_server_override_then_uses_default_server() {
+        // Arrange
+        let configured_server = Some("  ///  ");
+
+        // Act
+        let server = server_from_value(configured_server);
+
+        // Assert
+        assert_eq!(server, PUBLIC_SERVER);
+    }
+
+    #[test]
+    fn configured_plantuml_server_then_normalizes_base_url() {
+        // Arrange
+        let configured_server = Some("  http://127.0.0.1:12345///  ");
+
+        // Act
+        let server = server_from_value(configured_server);
+
+        // Assert
+        assert_eq!(server, "http://127.0.0.1:12345");
+    }
 
     #[test]
     fn six_bit_boundaries_then_use_plantuml_alphabet() {
@@ -138,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn controlled_renderer_server_then_generates_its_svg_url() {
+    fn configured_plantuml_server_then_generates_its_svg_url() {
         // Arrange
         let server = "http://127.0.0.1:12345/";
 

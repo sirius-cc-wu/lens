@@ -19,7 +19,7 @@ tags: [reference, glossary]
 | Browser session | The local HTTP session Lens starts and opens in a browser for a resolved target. |
 | Markdown document | A supported text file whose content Lens renders as Markdown. The supported extensions are not yet finalized. |
 | PlantUML block | A fenced Markdown code block labeled `plantuml` whose contents describe a PlantUML diagram. |
-| Standalone PlantUML file | A visible `.puml` file in the document set that Lens represents as one diagram with the same renderer controls as an embedded block. |
-| Diagram renderer | The session-fixed PlantUML conversion choice: the default public server, the installed local `plantuml` command, or disabled rendering that leaves source visible. |
-| Renderer status | The document-page message identifying the selected renderer or confirming that rendering is disabled for the current viewing session. |
+| Standalone PlantUML file | A visible `.puml` file in the document set that Lens represents as one diagram with the same server-rendering, source-fallback, and retry behavior as an embedded block. |
+| PlantUML server | A network service that converts PlantUML source into an image. Lens fixes one server base URL when a viewing session starts, using `LENS_PLANTUML_SERVER` when its normalized value is non-empty and the public default otherwise. |
+| Rendering path status | The document-page message identifying server-based PlantUML rendering without exposing the configured server URL. |
 | Loopback address | A network address reachable only from the same machine, such as `127.0.0.1`; Lens should use it for its browser session by default. |

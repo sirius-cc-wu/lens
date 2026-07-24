@@ -3,8 +3,6 @@ use std::{collections::BTreeSet, fmt::Write as _};
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag};
 use serde_yaml::{Mapping, Value};
 
-use crate::plantuml::DiagramRenderer;
-
 #[derive(Clone, Debug)]
 pub struct Diagram {
     pub source: String,
@@ -21,7 +19,6 @@ pub fn render(
     document_id: usize,
     current_document: &str,
     known_documents: &BTreeSet<String>,
-    renderer: &DiagramRenderer,
 ) -> RenderedDocument {
     let frontmatter = frontmatter(markdown);
     let parser = Parser::new_ext(frontmatter.body, Options::all());
@@ -39,13 +36,7 @@ pub fn render(
                         source: source.clone(),
                     });
                     events.push(Event::Html(
-                        diagram_placeholder(
-                            document_id,
-                            diagram_id,
-                            &source,
-                            renderer.is_enabled(),
-                        )
-                        .into(),
+                        diagram_placeholder(document_id, diagram_id, &source).into(),
                     ));
                 }
                 Event::Text(text) | Event::Code(text) => source.push_str(&text),
@@ -257,15 +248,11 @@ fn frontmatter_error(problem: &str) -> String {
     )
 }
 
-pub fn render_standalone_plantuml(
-    document_id: usize,
-    source: &str,
-    renderer: &DiagramRenderer,
-) -> RenderedDocument {
+pub fn render_standalone_plantuml(document_id: usize, source: &str) -> RenderedDocument {
     RenderedDocument {
         html: format!(
             r#"<p class="standalone-plantuml">Standalone PlantUML file.</p>{}"#,
-            diagram_placeholder(document_id, 0, source, renderer.is_enabled())
+            diagram_placeholder(document_id, 0, source)
         ),
         diagrams: vec![Diagram {
             source: source.to_owned(),
@@ -273,22 +260,9 @@ pub fn render_standalone_plantuml(
     }
 }
 
-fn diagram_placeholder(
-    document_id: usize,
-    diagram_id: usize,
-    source: &str,
-    rendering_enabled: bool,
-) -> String {
-    let image = rendering_enabled
-        .then(|| {
-            format!(
-                r#"<img src="/diagrams/{document_id}/{diagram_id}" alt="Rendered PlantUML diagram" data-diagram>"#
-            )
-        })
-        .unwrap_or_default();
-    let disabled_status = rendering_enabled.then_some(" hidden").unwrap_or_default();
+fn diagram_placeholder(document_id: usize, diagram_id: usize, source: &str) -> String {
     format!(
-        r#"<figure class="diagram" data-diagram-container>{image}<p class="diagram-error" hidden>PlantUML rendering failed. The source is shown below.</p><p class="diagram-disabled" data-diagram-disabled{disabled_status}>PlantUML rendering is disabled for this viewing session.</p><button type="button" data-diagram-retry hidden>Retry diagram rendering</button><details class="diagram-source"><summary>PlantUML source</summary><pre><code>{}</code></pre></details></figure>"#,
+        r#"<figure class="diagram" data-diagram-container><img src="/diagrams/{document_id}/{diagram_id}" alt="Rendered PlantUML diagram" data-diagram><p class="diagram-error" hidden>PlantUML rendering failed. The source is shown below.</p><button type="button" data-diagram-retry hidden>Retry diagram rendering</button><details class="diagram-source"><summary>PlantUML source</summary><pre><code>{}</code></pre></details></figure>"#,
         escape_html(source),
     )
 }
@@ -373,11 +347,6 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{render, render_standalone_plantuml};
-    use crate::plantuml::{DiagramRenderer, RendererMode};
-
-    fn public_renderer() -> DiagramRenderer {
-        DiagramRenderer::from_mode(RendererMode::Public)
-    }
 
     #[test]
     fn plantuml_block_then_adds_document_scoped_diagram_endpoint() {
@@ -385,13 +354,7 @@ mod tests {
         let markdown = "```plantuml\n@startuml\nAlice -> Bob: hello\n@enduml\n```";
 
         // Act
-        let document = render(
-            markdown,
-            3,
-            "guides/intro.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 3, "guides/intro.md", &BTreeSet::new());
 
         // Assert
         assert_eq!(document.diagrams.len(), 1);
@@ -403,20 +366,19 @@ mod tests {
     }
 
     #[test]
-    fn disabled_renderer_then_keeps_plantuml_source_without_an_image_request() {
+    fn plantuml_block_then_omits_rendering_disable_status() {
         // Arrange
-        let markdown = "```plantuml\n@startuml\nAlice -> Bob: private\n@enduml\n```";
-        let renderer = DiagramRenderer::from_mode(RendererMode::Disabled);
+        let markdown = "```plantuml\n@startuml\nAlice -> Bob: server\n@enduml\n```";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new(), &renderer);
+        let document = render(markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
-        assert!(!document.html.contains("<img"));
-        assert!(document
+        assert!(document.html.contains("src=\"/diagrams/0/0\""));
+        assert!(!document.html.contains("data-diagram-disabled"));
+        assert!(!document
             .html
             .contains("PlantUML rendering is disabled for this viewing session."));
-        assert!(document.html.contains("Alice -&gt; Bob: private"));
     }
 
     #[test]
@@ -425,7 +387,7 @@ mod tests {
         let source = "@startuml\nAlice -> Bob: standalone\n@enduml";
 
         // Act
-        let document = render_standalone_plantuml(2, source, &public_renderer());
+        let document = render_standalone_plantuml(2, source);
 
         // Assert
         assert_eq!(document.diagrams.len(), 1);
@@ -442,13 +404,7 @@ mod tests {
             BTreeSet::from(["README.md".to_owned(), "guides/intro.md".to_owned()]);
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "guides/intro.md",
-            &known_documents,
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "guides/intro.md", &known_documents);
 
         // Assert
         assert!(document
@@ -463,13 +419,7 @@ mod tests {
         let known_documents = BTreeSet::from(["guides/intro.md".to_owned()]);
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "guides/intro.md",
-            &known_documents,
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "guides/intro.md", &known_documents);
 
         // Assert
         assert!(document.html.contains("href=\"../../secret.md\""));
@@ -484,13 +434,7 @@ mod tests {
         let markdown = "```rust\nlet answer = 42;\n```";
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "document.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
         assert!(document.diagrams.is_empty());
@@ -504,13 +448,7 @@ mod tests {
         let markdown = "<script>alert('unsafe')</script>";
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "document.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
         assert!(!document.html.contains("<script>"));
@@ -523,13 +461,7 @@ mod tests {
         let markdown = "---\ntitle: Lens guide\nauthor: Ada\ntags:\n  - rust\n  - docs\npublication:\n  audience: maintainers\n---\n# Guide\n\nBody text.";
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "guide.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document.html.contains("class=\"document-metadata\""));
@@ -551,13 +483,7 @@ mod tests {
         let markdown = "---\ntitle: Alternate delimiter\n...\n# Guide";
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "guide.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document
@@ -573,13 +499,7 @@ mod tests {
         let markdown = "---\ntitle: [missing bracket\n---\n# Guide";
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "guide.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document.html.contains("class=\"frontmatter-error\""));
@@ -596,13 +516,7 @@ mod tests {
         let markdown = "---\ncustom:\n  note: <unsafe>\n---\n# Guide";
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "guide.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document
@@ -618,13 +532,7 @@ mod tests {
         let markdown = "---\ntitle: Unclosed metadata\n# Guide";
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "guide.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document
@@ -640,13 +548,7 @@ mod tests {
         let markdown = "```plantuml\nAlice -> Bob: <unsafe>\n```";
 
         // Act
-        let document = render(
-            markdown,
-            0,
-            "document.md",
-            &BTreeSet::new(),
-            &public_renderer(),
-        );
+        let document = render(markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
         assert!(document.html.contains("&lt;unsafe&gt;"));

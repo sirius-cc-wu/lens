@@ -9,9 +9,8 @@ Obsidian.
 - A browser and the platform launcher: `xdg-open` on Linux, `open` on macOS,
   or `cmd /C start` on Windows.
 - Rust 1.75 or newer to build from source.
-- Network access to `https://www.plantuml.com/plantuml` when using the default
-  public PlantUML renderer.
-- An installed `plantuml` command when using `--renderer local`.
+- Network access to the selected PlantUML server. Lens uses
+  `https://www.plantuml.com/plantuml` by default.
 
 ## Install
 
@@ -41,8 +40,7 @@ lens
 lens docs
 lens docs/features/markdown-viewing/oc-02-open-document-root.md
 lens diagrams/architecture.puml
-lens --renderer local docs
-lens --renderer disabled docs
+LENS_PLANTUML_SERVER=http://127.0.0.1:8080/plantuml lens docs
 ```
 
 With no argument, Lens uses the current directory as the document root. A
@@ -73,17 +71,18 @@ lens .hidden/docs
 
 ## PlantUML
 
-Lens uses the public PlantUML server by default. A failed diagram request leaves
-the source visible in the document. Select `--renderer local` to run the
-installed `plantuml` command on the current machine; Lens passes the diagram
-source over that command's standard input and does not send it to a renderer
-service. Select `--renderer disabled` to display PlantUML source without
-requesting a rendered diagram for the viewing session.
+Lens uses one PlantUML server for each viewing session. It defaults to
+`https://www.plantuml.com/plantuml`. Set `LENS_PLANTUML_SERVER` before starting
+Lens to use a self-hosted or private server instead; Lens trims surrounding
+whitespace and trailing `/` characters from that base URL.
 
-Every document page identifies the selected renderer. When an individual
-diagram fails, use its **Retry diagram rendering** button after the renderer is
-available again. Use **Disable diagram rendering for this session** to stop
-further renderer requests while preserving each diagram's source.
+Every document page identifies server-based PlantUML rendering without exposing
+the configured URL. A failed diagram request leaves the source visible; use its
+**Retry diagram rendering** button after the same server is available again.
+Lens does not fall back to the public server when a configured server fails.
+Lens also does not provide local-command or disabled rendering modes, so
+configure a controlled server before opening source that must not be sent to
+the public service.
 
 ## Markdown Metadata
 

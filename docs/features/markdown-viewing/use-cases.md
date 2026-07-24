@@ -10,14 +10,14 @@ tags: [requirements, use-case]
 
 # FEAT-01: View Markdown with PlantUML
 
-Status: refined in P6
+Status: implemented in C7
 
 ## Actors
 
 | Actor | Goal |
 |---|---|
 | Developer or technical writer | Read repository Markdown and its diagrams without opening an editor-specific plugin. |
-| Diagram renderer | Depending on the selected session setting, converts PlantUML source through the public server or installed `plantuml` command, or leaves the source visible. |
+| PlantUML server | Converts PlantUML source into an image at the server destination fixed when a viewing session starts. |
 | Operating system browser | Displays the local Lens view after the CLI starts it. |
 
 ## Use-Case List
@@ -49,48 +49,51 @@ Preconditions:
 - The supplied target is a readable Markdown file.
 - A supported browser is available.
 
-Trigger: The user runs `lens [--renderer public|local|disabled] <markdown-file>`.
+Trigger: The user runs `lens <markdown-file>`, optionally with
+`LENS_PLANTUML_SERVER` set in the process environment.
 
 Main success scenario:
 
 1. Lens validates and resolves the file target.
-2. Lens starts a local browser-facing session for that target.
+2. Lens selects one PlantUML server for the viewing session and starts a local
+   browser-facing session for the target.
 3. Lens opens the session in the user's browser.
 4. Lens parses the Markdown document.
 5. Lens recognizes each fenced block labeled `plantuml`.
-6. Lens renders the Markdown and replaces each valid PlantUML block with its
-   rendered diagram.
+6. Lens renders the Markdown and requests each valid PlantUML block from the
+   selected server.
 7. The user reads the document and diagrams in the browser.
 
 Extensions:
 
 - 1a. If the target is missing, unreadable, or not a supported Markdown file,
   Lens exits with an actionable error and does not start a browser session.
+- 1b. If the user passes `--renderer`, Lens reports an unknown argument and
+  creates no viewing session.
+- 2a. If `LENS_PLANTUML_SERVER` is unset or becomes empty after trimming
+  surrounding whitespace and trailing `/` characters, Lens selects
+  `https://www.plantuml.com/plantuml`.
+- 2b. If the normalized `LENS_PLANTUML_SERVER` value is non-empty, Lens selects
+  that base URL for every diagram request in the viewing session.
 - 3a. If a browser cannot be opened automatically, Lens reports the local URL
   for the user to open manually.
 - 5a. Fenced blocks in other languages remain code blocks.
-- 6a. If a PlantUML block is invalid or the renderer is unavailable, Lens keeps
+- 6a. If a PlantUML block is invalid or the selected server is unavailable,
+  invalid, or rejects the request, Lens keeps
   the source visible and shows an error associated with that block. One failed
-  diagram does not prevent the rest of the document from rendering.
-- 6b. With the default `--renderer public`, Lens sends PlantUML block source to
-  the public PlantUML server.
-- 6c. With `--renderer local`, Lens runs the installed `plantuml` command with
-  the block source on standard input and keeps it off the renderer network.
-- 6d. With `--renderer disabled`, Lens does not request a diagram image and
-  instead displays the original PlantUML source with a disabled status.
-- 6e. Each document identifies the active renderer. After one diagram fails,
-  the user can retry only that diagram without changing its source or renderer
-  selection.
-- 6f. The user can disable diagram rendering for the active viewing session.
-  Lens stops future renderer requests and keeps every diagram's source visible.
+  diagram does not prevent the rest of the document from rendering, and Lens
+  does not retry through the default server.
+- 6b. The document identifies server-based PlantUML rendering without exposing
+  the configured server URL. After one diagram fails, the user can retry only
+  that diagram without changing its source or server selection.
 
 Postconditions:
 
 - A local browser view exists for the selected Markdown document.
 - The original file remains unchanged.
 - The user can identify any diagrams that were not rendered and why.
-- The user can determine whether the selected renderer is public, local, or
-  disabled for the current viewing session.
+- The user can identify diagrams that use the session-fixed PlantUML server
+  path without learning or changing its configured URL through the browser.
 
 E1 scope: The executable slice accepts a direct `.md` or `.markdown` file
 target. Directory and current-directory targets remain work for `UC-02` and
@@ -146,15 +149,15 @@ Main success scenario:
 
 1. The user opens a `.puml` target or selects a discovered `.puml` identifier.
 2. Lens reads the already authorized source and represents it as one diagram.
-3. Lens uses the session renderer choice and retains the source fallback.
+3. Lens uses the session-fixed PlantUML server and retains the source fallback.
 4. The user reads the rendered diagram or its visible source fallback.
 
 Extensions:
 
 - 1a. A hidden, symbolic-link, out-of-root, or non-`.puml` source file is not
   added to the document set or made reachable by a browser route.
-- 3a. If rendering is disabled or fails, Lens keeps the original standalone
-  PlantUML source readable and applies the existing diagram controls.
+- 3a. If rendering fails, Lens keeps the original standalone PlantUML source
+  readable and offers the per-diagram retry control.
 
 ## UC-04: Navigate Between Discovered Markdown Documents
 
@@ -191,12 +194,13 @@ Special requirements:
 - Does "codebase code and document" require a code-file navigator in the first
   release, or only documentation navigation with links to repository files?
 - Which Markdown extensions and filenames are in scope?
-- What request, response-size, and timeout limits are needed for the public
-  PlantUML server?
 - Must the viewer work in a browser that is already running, headless
   environments, or remote development containers?
 
 ## UML Design Views
 
+- [Diagram request operation contract](oc-05-request-diagram.md) (`OC-05`)
 - [V1 component, realization, and Rust type diagrams](uml-design.md) (`CMP-01`,
   `RZ-01`, and `DCD-01`)
+- [Server-only PlantUML rendering design](server-rendering-design.md) (`RZ-05`
+  and `DCD-04`)
