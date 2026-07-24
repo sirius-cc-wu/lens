@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-014: Verify and Publish Tagged Native Releases"
+description: "Defines repository-owned verification and atomic publication of tagged native release artifacts."
+id: "ADR-014"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, release]
+---
+
 # ADR-014: Verify and Publish Tagged Native Releases
 
 Status: accepted

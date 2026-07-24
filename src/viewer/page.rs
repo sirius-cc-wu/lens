@@ -25,8 +25,6 @@ pub(super) fn page(
     title: &str,
     document_html: String,
     navigation_html: String,
-    renderer_controls: String,
-    rendering_disabled: bool,
     document_revision: Option<(&str, u64)>,
 ) -> String {
     let navigation_control = if navigation_html.is_empty() {
@@ -42,12 +40,9 @@ pub(super) fn page(
             )
         })
         .unwrap_or_default();
-    let rendering_disabled_attribute = rendering_disabled
-        .then_some(r#" data-diagram-rendering-disabled="true""#)
-        .unwrap_or_default();
     format!(
         r#"<!doctype html>
-<html lang="en"{rendering_disabled_attribute}>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -59,8 +54,7 @@ pub(super) fn page(
     {navigation_control}
     {navigation_html}
     <section class="document-content">
-      <header><p class="eyebrow">Lens</p><h1>{}</h1></header>
-      {renderer_controls}
+      <header class="document-header"><p class="eyebrow">Lens</p><h1>{}</h1></header>
       <article>{document_html}</article>
     </section>
   </main>
@@ -98,23 +92,11 @@ pub(super) fn navigation_pane(
     )
 }
 
-pub(super) fn renderer_controls(renderer_label: &str, rendering_enabled: bool) -> String {
-    if rendering_enabled {
-        format!(
-            r#"<section class="renderer-controls" data-renderer-controls><p role="status" data-renderer-status>Diagram renderer: {renderer_label}.</p><button type="button" data-disable-renderer>Disable diagram rendering for this session</button></section>"#,
-        )
-    } else {
-        r#"<section class="renderer-controls" data-renderer-controls><p role="status" data-renderer-status>Diagram rendering is disabled for this viewing session.</p></section>"#.to_owned()
-    }
-}
-
 pub(super) fn deferred_navigation_page() -> String {
     page(
         "Document navigation unavailable",
         "<p>Lens can display the selected document, but the requested document is not part of this viewing session.</p><p><a href=\"/\">Return to the initial document</a></p>".to_owned(),
         String::new(),
-        String::new(),
-        false,
         None,
     )
 }
@@ -205,7 +187,7 @@ fn document_navigation_control() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{deferred_navigation_page, navigation_pane, page, renderer_controls};
+    use super::{deferred_navigation_page, navigation_pane, page};
     use crate::viewer::catalog::{DocumentCatalog, NavigationRequest};
 
     fn test_navigation(
@@ -259,14 +241,7 @@ mod tests {
         let navigation = test_navigation(["README.md".to_owned()], 0, "/");
 
         // Act
-        let document_page = page(
-            "README.md",
-            String::new(),
-            navigation,
-            String::new(),
-            false,
-            None,
-        );
+        let document_page = page("README.md", String::new(), navigation, None);
 
         // Assert
         assert!(document_page.contains("data-document-navigation-control hidden"));
@@ -290,16 +265,23 @@ mod tests {
     }
 
     #[test]
-    fn enabled_renderer_then_exposes_its_status_and_disable_control() {
+    fn document_page_then_omits_rendering_status_and_disable_control() {
         // Arrange
-        let renderer_label = "public";
+        let expected_content = "<p>Document content</p>";
 
         // Act
-        let controls = renderer_controls(renderer_label, true);
+        let document_page = page(
+            "README.md",
+            expected_content.to_owned(),
+            String::new(),
+            None,
+        );
 
         // Assert
-        assert!(controls.contains("Diagram renderer: public."));
-        assert!(controls.contains("data-disable-renderer"));
+        assert!(document_page.contains(expected_content));
+        assert!(!document_page.contains("PlantUML server rendering"));
+        assert!(!document_page.contains("rendering-status"));
+        assert!(!document_page.contains("data-disable-renderer"));
     }
 
     #[test]

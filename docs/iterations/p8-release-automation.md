@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: P8 Release Automation"
+description: "Implements repository-owned verification and complete native artifact publication for version tags."
+id: "P8"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: P8 Release Automation
 
 Status: completed

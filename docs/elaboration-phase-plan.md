@@ -1,3 +1,12 @@
+---
+type: "Phase Plan"
+title: "Lens Elaboration Phase Plan"
+description: "Records the low-precision elaboration estimate, proposed iterations, risks, and exit criteria for Lens."
+status: "historical"
+phase: "elaboration"
+tags: [planning, elaboration]
+---
+
 # Elaboration Phase Plan
 
 Status: low-precision inception estimate

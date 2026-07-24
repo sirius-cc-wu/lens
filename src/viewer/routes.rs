@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, RawQuery, State},
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
     Router,
 };
 
@@ -12,7 +12,7 @@ use super::{
     catalog::NavigationRequest,
     page::{
         app_script, app_stylesheet, content_security_policy, deferred_navigation_page,
-        navigation_pane, page, renderer_controls,
+        navigation_pane, page,
     },
     rendering::request_diagram,
     state::ViewerState,
@@ -26,7 +26,6 @@ pub(super) fn router(state: Arc<ViewerState>) -> Router {
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
         .route("/diagrams/:document_id/:diagram_id", get(diagram))
-        .route("/renderer/disable", post(disable_renderer))
         .fallback(not_found)
         .with_state(state)
 }
@@ -80,7 +79,6 @@ fn rendered_document_response(
     current_route: &str,
 ) -> Response {
     let navigation = navigation_pane(state.catalog.search(request), document_id, current_route);
-    let renderer_controls = renderer_controls(state.renderer.label(), state.rendering_enabled());
     let documents = state
         .documents
         .read()
@@ -89,11 +87,9 @@ fn rendered_document_response(
     (
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
         Html(page(
-            &document.canonical_path.display().to_string(),
+            &document.identifier,
             document.rendered.html.clone(),
             navigation,
-            renderer_controls,
-            !state.rendering_enabled(),
             Some((&document.identifier, document.revision)),
         )),
     )
@@ -126,13 +122,6 @@ async fn diagram(
     State(state): State<Arc<ViewerState>>,
     Path((document_id, diagram_id)): Path<(usize, usize)>,
 ) -> Response {
-    if !state.rendering_enabled() {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "PlantUML rendering is disabled for this viewing session.",
-        )
-            .into_response();
-    }
     let diagram = state
         .documents
         .read()
@@ -144,7 +133,7 @@ async fn diagram(
         return (StatusCode::NOT_FOUND, "Diagram not found").into_response();
     };
 
-    match request_diagram(&state.renderer, &state.client, &diagram).await {
+    match request_diagram(&state.client, &state.plantuml_server, &diagram).await {
         Ok(svg) => (
             [(
                 header::CONTENT_TYPE,
@@ -164,11 +153,6 @@ async fn diagram(
     }
 }
 
-async fn disable_renderer(State(state): State<Arc<ViewerState>>) -> StatusCode {
-    state.disable_rendering();
-    StatusCode::NO_CONTENT
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -178,13 +162,13 @@ mod tests {
 
     use super::router;
     use crate::{
-        plantuml::{DiagramRenderer, RendererMode},
+        plantuml::PUBLIC_SERVER,
         target::{DocumentKind, MarkdownDocument},
         viewer::{rendering::renderer_client, state::viewer_state},
     };
 
-    fn test_renderer() -> DiagramRenderer {
-        DiagramRenderer::from_mode(RendererMode::Public)
+    fn test_server() -> String {
+        PUBLIC_SERVER.to_owned()
     }
 
     fn test_router() -> axum::Router {
@@ -199,7 +183,7 @@ mod tests {
             documents,
             initial_document,
             renderer_client().expect("test client should initialize"),
-            test_renderer(),
+            test_server(),
         ))
     }
 
@@ -283,46 +267,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn renderer_disable_request_then_blocks_diagram_rendering_for_the_session() {
+    async fn renderer_disable_request_then_returns_not_found() {
         // Arrange
-        let state = viewer_state(
-            vec![test_document(
-                "README.md",
-                "```plantuml\n@startuml\nAlice -> Bob\n@enduml\n```",
-            )],
-            0,
-            renderer_client().expect("test client should initialize"),
-            test_renderer(),
-        );
-        let disable_request = Request::builder()
+        let app = test_router();
+        let request = Request::builder()
             .method("POST")
             .uri("/renderer/disable")
             .body(Body::empty())
             .expect("disable request should build");
 
         // Act
-        let disable_response = router(state.clone())
-            .oneshot(disable_request)
-            .await
-            .expect("router should respond");
-        let diagram_request = Request::builder()
-            .uri("/diagrams/0/0")
-            .body(Body::empty())
-            .expect("diagram request should build");
-        let diagram_response = router(state)
-            .oneshot(diagram_request)
-            .await
-            .expect("router should respond");
+        let response = app.oneshot(request).await.expect("router should respond");
 
         // Assert
-        assert_eq!(
-            disable_response.status(),
-            axum::http::StatusCode::NO_CONTENT
-        );
-        assert_eq!(
-            diagram_response.status(),
-            axum::http::StatusCode::SERVICE_UNAVAILABLE
-        );
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

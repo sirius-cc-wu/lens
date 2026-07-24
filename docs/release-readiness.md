@@ -1,3 +1,11 @@
+---
+type: "Verification Evidence"
+title: "Lens V1 Release Readiness"
+description: "Defines the automated, browser, installation, packaging, and manual checks required for a Lens V1 release."
+status: "active"
+tags: [release, verification]
+---
+
 # V1 Release Readiness
 
 Lens V1 is ready for a Linux source release when every check below has current
@@ -103,12 +111,18 @@ Expected results:
 ## Rendering Checks
 
 Open a document containing a valid PlantUML block and one with invalid PlantUML.
+Repeat with `LENS_PLANTUML_SERVER` pointing to a controlled server.
 
 Expected results:
 
 - The valid diagram appears as SVG.
 - The failed diagram keeps its source visible with an error.
 - The remainder of the document remains readable.
+- Every request in the configured session reaches only the controlled server.
+- The page exposes retry but no rendering-disable control, and
+  `/renderer/disable` returns not found.
+- `lens --help` omits `--renderer`; passing it reports an unknown argument
+  before a viewing session starts.
 
 ## Supported Platforms
 
@@ -116,5 +130,6 @@ Expected results:
   `open`, and `cmd /C start` respectively. A launch failure still prints the
   loopback URL for manual opening.
 - Documentation-only: source-code browsing is not part of V1.
-- Public PlantUML rendering is the default; local and disabled renderer modes
-  are documented in the README.
+- The public PlantUML server is the default, and `LENS_PLANTUML_SERVER` fixes a
+  replacement server for the full session. Local-command and disabled rendering
+  modes are not supported.

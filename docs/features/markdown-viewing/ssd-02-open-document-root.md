@@ -1,3 +1,14 @@
+---
+type: "System Sequence Diagram"
+title: "SSD-02: Open and Navigate a Document Root"
+description: "Shows the actor-system events for opening a document root and navigating to a discovered document."
+id: "SSD-02"
+use_case: [UC-02, UC-03, UC-04]
+scenario: "Open a document root and follow a link to another discovered Markdown document."
+status: "active"
+tags: [analysis, ssd]
+---
+
 # SSD-02: Open and Navigate a Document Root
 
 Use cases: `UC-02`, `UC-03`, and `UC-04`

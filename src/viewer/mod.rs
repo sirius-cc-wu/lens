@@ -14,20 +14,16 @@ use rendering::renderer_client;
 use routes::router;
 use state::{viewer_state, watch_documents};
 
-use crate::{
-    plantuml::{DiagramRenderer, RendererMode},
-    target::MarkdownTarget,
-};
+use crate::target::MarkdownTarget;
 
-pub async fn serve(target: MarkdownTarget, renderer_mode: RendererMode) -> Result<()> {
+pub async fn serve(target: MarkdownTarget) -> Result<()> {
     let (documents, initial_document) = target.into_parts();
     let initial_path = documents[initial_document].canonical_path.clone();
-    let diagram_renderer = DiagramRenderer::from_mode(renderer_mode);
     let state = viewer_state(
         documents,
         initial_document,
         renderer_client()?,
-        diagram_renderer,
+        crate::plantuml::server(),
     );
     tokio::spawn(watch_documents(state.clone()));
     let listener =

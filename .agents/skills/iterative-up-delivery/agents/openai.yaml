@@ -1,0 +1,4 @@
+interface:
+  display_name: "Iterative UP Delivery"
+  short_description: "Deliver UP iterations as commits and a PR"
+  default_prompt: "Use $iterative-up-delivery to carry this proposal through risk-driven iterations, commit each iteration separately, and open a draft PR."

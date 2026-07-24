@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: E2 Directory Document Navigation"
+description: "Validates document-root selection and safe navigation among discovered Markdown documents."
+id: "E2"
+phase: "elaboration"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: E2 Directory Document Navigation
 
 Status: completed

@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: N3 Scalable Document Navigation Search Scope"
+description: "Defines bounded server-rendered catalog search and its fixed authorization constraints."
+id: "N3"
+phase: "inception"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: N3 Scalable Document Navigation Search Scope
 
 Status: completed

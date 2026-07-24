@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-007: Poll Only Known Document Paths for Automatic Refresh"
+description: "Constrains automatic refresh to the canonical document paths authorized when a viewing session starts."
+id: "ADR-007"
+status: "accepted"
+date: "2026-07-18"
+tags: [architecture, decision, refresh]
+---
+
 # ADR-007: Poll Only Known Document Paths for Automatic Refresh
 
 Status: accepted

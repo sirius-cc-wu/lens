@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-008: Search the Session Document Catalog in Bounded Pages"
+description: "Defines bounded, paginated identifier search over the immutable authorized session catalog."
+id: "ADR-008"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, navigation]
+---
+
 # ADR-008: Search the Session Document Catalog in Bounded Pages
 
 Status: accepted

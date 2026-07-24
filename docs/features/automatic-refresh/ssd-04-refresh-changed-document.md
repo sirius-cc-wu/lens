@@ -1,3 +1,14 @@
+---
+type: "System Sequence Diagram"
+title: "SSD-04: Refresh a Changed Markdown Document"
+description: "Shows how a saved document change becomes a new browser representation without an explicit page reload."
+id: "SSD-04"
+use_case: "UC-09"
+scenario: "Save the displayed Markdown document and receive its refreshed representation."
+status: "active"
+tags: [analysis, ssd, refresh]
+---
+
 # SSD-04: Refresh a Changed Markdown Document
 
 Use case: `UC-09`

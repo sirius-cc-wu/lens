@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-010: Package Target-Specific Binary Release Artifacts"
+description: "Defines target-specific native archives and checksums as the Lens binary release format."
+id: "ADR-010"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, release]
+---
+
 # ADR-010: Package Target-Specific Binary Release Artifacts
 
 Status: accepted

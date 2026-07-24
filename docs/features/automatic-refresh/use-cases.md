@@ -1,3 +1,13 @@
+---
+type: "Use Case Model"
+title: "FEAT-03: Refresh Changed Markdown Documents"
+description: "Defines how Lens refreshes a displayed authorized Markdown document after its saved source changes."
+id: "FEAT-03"
+status: "active"
+scope: "Lens"
+tags: [requirements, use-case, refresh]
+---
+
 # FEAT-03: Refresh Changed Markdown Documents
 
 Status: implemented in C4

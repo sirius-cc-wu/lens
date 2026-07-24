@@ -1,12 +1,3 @@
-const markDiagramDisabled = (figure) => {
-  const image = figure.querySelector('[data-diagram]');
-  if (image) image.removeAttribute('src');
-  figure.querySelector('.diagram-error').hidden = true;
-  figure.querySelector('[data-diagram-retry]').hidden = true;
-  figure.querySelector('[data-diagram-disabled]').hidden = false;
-  figure.querySelector('.diagram-source').open = true;
-};
-
 const navigationControl = document.querySelector('[data-document-navigation-control]');
 const navigationToggle = document.querySelector('[data-document-navigation-toggle]');
 const navigationPane = document.querySelector('#document-navigation');
@@ -41,10 +32,6 @@ if (navigationControl && navigationToggle && navigationPane && documentLayout) {
 for (const image of document.querySelectorAll('[data-diagram]')) {
   const revealFailure = () => {
     const figure = image.closest('.diagram');
-    if (document.documentElement.dataset.diagramRenderingDisabled === 'true') {
-      markDiagramDisabled(figure);
-      return;
-    }
     figure.querySelector('.diagram-error').hidden = false;
     figure.querySelector('[data-diagram-retry]').hidden = false;
     figure.querySelector('.diagram-source').open = true;
@@ -61,26 +48,6 @@ for (const image of document.querySelectorAll('[data-diagram]')) {
   if (image.complete && image.naturalWidth === 0) {
     revealFailure();
   }
-}
-
-const disableRenderer = document.querySelector('[data-disable-renderer]');
-if (disableRenderer) {
-  disableRenderer.addEventListener('click', async () => {
-    disableRenderer.disabled = true;
-    try {
-      const response = await fetch('/renderer/disable', { method: 'POST' });
-      if (!response.ok) throw new Error('disable failed');
-      document.documentElement.dataset.diagramRenderingDisabled = 'true';
-      document.querySelector('[data-renderer-status]').textContent =
-        'Diagram rendering is disabled for this viewing session.';
-      for (const figure of document.querySelectorAll('[data-diagram-container]')) {
-        markDiagramDisabled(figure);
-      }
-      disableRenderer.remove();
-    } catch {
-      disableRenderer.disabled = false;
-    }
-  });
 }
 
 const documentView = document.querySelector('[data-document-id][data-document-revision]');

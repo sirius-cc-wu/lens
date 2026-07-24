@@ -1,3 +1,14 @@
+---
+type: "Architecture Decision"
+title: "ADR-004: Release V1 as a Linux Documentation Viewer"
+description: "Defines the documentation-only V1 release boundary and its original Linux platform scope."
+id: "ADR-004"
+status: "accepted"
+superseded_in_part_by: "ADR-013"
+date: "2026-07-18"
+tags: [architecture, decision, release]
+---
+
 # ADR-004: Release V1 as a Linux Documentation Viewer
 
 Status: superseded in platform scope by ADR-013

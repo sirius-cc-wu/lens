@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-013: Support Native Browser Launch and Archives"
+description: "Defines native browser-launch commands and release archives for Linux, macOS, and Windows."
+id: "ADR-013"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, portability]
+---
+
 # ADR-013: Support Native Browser Launch and Archives
 
 Status: accepted

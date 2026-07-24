@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: E3 V1 Release Readiness"
+description: "Stabilizes the V1 scope, packaging direction, and executable release checks."
+id: "E3"
+phase: "elaboration"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: E3 V1 Release Readiness
 
 Status: completed

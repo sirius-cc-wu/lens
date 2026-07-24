@@ -1,3 +1,14 @@
+---
+type: "Architecture Decision"
+title: "ADR-006: Derive the Navigation Pane from the Session Document Set"
+description: "Records the original complete-catalog navigation-pane design derived from the authorized session document set."
+id: "ADR-006"
+status: "superseded"
+superseded_by: "ADR-008"
+date: "2026-07-18"
+tags: [architecture, decision, navigation]
+---
+
 # ADR-006: Derive the Navigation Pane from the Session Document Set
 
 Status: superseded by [ADR-008](adr-008-paginated-session-catalog-search.md)

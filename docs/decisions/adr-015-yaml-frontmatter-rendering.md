@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-015: Render Leading YAML Metadata Safely"
+description: "Defines safe structured rendering for leading YAML frontmatter and actionable handling of malformed metadata."
+id: "ADR-015"
+status: "accepted"
+date: "2026-07-19"
+tags: [architecture, decision, markdown]
+---
+
 # ADR-015: Render Leading YAML Metadata Safely
 
 Status: accepted
@@ -17,9 +27,10 @@ information. YAML values can also be nested or contain browser-sensitive text.
 Lens treats the first line `---` as a frontmatter opening delimiter only at the
 beginning of a Markdown document. It accepts either `---` or `...` on its own
 line as the closing delimiter. A successful YAML mapping renders before the
-Markdown body as a document-metadata section: scalar values are escaped text,
-sequences are lists, and mappings are nested definition lists. The same
-structure preserves unknown fields without needing a Lens-specific schema.
+Markdown body as a compact semantic table with field names as row headers.
+Scalar values are escaped text, sequences are marker-free comma-separated
+lists, and nested mappings are definition lists. The same structure preserves
+unknown fields without needing a Lens-specific schema.
 
 An empty header produces an explicit empty-metadata section. If parsing fails,
 or a completed header is not a mapping of fields, Lens shows an escaped,

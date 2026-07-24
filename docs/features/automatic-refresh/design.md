@@ -1,3 +1,13 @@
+---
+type: "Software Design"
+title: "FEAT-03 Automatic Refresh Design"
+description: "Realizes safe automatic refresh through Rust responsibilities, known-document state, revision polling, and rendering."
+feature: "FEAT-03"
+status: "implemented"
+language: "Rust"
+tags: [design, use-case-realization, refresh]
+---
+
 # FEAT-03 Automatic Refresh Design
 
 Status: implemented in C4
@@ -87,7 +97,7 @@ package "viewer" {
     -documents: RwLock<Vec<ViewerDocument>>
     -document_ids: BTreeMap<String, usize>
     -known_documents: BTreeSet<String>
-    -renderer_server: String
+    -plantuml_server: String
     -refresh_known_documents(&self)
     -document_revision(&self, document_index: usize): Option<u64>
   }
@@ -121,8 +131,8 @@ Rust adaptation notes:
   immutable identifier map remains outside the lock; a standard `RwLock`
   protects only the vector of last-successful document representations.
 - `ViewerState::refresh_known_documents(&self)` is an inherent method because
-  it needs the session's document ownership, known-link set, and renderer
-  configuration. It never holds the `RwLock` while reading a file or rendering.
+  it needs the session's document ownership, document kind, and known-link set.
+  It never holds the `RwLock` while reading a file or rendering.
 - `watch_documents(Arc<ViewerState>)` is an async free function started by the
   composition root. A `tokio::time` interval expresses the single, fixed
   schedule without a strategy trait or a dedicated module.
@@ -135,7 +145,7 @@ Rust adaptation notes:
 ## Construction Result
 
 - `ViewerState` now retains the immutable `document_ids`, `known_documents`,
-  and renderer server configuration alongside an `RwLock` holding the mutable
+  and PlantUML server configuration alongside an `RwLock` holding the mutable
   document representations. The lock is released before every filesystem read,
   Markdown render, or diagram request.
 - Each `ViewerDocument` owns its identifier, canonical path, last successful

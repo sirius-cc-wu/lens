@@ -88,7 +88,29 @@ test("save displayed document then refreshes browser view automatically", async 
   }
 });
 
-test("valid frontmatter then renders nested metadata without markdown delimiters", async ({ page }) => {
+test("document_view_then_shows_compact_repository_relative_path", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    await page.goto(fixture.lens.url);
+
+    // Act
+    await page.getByRole("link", { name: "guides/guide.md" }).click();
+
+    // Assert
+    const documentPath = page.locator(".document-header").getByRole("heading", { level: 1 });
+    await expect(documentPath).toHaveText("guides/guide.md");
+    await expect(page).toHaveTitle("Lens: guides/guide.md");
+    expect((await documentPath.boundingBox()).height).toBeLessThan(32);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("valid_frontmatter_then_renders_compact_semantic_metadata_table_without_delimiters", async ({
+  page,
+}) => {
   // Arrange
   const fixture = await startBrowserFixture({
     readme: "---\ntitle: Browser metadata\ntags:\n  - browser\n  - docs\npublication:\n  audience: maintainers\n...\n# Browser fixture\n\nA rendered document.\n",
@@ -105,8 +127,78 @@ test("valid frontmatter then renders nested metadata without markdown delimiters
     await expect(metadata).toContainText("browser");
     await expect(metadata).toContainText("audience");
     await expect(metadata).toContainText("maintainers");
+    const table = page.getByRole("table", { name: "Document metadata" });
+    await expect(table).toBeVisible();
+    await expect(table.locator("tbody > tr").first().locator("th, td")).toHaveCount(4);
+    const tagItems = metadata.locator("li");
+    expect(await tagItems.first().evaluate((item) => getComputedStyle(item).listStyleType)).toBe(
+      "none",
+    );
+    expect(
+      await tagItems.evaluateAll((items) =>
+        items.map((item) => getComputedStyle(item, "::after").content),
+      ),
+    ).toEqual(['","', "none"]);
+    const tagSpacing = await tagItems.evaluateAll(([first, second]) =>
+      Math.round(second.getBoundingClientRect().left - first.getBoundingClientRect().right),
+    );
+    expect(tagSpacing).toBeLessThan(8);
     await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
     await expect(page.locator("article")).not.toContainText("tags:");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("wide_markdown_table_then_remains_readable_with_local_horizontal_scrolling", async ({
+  page,
+}) => {
+  // Arrange
+  const fixture = await startBrowserFixture({
+    readme: [
+      "# Risk list",
+      "",
+      "| ID | Risk | Type | Likelihood | Impact | Mitigation |",
+      "|---|---|---|---|---|---|",
+      "| `R-01` | Renderer availability changes unexpectedly. | Technical | Medium | High | Retain a local rendering path and visible failure controls. |",
+      "| `R-02` | Unsafe content reaches the browser. | Security | Low | High | Escape document content and keep a restrictive content security policy. |",
+    ].join("\n"),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    const tableRegion = page.locator(".markdown-table");
+    const table = tableRegion.getByRole("table");
+    await expect(table).toBeVisible();
+    await expect(tableRegion).toHaveAttribute("tabindex", "0");
+
+    const presentation = await tableRegion.evaluate((region) => {
+      const renderedTable = region.querySelector("table");
+      const [firstRow, secondRow] = renderedTable.tBodies[0].rows;
+      return {
+        tableScrollsLocally: region.scrollWidth > region.clientWidth,
+        pageFitsViewport: document.documentElement.scrollWidth === window.innerWidth,
+        headerIsDistinct:
+          getComputedStyle(renderedTable.tHead.rows[0].cells[0]).backgroundColor !==
+          getComputedStyle(firstRow).backgroundColor,
+        rowsAreAlternating:
+          getComputedStyle(firstRow).backgroundColor !== getComputedStyle(secondRow).backgroundColor,
+        firstColumnStaysOnOneLine: getComputedStyle(firstRow.cells[0]).whiteSpace === "nowrap",
+        cellsAlignAtTop: getComputedStyle(firstRow.cells[firstRow.cells.length - 1]).verticalAlign === "top",
+      };
+    });
+    expect(presentation).toEqual({
+      tableScrollsLocally: true,
+      pageFitsViewport: true,
+      headerIsDistinct: true,
+      rowsAreAlternating: true,
+      firstColumnStaysOnOneLine: true,
+      cellsAlignAtTop: true,
+    });
   } finally {
     await fixture.stop();
   }
@@ -285,7 +377,7 @@ test("undiscovered document path then returns 404 guidance without its source", 
   }
 });
 
-test("renderer fails before client script loads then reveals the source", async ({ page }) => {
+test("plantuml server fails before client script loads then reveals the source", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ rendererStatus: 503 });
 
@@ -315,25 +407,27 @@ test("renderer fails before client script loads then reveals the source", async 
   }
 });
 
-test("disabled renderer then preserves plantuml source without a diagram request", async ({ page }) => {
+test("document page then omits rendering status and disable control", async ({ page }) => {
   // Arrange
-  const fixture = await startBrowserFixture({ rendererMode: "disabled" });
+  const fixture = await startBrowserFixture();
 
   try {
     // Act
     await page.goto(fixture.lens.url);
 
     // Assert
-    await expect(page.locator(".diagram-disabled")).toBeVisible();
-    await expect(page.locator("img[data-diagram]")).toHaveCount(0);
-    await expect(page.locator(".diagram-source")).toContainText("Alice -> Bob: browser fixture");
-    await expect.poll(() => fixture.renderer.requests).toBe(0);
+    await expect(page.getByText("PlantUML server rendering")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Disable diagram rendering for this session" }),
+    ).toHaveCount(0);
+    await expect(page.locator(".diagram-disabled")).toHaveCount(0);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
   } finally {
     await fixture.stop();
   }
 });
 
-test("renderer failure then retry button loads the diagram", async ({ page }) => {
+test("plantuml server failure then retry button loads the diagram", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ rendererStatuses: [503, 200] });
 
@@ -357,24 +451,19 @@ test("renderer failure then retry button loads the diagram", async ({ page }) =>
   }
 });
 
-test("disable renderer control then blocks further rendering for the session", async ({ page }) => {
+test("renderer disable request then returns not found", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
 
   try {
     await page.goto(fixture.lens.url);
     await expect.poll(() => fixture.renderer.requests).toBe(1);
-    await expect(page.getByText("Diagram renderer: public.")).toBeVisible();
 
     // Act
-    await page.getByRole("button", { name: "Disable diagram rendering for this session" }).click();
+    const response = await page.request.post(`${fixture.lens.url}/renderer/disable`);
 
     // Assert
-    await expect(page.getByText("Diagram rendering is disabled for this viewing session.")).toBeVisible();
-    await expect(page.locator(".diagram-disabled")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Disable diagram rendering for this session" })).toHaveCount(0);
-    const diagramResponse = await page.request.get(`${fixture.lens.url}/diagrams/0/0`);
-    expect(diagramResponse.status()).toBe(503);
+    expect(response.status()).toBe(404);
     expect(fixture.renderer.requests).toBe(1);
   } finally {
     await fixture.stop();
@@ -384,7 +473,6 @@ test("disable renderer control then blocks further rendering for the session", a
 async function startBrowserFixture({
   hiddenDocument,
   readme,
-  rendererMode,
   rendererStatus,
   rendererStatuses,
   extraDocumentCount,
@@ -416,7 +504,7 @@ async function startBrowserFixture({
   try {
     repository = await createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount });
     renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
-    lens = await startLens(repository, renderer.url, rendererMode);
+    lens = await startLens(repository, renderer.url);
     return { lens, renderer, repository, stop };
   } catch (error) {
     try {
@@ -504,15 +592,12 @@ async function startRenderer({ status = 200, statuses } = {}) {
   };
 }
 
-async function startLens(repository, rendererUrl, rendererMode) {
+async function startLens(repository, rendererUrl) {
   const lensBinary = process.env.LENS_BROWSER_TEST_BINARY;
   if (!lensBinary) {
     throw new Error("Playwright global setup did not provide the Lens executable path");
   }
   const commandArguments = [repository.directory];
-  if (rendererMode) {
-    commandArguments.push("--renderer", rendererMode);
-  }
   const child = spawn(lensBinary, commandArguments, {
     env: {
       ...process.env,

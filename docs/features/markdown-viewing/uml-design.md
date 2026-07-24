@@ -1,11 +1,27 @@
-# Viewer UML Design Views
+---
+type: "Software Design"
+title: "Lens V1 UML Design Views"
+description: "Summarizes the implemented Rust components, runtime collaboration, modules, types, and ownership relationships for V1."
+feature: "FEAT-01"
+status: "partially superseded"
+superseded_in_part_by: "C7"
+language: "Rust"
+tags: [design, uml]
+---
 
-Status: implemented design for proposal 13
+# V1 UML Design Views
+
+Status: V1 implementation snapshot; renderer portions superseded by C7
 
 These diagrams complement the black-box [SSD-01](ssd-01-open-markdown-target.md)
 and [SSD-02](ssd-02-open-document-root.md). They show the runtime collaborators
 and implemented Rust modules, including owned state. They do not introduce
 additional behavior or abstractions.
+
+The current server-rendering collaboration is modeled separately in the
+[server-only PlantUML rendering design](server-rendering-design.md). C7
+supersedes the renderer-specific portions of this implementation snapshot,
+while the document-root responsibilities here remain active.
 
 ## CMP-01: Component and Deployment View
 
@@ -139,7 +155,7 @@ package "target" {
 
 package "viewer" {
   class "viewer module" as ViewerModule <<module>> {
-    +serve(target: MarkdownTarget, renderer_mode: RendererMode): Result<(), anyhow::Error>
+    +serve(target: MarkdownTarget): Result<(), anyhow::Error>
   }
   class "browser module" as BrowserModule <<module>> {
     ~open_browser(url): Result<(), std::io::Error>
@@ -151,15 +167,15 @@ package "viewer" {
     -diagram(state, document_id, diagram_id): Response
   }
   class "page module" as PageModule <<module>> {
-    ~page(title, document, navigation, controls): String
+    ~page(title, document, navigation): String
     ~navigation_pane(catalog_page, current_document, route): String
   }
   class "rendering module" as RenderingModule <<module>> {
     ~renderer_client(): Result<reqwest::Client, anyhow::Error>
-    ~request_diagram(renderer, client, diagram): Result<Vec<u8>, anyhow::Error>
+    ~request_diagram(client, server, diagram): Result<Vec<u8>, anyhow::Error>
   }
   class "state module" as StateModule <<module>> {
-    ~viewer_state(documents, initial_document, client, renderer): Arc<ViewerState>
+    ~viewer_state(documents, initial_document, client, server): Arc<ViewerState>
     ~watch_documents(state): ()
   }
   class "catalog module" as CatalogModule <<module>> {
@@ -171,8 +187,7 @@ package "viewer" {
     ~known_documents: BTreeSet<String>
     ~initial_document: usize
     ~client: reqwest::Client
-    ~renderer: DiagramRenderer
-    -rendering_disabled: AtomicBool
+    ~plantuml_server: String
   }
   class ViewerDocument <<struct>> {
     ~canonical_path: PathBuf
@@ -236,13 +251,13 @@ Rust adaptation notes:
 - `MarkdownTarget::into_parts(self)` consumes the target at the transition to
   the viewer, making the ownership transfer explicit.
 - `ViewerState` remains one session-owned, cross-task value behind `Arc`; its
-  document collection stays behind `RwLock`, and the session disable flag stays
-  atomic. The split does not add locks or hold a lock across an `.await`.
+  document collection stays behind `RwLock`. The split does not add locks or
+  hold a lock across an `.await`.
 - The viewer module is the composition root. Route functions coordinate Axum
   requests, while state, page, rendering, catalog, and browser modules own their
   existing specialized behavior and tests.
 - JavaScript and CSS remain compile-time-owned data included by the page module
   from dedicated asset files; they do not become runtime filesystem inputs.
-- There are no new traits because the renderer alternatives remain the existing
-  closed `DiagramRenderer` enum, and the extracted modules introduce no new
-  runtime variation point.
+- There are no new traits because the viewer uses one session-configured
+  PlantUML server, and the extracted modules introduce no new runtime variation
+  point.

@@ -1,3 +1,13 @@
+---
+type: "Architecture Decision"
+title: "ADR-003: Authorize Navigation Through a Discovered Document Root"
+description: "Defines document-root discovery as the authorization boundary for repository document navigation."
+id: "ADR-003"
+status: "accepted"
+date: "2026-07-18"
+tags: [architecture, decision, security]
+---
+
 # ADR-003: Authorize Navigation Through a Discovered Document Root
 
 Status: accepted

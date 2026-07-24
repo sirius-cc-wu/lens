@@ -1,3 +1,11 @@
+---
+type: "Development Case"
+title: "Lens Development Case"
+description: "Defines the lightweight iterative process, durable artifacts, roles, and quality practices used to develop Lens."
+status: "active"
+tags: [process, unified-process]
+---
+
 # Development Case
 
 Lens will use a lightweight, iterative Unified Process tailored to a small,

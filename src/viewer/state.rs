@@ -2,10 +2,7 @@ use std::{
     collections::BTreeSet,
     fs,
     path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, RwLock,
-    },
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
@@ -14,7 +11,6 @@ use reqwest::Client;
 use super::catalog::DocumentCatalog;
 use crate::{
     markdown::{render, render_standalone_plantuml, RenderedDocument},
-    plantuml::DiagramRenderer,
     target::{DocumentKind, MarkdownDocument},
 };
 
@@ -26,19 +22,10 @@ pub(super) struct ViewerState {
     known_documents: BTreeSet<String>,
     pub(super) initial_document: usize,
     pub(super) client: Client,
-    pub(super) renderer: DiagramRenderer,
-    rendering_disabled: AtomicBool,
+    pub(super) plantuml_server: String,
 }
 
 impl ViewerState {
-    pub(super) fn rendering_enabled(&self) -> bool {
-        self.renderer.is_enabled() && !self.rendering_disabled.load(Ordering::Acquire)
-    }
-
-    pub(super) fn disable_rendering(&self) {
-        self.rendering_disabled.store(true, Ordering::Release);
-    }
-
     pub(super) fn document_revision(&self, document_id: usize) -> Option<u64> {
         self.documents
             .read()
@@ -79,7 +66,6 @@ impl ViewerState {
                 &identifier,
                 kind,
                 &self.known_documents,
-                &self.renderer,
             );
             let mut documents = self
                 .documents
@@ -114,7 +100,7 @@ pub(super) fn viewer_state(
     documents: Vec<MarkdownDocument>,
     initial_document: usize,
     client: Client,
-    renderer: DiagramRenderer,
+    plantuml_server: String,
 ) -> Arc<ViewerState> {
     let catalog = DocumentCatalog::new(
         documents
@@ -137,7 +123,6 @@ pub(super) fn viewer_state(
                 &document.identifier,
                 document.kind,
                 &known_documents,
-                &renderer,
             ),
             revision: 0,
         })
@@ -149,8 +134,7 @@ pub(super) fn viewer_state(
         known_documents,
         initial_document,
         client,
-        renderer,
-        rendering_disabled: AtomicBool::new(false),
+        plantuml_server,
     })
 }
 
@@ -160,13 +144,10 @@ fn render_document(
     identifier: &str,
     kind: DocumentKind,
     known_documents: &BTreeSet<String>,
-    renderer: &DiagramRenderer,
 ) -> RenderedDocument {
     match kind {
-        DocumentKind::Markdown => {
-            render(source, document_id, identifier, known_documents, renderer)
-        }
-        DocumentKind::PlantUml => render_standalone_plantuml(document_id, source, renderer),
+        DocumentKind::Markdown => render(source, document_id, identifier, known_documents),
+        DocumentKind::PlantUml => render_standalone_plantuml(document_id, source),
     }
 }
 
@@ -184,13 +165,13 @@ mod tests {
 
     use super::viewer_state;
     use crate::{
-        plantuml::{DiagramRenderer, RendererMode},
+        plantuml::PUBLIC_SERVER,
         target::{DocumentKind, MarkdownDocument},
         viewer::rendering::renderer_client,
     };
 
-    fn test_renderer() -> DiagramRenderer {
-        DiagramRenderer::from_mode(RendererMode::Public)
+    fn test_server() -> String {
+        PUBLIC_SERVER.to_owned()
     }
 
     fn file_backed_test_document(path: PathBuf, source: &str) -> MarkdownDocument {
@@ -215,7 +196,7 @@ mod tests {
             vec![file_backed_test_document(path.clone(), "# Before refresh")],
             0,
             renderer_client().expect("test client should initialize"),
-            test_renderer(),
+            test_server(),
         );
         fs::write(&path, "# After refresh\n\nChanged content.")
             .expect("test document should update");
@@ -247,7 +228,7 @@ mod tests {
             )],
             0,
             renderer_client().expect("test client should initialize"),
-            test_renderer(),
+            test_server(),
         );
         fs::remove_file(&path).expect("test document should be removable");
 

@@ -1,3 +1,13 @@
+---
+type: "Iteration Record"
+title: "Iteration: P2 Linux Binary Packaging"
+description: "Implements a verified target-specific Lens archive installable without a Rust toolchain."
+id: "P2"
+phase: "construction"
+status: "completed"
+tags: [iteration]
+---
+
 # Iteration: P2 Linux Binary Packaging
 
 Status: completed
