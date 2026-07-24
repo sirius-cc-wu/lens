@@ -36,10 +36,8 @@ diagram source on the user's machine and avoid dependence on the public
 PlantUML service. This is the highest-value proposal because it addresses the
 current privacy and renderer-availability risks.
 
-Status: implemented in P1 and superseded by ADR-017. The shipped implementation
-continues to expose these modes until construction of
-[`PROP-REMOVE-RENDERER`](proposals/remove-renderer.md); this entry remains as
-historical context.
+Status: implemented in P1 and superseded by ADR-017 and C7. Lens no longer
+exposes these modes; this entry and walkthrough remain as historical context.
 
 ### Manual end-to-end test
 
@@ -82,11 +80,10 @@ Expose renderer status, allow a failed diagram request to be retried, and let a
 user disable diagram rendering for a session. These controls would make public
 renderer failures clearer and give users a predictable fallback.
 
-Status: implemented in P5 and partially superseded by ADR-017. Per-diagram
-failure, visible source, and retry remain accepted. The session-disable control
-remains shipped until construction of
-[`PROP-REMOVE-RENDERER`](proposals/remove-renderer.md), then will be removed
-because it cannot prevent requests that start while a page loads.
+Status: implemented in P5 and partially superseded by ADR-017 and C7.
+Per-diagram failure, visible source, and retry remain active. The
+session-disable control was removed because it could not prevent requests that
+start while a page loads.
 
 ### Manual end-to-end test
 
@@ -268,7 +265,7 @@ markup, PlantUML requests, JavaScript, CSS, and their tests. These concerns can
 change independently and already have distinct types, dependencies, and test
 scenarios.
 
-After construction of `PROP-REMOVE-RENDERER`, keep session and refresh state
+Using the C7 server-only rendering baseline, keep session and refresh state
 together, move route handlers and page composition into cohesive modules,
 isolate server-backed diagram rendering, and place browser-launch construction
 with its platform tests. Store the JavaScript and CSS as dedicated assets

@@ -103,3 +103,5 @@ ten-second request timeouts, 2 MiB response limits, and SVG checks remain.
   [`docs/risk-list.md`](../risk-list.md)
 - Iteration:
   [`E4`](../iterations/e4-server-only-plantuml-rendering.md)
+- Implementation:
+  [`C7`](../iterations/c7-server-only-plantuml-rendering.md)

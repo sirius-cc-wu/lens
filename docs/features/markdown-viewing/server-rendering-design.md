@@ -3,14 +3,14 @@ type: "Software Design"
 title: "Server-Only PlantUML Rendering Design"
 description: "Defines the Rust collaboration and ownership target for one session-fixed PlantUML server without renderer modes."
 feature: "FEAT-01"
-status: "accepted"
+status: "implemented"
 language: "Rust"
 tags: [design, uml, plantuml]
 ---
 
 # Server-Only PlantUML Rendering Design
 
-Status: accepted in E4; construction pending
+Status: implemented in C7
 
 This design realizes `UC-01` and `UC-10` from
 [`FEAT-01`](use-cases.md), the diagram request in
@@ -165,17 +165,17 @@ Rust adaptation:
   session disable also removes the renderer-specific `AtomicBool`; network I/O
   continues without holding the document lock.
 
-## Construction Targets
+## Construction Result
 
-- Remove CLI parsing, public re-exports, and call-site parameters for
-  `RendererMode`.
-- Reduce `plantuml` to server normalization and source encoding.
-- Store the normalized server string in `ViewerState` and pass it by reference
-  only while requesting a diagram. Remove renderer configuration from Markdown
-  rendering and refresh.
-- Retain the ten-second timeout, 2 MiB response limit, SVG checks, source
-  fallback, and retry behavior.
-- Delete the local-command branch, disable route and state, disable markup,
-  client script, styling, and their mode-specific tests.
-- Add acceptance coverage named for the observable behavior listed in
-  [`PROP-REMOVE-RENDERER`](../../proposals/remove-renderer.md#verification).
+- CLI parsing, public re-exports, and call-site parameters for `RendererMode`
+  were removed. `serve(target)` is enforced by a compile-time function bound.
+- `plantuml` now owns only server normalization and source encoding.
+- `ViewerState` owns the normalized server string and lends it only while
+  requesting a diagram. Markdown rendering and refresh have no server
+  dependency.
+- The ten-second timeout, 2 MiB response limit, SVG checks, source fallback,
+  and retry behavior remain covered by Rust and browser tests.
+- The local-command branch, Tokio process features, disable route and state,
+  disable markup, client script, styling, and mode-specific tests were removed.
+- [`C7`](../../iterations/c7-server-only-plantuml-rendering.md) records the
+  red-green evidence and full verification result.

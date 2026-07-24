@@ -42,7 +42,7 @@ does not prescribe the implementation architecture.
 
 - Browser end-to-end tests start the compiled `lens` command against a
   temporary documentation repository and use a local server with predefined
-  responses (a controlled renderer) for PlantUML evidence.
+  responses (a controlled PlantUML server) for PlantUML evidence.
 - The test child process sets `LENS_PLANTUML_SERVER` to that controlled server
   through the same supported session-configuration path available to users.
   When the normalized value is empty, Lens uses the public server defined by
@@ -62,7 +62,7 @@ does not prescribe the implementation architecture.
   and does not alter the viewing session's authorized documents or routes.
 - Target errors and rendering errors identify the affected path or diagram and
   provide a next action where possible.
-- A PlantUML request times out after 10 seconds. Lens rejects a renderer
+- A PlantUML request times out after 10 seconds. Lens rejects a server
   response larger than 2 MiB.
 
 ## Security Boundaries

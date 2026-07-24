@@ -53,7 +53,7 @@ ADR-017 broadens `LENS_PLANTUML_SERVER` from a test-only hook to the supported
 way to select a PlantUML server for an entire viewing session. This decision
 remains active for its controlled-server browser-test boundary: tests still set
 the environment variable on the child Lens process and the browser still
-cannot provide a renderer URL.
+cannot provide a server URL.
 
 ## Trace
 
@@ -65,3 +65,5 @@ cannot provide a renderer URL.
 - Verification evidence: `BTE-01`,
   [`tests/browser/lens.spec.mjs`](../../tests/browser/lens.spec.mjs)
 - Scope refinement: [ADR-017](adr-017-session-plantuml-server.md)
+- Current implementation:
+  [C7 server-only PlantUML rendering](../iterations/c7-server-only-plantuml-rendering.md)

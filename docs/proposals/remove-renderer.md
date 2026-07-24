@@ -3,13 +3,13 @@ type: "Improvement Proposal"
 title: "Remove CLI Renderer Selection"
 description: "Removes renderer selection, local PlantUML command execution, and the in-page disable control, leaving server-based rendering configured by LENS_PLANTUML_SERVER."
 id: "PROP-REMOVE-RENDERER"
-status: "accepted"
+status: "implemented"
 tags: [proposal, plantuml, cli]
 ---
 
 # Remove `--renderer` and Local PlantUML CLI Rendering
 
-Status: accepted; elaborated in E4 with construction pending
+Status: implemented in C7
 
 ## Summary
 
@@ -69,21 +69,23 @@ the page. It will not offer a control to disable diagram rendering.
 
 ## Scope
 
-Implementation of this proposal will:
+Construction implemented this proposal by:
 
-- remove `--renderer public|local|disabled` from CLI parsing and help;
-- remove `RendererMode` from the public Rust API;
-- change `serve(target, renderer_mode)` to a server-configured
+- removing `--renderer public|local|disabled` from CLI parsing and help;
+- removing `RendererMode` from the public Rust API;
+- changing `serve(target, renderer_mode)` to a server-configured
   `serve(target)` entry point;
-- remove the local `plantuml -tsvg -pipe` process path and its tests;
-- remove the renderer enum variants and retain one server-backed diagram path;
-- remove the in-page disable control, the `/renderer/disable` route, its
+- removing the local `plantuml -tsvg -pipe` process path and its tests;
+- removing the renderer enum variants and retaining one server-backed diagram
+  path;
+- removing the in-page disable control, the `/renderer/disable` route, its
   session-state flag, disable-specific JavaScript and styling, and their tests;
-- preserve the ten-second request timeout, 2 MiB response limit, SVG content
+- preserving the ten-second request timeout, 2 MiB response limit, SVG content
   checks, visible source fallback, and per-diagram retry control;
-- preserve `LENS_PLANTUML_SERVER` for controlled browser tests and document it
+- preserving `LENS_PLANTUML_SERVER` for controlled browser tests and
+  documenting it
   as the supported way to select another PlantUML server; and
-- update CLI examples, requirements, use cases, glossary terms, risks,
+- updating CLI examples, requirements, use cases, glossary terms, risks,
   architecture decisions, iteration history, and release notes that describe
   renderer modes.
 
@@ -225,3 +227,5 @@ verification sections.
   [`ADR-017`](../decisions/adr-017-session-plantuml-server.md)
 - Elaboration result:
   [`E4`](../iterations/e4-server-only-plantuml-rendering.md)
+- Construction result:
+  [`C7`](../iterations/c7-server-only-plantuml-rendering.md)

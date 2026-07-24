@@ -16,7 +16,7 @@ lens [TARGET]
 
 V1 is a documentation-only viewer for Linux. It discovers Markdown documents
 under the selected root, supports safe navigation between those documents, and
-uses the public PlantUML server for diagrams. See the
+uses one session-fixed PlantUML server for diagrams. See the
 [release readiness checklist](release-readiness.md) for verification and scope.
 
 ## Product Documents
@@ -29,7 +29,7 @@ small and will be refined as elaboration resolves the listed risks.
 
 - [Vision and business case](vision.md)
 - [Improvement proposals](improvement-proposals.md)
-- [Accepted proposal: remove renderer selection](proposals/remove-renderer.md)
+- [Implemented proposal: remove renderer selection](proposals/remove-renderer.md)
 - [Primary feature and use cases](features/markdown-viewing/use-cases.md) (`FEAT-01`)
 - [Document navigation pane use cases](features/document-navigation-pane/use-cases.md) (`FEAT-02`)
 - [Automatic refresh use cases](features/automatic-refresh/use-cases.md) (`FEAT-03`)
@@ -49,19 +49,20 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-009: Select a PlantUML renderer per viewing session (superseded)](decisions/adr-009-selectable-plantuml-rendering.md)
 - [ADR-010: Package Linux binary release artifacts](decisions/adr-010-linux-binary-release-artifacts.md)
 - [ADR-011: Keep diagram controls inside a viewing session (partially superseded)](decisions/adr-011-diagram-failure-controls.md)
-- [ADR-012: Admit standalone PlantUML files to the document set](decisions/adr-012-standalone-plantuml-files.md)
+- [ADR-012: Admit standalone PlantUML files to the document set (partially superseded)](decisions/adr-012-standalone-plantuml-files.md)
 - [ADR-013: Support native browser launch and archives](decisions/adr-013-cross-platform-support.md)
 - [ADR-014: Verify and publish tagged native releases](decisions/adr-014-release-automation.md)
 - [ADR-015: Render leading YAML metadata safely](decisions/adr-015-yaml-frontmatter-rendering.md)
 - [ADR-016: Persist navigation pane visibility in the browser tab](decisions/adr-016-collapsible-document-navigation-pane.md)
 - [ADR-017: Use one session-fixed PlantUML server](decisions/adr-017-session-plantuml-server.md)
 - [V1 release readiness](release-readiness.md)
+- [Pending release notes](release-notes.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)
-- [Elaboration iteration records](iterations/)
+- [Iteration records](iterations/)
 
-## Inception Status
+## Lifecycle Status
 
-Completed on 2026-07-18. The product need, basic scope, actors, key use cases,
-major risks, and a first elaboration iteration are defined. Implementation and
-architecture decisions remain deferred until elaboration evidence is available.
+Inception completed on 2026-07-18. Subsequent elaboration and construction
+iterations resolved architectural risks and implemented the documented V1
+behavior. The release-readiness checklist records the remaining release work.
