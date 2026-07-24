@@ -62,10 +62,10 @@ base URL. It will trim surrounding whitespace and trailing `/` characters from
 the environment value as it does today. The server choice is read when the
 viewing session starts and is not accepted from browser routes.
 
-The page should describe the active path as PlantUML server rendering rather
-than report a `public`, `local`, or `disabled` renderer mode. It must not expose
-the configured server URL in a browser route or accept a replacement URL from
-the page. It will not offer a control to disable diagram rendering.
+The page will not report a renderer mode or show a session-wide rendering
+status. It must not expose the configured server URL in a browser route or
+accept a replacement URL from the page. It will not offer a control to disable
+diagram rendering.
 
 ## Scope
 
@@ -78,8 +78,9 @@ Construction implemented this proposal by:
 - removing the local `plantuml -tsvg -pipe` process path and its tests;
 - removing the renderer enum variants and retaining one server-backed diagram
   path;
-- removing the in-page disable control, the `/renderer/disable` route, its
-  session-state flag, disable-specific JavaScript and styling, and their tests;
+- removing the in-page rendering status and disable control, the
+  `/renderer/disable` route, its session-state flag, disable-specific JavaScript
+  and styling, and their tests;
 - preserving the ten-second request timeout, 2 MiB response limit, SVG content
   checks, visible source fallback, and per-diagram retry control;
 - preserving `LENS_PLANTUML_SERVER` for controlled browser tests and

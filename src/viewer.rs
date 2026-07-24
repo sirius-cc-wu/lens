@@ -353,7 +353,6 @@ fn rendered_document_response(
             &document.identifier,
             document.rendered.html.clone(),
             navigation,
-            rendering_status().to_owned(),
             Some((&document.identifier, document.revision)),
         )),
     )
@@ -583,7 +582,6 @@ fn page(
     title: &str,
     document_html: String,
     navigation_html: String,
-    rendering_status: String,
     document_revision: Option<(&str, u64)>,
 ) -> String {
     let navigation_control = if navigation_html.is_empty() {
@@ -614,7 +612,6 @@ fn page(
     {navigation_html}
     <section class="document-content">
       <header class="document-header"><p class="eyebrow">Lens</p><h1>{}</h1></header>
-      {rendering_status}
       <article>{document_html}</article>
     </section>
   </main>
@@ -630,15 +627,10 @@ fn document_navigation_control() -> &'static str {
     r#"<div class="document-navigation-control" data-document-navigation-control hidden><button type="button" data-document-navigation-toggle aria-controls="document-navigation" aria-expanded="true">Hide documents</button></div>"#
 }
 
-fn rendering_status() -> &'static str {
-    r#"<section class="rendering-status"><p role="status">PlantUML server rendering is active for this viewing session.</p></section>"#
-}
-
 fn deferred_navigation_page() -> String {
     page(
         "Document navigation unavailable",
         "<p>Lens can display the selected document, but the requested document is not part of this viewing session.</p><p><a href=\"/\">Return to the initial document</a></p>".to_owned(),
-        String::new(),
         String::new(),
         None,
     )
@@ -761,8 +753,6 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .diagram-error { color: #9c2f19; font-family: system-ui, sans-serif; font-weight: 700; }
 .diagram button { margin-top: .75rem; }
 .diagram-source { margin-top: .75rem; }
-.rendering-status { margin: 0 0 1.5rem; padding: .75rem 1rem; border-left: 4px solid #8b3f21; background: #fffdf8; font-family: system-ui, sans-serif; }
-.rendering-status p { margin: 0; font-weight: 700; }
 .document-metadata { margin: 0 0 1.5rem; border: 1px solid #b6b0a4; background: #fffdf8; font-family: system-ui, sans-serif; font-size: .9rem; }
 .document-metadata table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .document-metadata caption { padding: .55rem .8rem; color: #5c5a54; font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-align: left; text-transform: uppercase; }
@@ -793,8 +783,8 @@ mod tests {
 
     use super::{
         browser_command, deferred_navigation_page, page, renderer_client,
-        renderer_client_with_timeout, rendering_status, request_diagram, router, viewer_state,
-        BrowserCommand, BrowserPlatform, NavigationRequest,
+        renderer_client_with_timeout, request_diagram, router, viewer_state, BrowserCommand,
+        BrowserPlatform, NavigationRequest,
     };
     use crate::{
         markdown::Diagram,
@@ -934,7 +924,7 @@ mod tests {
         let navigation = state.navigation_pane(0, &request, "/");
 
         // Act
-        let document_page = page("README.md", String::new(), navigation, String::new(), None);
+        let document_page = page("README.md", String::new(), navigation, None);
 
         // Assert
         assert!(document_page.contains("data-document-navigation-control hidden"));
@@ -964,18 +954,23 @@ mod tests {
     }
 
     #[test]
-    fn document_page_then_describes_server_rendering_without_disable_control() {
+    fn document_page_then_omits_rendering_status_and_disable_control() {
         // Arrange
-        let expected_status = "PlantUML server rendering";
+        let expected_content = "<p>Document content</p>";
 
         // Act
-        let status = rendering_status();
+        let document_page = page(
+            "README.md",
+            expected_content.to_owned(),
+            String::new(),
+            None,
+        );
 
         // Assert
-        assert!(status.contains(expected_status));
-        assert!(!status.contains("data-disable-renderer"));
-        assert!(!status.contains("http://"));
-        assert!(!status.contains("https://"));
+        assert!(document_page.contains(expected_content));
+        assert!(!document_page.contains("PlantUML server rendering"));
+        assert!(!document_page.contains("rendering-status"));
+        assert!(!document_page.contains("data-disable-renderer"));
     }
 
     #[test]

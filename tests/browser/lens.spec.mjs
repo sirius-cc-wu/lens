@@ -407,7 +407,7 @@ test("plantuml server fails before client script loads then reveals the source",
   }
 });
 
-test("document page then omits rendering disable control", async ({ page }) => {
+test("document page then omits rendering status and disable control", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
 
@@ -416,7 +416,7 @@ test("document page then omits rendering disable control", async ({ page }) => {
     await page.goto(fixture.lens.url);
 
     // Assert
-    await expect(page.getByText("PlantUML server rendering")).toBeVisible();
+    await expect(page.getByText("PlantUML server rendering")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Disable diagram rendering for this session" }),
     ).toHaveCount(0);
