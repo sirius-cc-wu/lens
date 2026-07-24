@@ -46,15 +46,24 @@ lens --renderer disabled docs
 ```
 
 With no argument, Lens uses the current directory as the document root. A
-directory argument uses that directory; a Markdown or `.puml` file argument
-uses the file's canonical parent. Lens initially opens a root `README`, then
-`docs/index`, then the first discovered document.
+directory argument uses that directory. A Markdown or `.puml` file inside a
+Git repository uses the nearest enclosing repository as its document root; a
+file outside a recognized repository uses its canonical parent. Lens recognizes
+ordinary repositories, worktrees, and submodules from a non-symbolic-link
+`.git` directory or regular `.git` file without running Git. A directly named
+file remains the initial document. Directory and current-directory sessions
+initially open a root `README`, then `docs/index`, then the first discovered
+document.
 
 Lens discovers `.md`, `.markdown`, and `.puml` files under the document root.
 It excludes hidden entries and symbolic links. Relative Markdown links resolve
 only when their target is a discovered Markdown document; all other local paths
 receive a Lens guidance page without filesystem access. A standalone `.puml`
 file appears in the same navigation pane and renders as one diagram.
+
+A repository-scoped direct-file session reads supported visible documents
+throughout that repository during discovery and refresh. Pass a directory
+instead when the viewing session should remain narrower.
 
 Use **Hide documents** to give the current document more room, and **Show
 documents** to restore the pane. Lens remembers that choice while the same
@@ -63,7 +72,7 @@ change which documents are available.
 
 ### Hidden directories
 
-Lens does not scan hidden directories when the repository is the document root.
+Lens does not scan hidden directories when a repository is the document root.
 To view documents beneath a hidden parent directory, open a visible nested
 directory directly:
 

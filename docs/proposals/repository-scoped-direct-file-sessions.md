@@ -3,13 +3,13 @@ type: "Improvement Proposal"
 title: "Scope Direct-File Sessions to the Repository Root"
 description: "Lets a directly opened document follow links beyond its parent directory while retaining one fixed, repository-bounded document set."
 id: "PROP-REPOSITORY-SCOPED-DIRECT-FILES"
-status: "accepted"
+status: "implemented"
 tags: [proposal, navigation, security, target]
 ---
 
 # Scope Direct-File Sessions to the Repository Root
 
-Status: accepted in D1
+Status: implemented in D2
 
 ## Summary
 
@@ -258,8 +258,11 @@ repository directory.
   [`docs/risk-list.md`](../risk-list.md)
 - D1 elaboration result:
   [`docs/iterations/d1-repository-scoped-direct-file-design.md`](../iterations/d1-repository-scoped-direct-file-design.md)
-  resolves the successor decision and converts these criteria into D2
-  construction targets.
+  resolves the successor decision.
+- D2 construction result:
+  [`docs/iterations/d2-repository-scoped-direct-file-sessions.md`](../iterations/d2-repository-scoped-direct-file-sessions.md)
+  implements repository-root selection and verifies the target-loader and
+  compiled-browser boundaries.
 
 ## Out of Scope
 

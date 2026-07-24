@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
@@ -377,6 +377,50 @@ test("undiscovered document path then returns 404 guidance without its source", 
   }
 });
 
+test("direct_file_link_outside_parent_then_displays_repository_document", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ targetRelativePath: "guides/guide.md" });
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
+
+    // Act
+    await page.getByRole("link", { name: "Iteration evidence" }).click();
+
+    // Assert
+    expect(new URL(page.url()).pathname).toBe("/documents/iterations/evidence.md");
+    await expect(page.getByRole("heading", { level: 1, name: "Iteration evidence" })).toBeVisible();
+    await expect(page.locator("article")).toContainText("Repository-scoped document.");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("direct_file_link_outside_repository_then_returns_guidance_without_source", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ targetRelativePath: "guides/guide.md" });
+
+  try {
+    await page.goto(fixture.lens.url);
+
+    // Act
+    const [response] = await Promise.all([
+      page.waitForResponse((candidate) => candidate.request().isNavigationRequest()),
+      page.getByRole("link", { name: "Outside repository" }).click(),
+    ]);
+
+    // Assert
+    expect(response.status()).toBe(404);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Document navigation unavailable" }),
+    ).toBeVisible();
+    await expect(page.locator("article")).not.toContainText("Outside repository source");
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("renderer fails before client script loads then reveals the source", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ rendererStatus: 503 });
@@ -480,6 +524,7 @@ async function startBrowserFixture({
   rendererStatus,
   rendererStatuses,
   extraDocumentCount,
+  targetRelativePath,
 } = {}) {
   let repository;
   let renderer;
@@ -490,6 +535,7 @@ async function startBrowserFixture({
       lens && (() => lens.stop()),
       renderer && (() => renderer.stop()),
       repository && (() => rm(repository.directory, { force: true, recursive: true })),
+      repository && (() => rm(repository.outsideDocument, { force: true })),
     ]) {
       if (!cleanup) {
         continue;
@@ -508,7 +554,7 @@ async function startBrowserFixture({
   try {
     repository = await createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount });
     renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
-    lens = await startLens(repository, renderer.url, rendererMode);
+    lens = await startLens(repository, renderer.url, rendererMode, targetRelativePath);
     return { lens, renderer, repository, stop };
   } catch (error) {
     try {
@@ -522,10 +568,13 @@ async function startBrowserFixture({
 
 async function createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount = 0 } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
+  const outsideDocument = `${directory}-outside.md`;
   const binDirectory = join(directory, "bin");
   let files = [];
   try {
     await mkdir(join(directory, "guides"), { recursive: true });
+    await mkdir(join(directory, "iterations"));
+    await mkdir(join(directory, ".git"));
     await mkdir(binDirectory);
     files = [
       writeFile(
@@ -535,8 +584,13 @@ async function createDocumentationRepository({ hiddenDocument, readme, extraDocu
       ),
       writeFile(
         join(directory, "guides", "guide.md"),
-        "# Guide page\n\nThe guide is a discovered document.\n",
+        `# Guide page\n\nThe guide is a discovered document.\n\n[Iteration evidence](../iterations/evidence.md)\n\n[Outside repository](../../${basename(outsideDocument)})\n`,
       ),
+      writeFile(
+        join(directory, "iterations", "evidence.md"),
+        "# Iteration evidence\n\nRepository-scoped document.\n",
+      ),
+      writeFile(outsideDocument, "# Outside\n\nOutside repository source.\n"),
       writeFile(
         join(directory, "architecture.puml"),
         "@startuml\nAlice -> Bob: standalone fixture\n@enduml\n",
@@ -556,11 +610,12 @@ async function createDocumentationRepository({ hiddenDocument, readme, extraDocu
     }
     await Promise.all(files);
     await chmod(join(binDirectory, "xdg-open"), 0o755);
-    return { binDirectory, directory };
+    return { binDirectory, directory, outsideDocument };
   } catch (error) {
     await Promise.allSettled(files);
     try {
       await rm(directory, { force: true, recursive: true });
+      await rm(outsideDocument, { force: true });
     } catch (cleanupError) {
       throw new AggregateError([error, cleanupError], "Repository setup and cleanup failed");
     }
@@ -596,12 +651,14 @@ async function startRenderer({ status = 200, statuses } = {}) {
   };
 }
 
-async function startLens(repository, rendererUrl, rendererMode) {
+async function startLens(repository, rendererUrl, rendererMode, targetRelativePath) {
   const lensBinary = process.env.LENS_BROWSER_TEST_BINARY;
   if (!lensBinary) {
     throw new Error("Playwright global setup did not provide the Lens executable path");
   }
-  const commandArguments = [repository.directory];
+  const commandArguments = [
+    targetRelativePath ? join(repository.directory, targetRelativePath) : repository.directory,
+  ];
   if (rendererMode) {
     commandArguments.push("--renderer", rendererMode);
   }

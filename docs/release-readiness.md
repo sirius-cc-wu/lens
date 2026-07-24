@@ -36,10 +36,11 @@ Expected result: the suite builds Lens with Cargo, starts Cargo's reported
 executable against a temporary documentation repository, uses the installed
 Google Chrome channel in headless mode, and completes without contacting the
 public PlantUML service. It verifies rendered Markdown, navigation to a
-discovered document, a persistently collapsible navigation pane, submitted and
-no-JavaScript paginated identifier search, automatic refresh after a saved
-change, 404 guidance for an undiscovered document, and visible PlantUML success
-and failure behavior.
+discovered document, repository-scoped navigation from a directly opened file,
+outside-repository guidance without source disclosure, a persistently
+collapsible navigation pane, submitted and no-JavaScript paginated identifier
+search, automatic refresh after a saved change, 404 guidance for an
+undiscovered document, and visible PlantUML success and failure behavior.
 
 ## Installation Check
 
@@ -90,23 +91,27 @@ on each supported platform.
 
 ## Target Checks
 
-From a repository that contains `README.md` or `docs/index.md`:
+From a repository containing a nested feature document, an iteration document,
+and a file outside the repository:
 
 ```bash
 lens
 lens docs
-lens docs/features/markdown-viewing/oc-02-open-document-root.md
+lens docs/features/guide.md
 ```
 
 Expected results:
 
 - Lens prints a loopback URL and opens it with `xdg-open`, or prints the URL for
   manual opening if browser launch fails.
-- The initial document follows the root README, `docs/index`, then lexical-path
-  selection order.
-- A sibling Markdown link opens its discovered target document.
-- An unknown or out-of-root local path shows the Lens guidance page and does not
-  disclose a file.
+- Current-directory and directory targets initially follow the root README,
+  `docs/index`, then lexical-path selection order.
+- The direct-file session opens `docs/features/guide.md` first, recognizes the
+  nearest non-symbolic-link `.git` directory or regular `.git` file as its
+  root, and follows a link to the iteration document outside `docs/features`.
+- Passing `docs/features` keeps the explicit narrower scope.
+- A link to the file outside the repository shows the Lens guidance page and
+  does not disclose its source.
 
 ## Rendering Checks
 
