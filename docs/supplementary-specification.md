@@ -26,9 +26,9 @@ does not prescribe the implementation architecture.
 
 - Lens reads visible Markdown and `.puml` targets without modifying repository
   files.
-- Lens defaults to sending PlantUML block source over HTTPS to
-  `https://www.plantuml.com/plantuml`, and also supports a local `plantuml`
-  command or disabled diagram rendering for a viewing session.
+- Lens sends PlantUML source to one server fixed when the viewing session
+  starts. `LENS_PLANTUML_SERVER` selects a non-empty normalized base URL;
+  otherwise Lens uses `https://www.plantuml.com/plantuml`.
 - Lens requests a rendered diagram through its local viewer and exposes the
   returned SVG only as an image, never as inline document markup.
 - Lens renders a YAML header at the beginning of a Markdown document
@@ -42,18 +42,19 @@ does not prescribe the implementation architecture.
 
 - Browser end-to-end tests start the compiled `lens` command against a
   temporary documentation repository and use a local server with predefined
-  responses (a controlled renderer) for PlantUML evidence.
-- The test child process may set `LENS_PLANTUML_SERVER` to that controlled
-  renderer. When the variable is absent or empty, Lens uses the public server
-  defined by ADR-001.
+  responses (a controlled PlantUML server) for PlantUML evidence.
+- The test child process sets `LENS_PLANTUML_SERVER` to that controlled server
+  through the same supported session-configuration path available to users.
+  When the normalized value is empty, Lens uses the public server defined by
+  ADR-017.
 
 ## Rendering and Resilience
 
 - Common Markdown content remains readable when an individual PlantUML block
   fails to render.
-- Every document identifies the active diagram renderer. A failed diagram can
-  be retried without accepting new source, and the user can disable rendering
-  for the remaining viewing session.
+- Every document identifies server-based PlantUML rendering without exposing
+  the configured server URL. A failed diagram can be retried without accepting
+  new source or changing its destination.
 - Rendered diagrams should preserve aspect ratio and fit within the document
   viewport without horizontal stretching.
 - A user can hide and restore the document navigation pane with an accessible
@@ -61,7 +62,7 @@ does not prescribe the implementation architecture.
   and does not alter the viewing session's authorized documents or routes.
 - Target errors and rendering errors identify the affected path or diagram and
   provide a next action where possible.
-- A PlantUML request times out after 10 seconds. Lens rejects a renderer
+- A PlantUML request times out after 10 seconds. Lens rejects a server
   response larger than 2 MiB.
 
 ## Security Boundaries
@@ -73,8 +74,10 @@ does not prescribe the implementation architecture.
   a request must not permit arbitrary filesystem reads.
 - A viewing session serves only its discovered document set. Symbolic links and
   hidden files and directories found during discovery are excluded.
-- The browser view does not accept repository writes. Its only mutable route
-  disables diagram rendering for the current in-memory viewing session.
+- The browser view does not accept repository writes, PlantUML server
+  configuration, or a route that changes diagram-rendering state.
+- Failure of a configured PlantUML server must not send the same source to the
+  public default or another fallback server.
 
 ## Performance
 

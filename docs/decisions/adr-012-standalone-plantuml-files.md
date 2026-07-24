@@ -3,14 +3,15 @@ type: "Architecture Decision"
 title: "ADR-012: Admit Standalone PlantUML Files to the Document Set"
 description: "Admits visible standalone PlantUML files without broadening Lens into a general source-code viewer."
 id: "ADR-012"
-status: "accepted"
+status: "partially superseded"
+superseded_in_part_by: "ADR-017"
 date: "2026-07-19"
 tags: [architecture, decision, plantuml]
 ---
 
 # ADR-012: Admit Standalone PlantUML Files to the Document Set
 
-Status: accepted
+Status: partially superseded by ADR-017
 
 Date: 2026-07-19
 
@@ -43,6 +44,13 @@ navigation pane, not through a new path-resolution rule.
 - A standalone diagram uses the same public, local, disabled, retry, and
   session-disable behavior as an embedded PlantUML block.
 
+## Current Scope
+
+ADR-017 supersedes the renderer-choice portion of this decision. A standalone
+diagram now uses the viewing session's fixed PlantUML server and retains the
+same visible-source failure and per-diagram retry behavior as an embedded
+PlantUML block. Its document-set and authorization rules remain accepted.
+
 ## Trace
 
 - Proposal: [Standalone PlantUML Files](../improvement-proposals.md#6-standalone-plantuml-files)
@@ -50,3 +58,4 @@ navigation pane, not through a new path-resolution rule.
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - Existing authorization: [ADR-003](adr-003-document-root-discovery.md)
 - Iteration: [`P6`](../iterations/p6-standalone-plantuml-files.md)
+- Partial successor: [ADR-017](adr-017-session-plantuml-server.md)

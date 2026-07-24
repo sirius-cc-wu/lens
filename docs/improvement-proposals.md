@@ -36,10 +36,8 @@ diagram source on the user's machine and avoid dependence on the public
 PlantUML service. This is the highest-value proposal because it addresses the
 current privacy and renderer-availability risks.
 
-Status: implemented in P1. `--renderer public|local|disabled` selects the
-session renderer. Public remains the default; local invokes the installed
-`plantuml` command without a renderer-service request, and disabled keeps the
-diagram source visible without an image request.
+Status: implemented in P1 and superseded by ADR-017 and C7. Lens no longer
+exposes these modes; this entry and walkthrough remain as historical context.
 
 ### Manual end-to-end test
 
@@ -82,9 +80,10 @@ Expose renderer status, allow a failed diagram request to be retried, and let a
 user disable diagram rendering for a session. These controls would make public
 renderer failures clearer and give users a predictable fallback.
 
-Status: implemented in P5. Each document exposes its renderer status, a failed
-diagram presents a retry control, and a session disable control stops future
-renderer requests while leaving PlantUML source readable.
+Status: implemented in P5 and partially superseded by ADR-017 and C7.
+Per-diagram failure, visible source, and retry remain active. The
+session-disable control was removed because it could not prevent requests that
+start while a page loads.
 
 ### Manual end-to-end test
 
@@ -266,13 +265,14 @@ markup, PlantUML requests, JavaScript, CSS, and their tests. These concerns can
 change independently and already have distinct types, dependencies, and test
 scenarios.
 
-Keep session and refresh state together, move route handlers and page
-composition into cohesive modules, isolate public and local diagram rendering,
-and place browser-launch construction with its platform tests. Store the
-JavaScript and CSS as dedicated assets embedded into the binary at compile time.
-Make the extraction mechanical: do not rename public APIs or redesign behavior,
-and retain tests with the module that owns each behavior. Verify the split with
-the complete Rust and browser suites.
+Using the C7 server-only rendering baseline, keep session and refresh state
+together, move route handlers and page composition into cohesive modules,
+isolate server-backed diagram rendering, and place browser-launch construction
+with its platform tests. Store the JavaScript and CSS as dedicated assets
+embedded into the binary at compile time. Make the extraction mechanical: do
+not rename public APIs or redesign behavior, and retain tests with the module
+that owns each behavior. Verify the split with the complete Rust and browser
+suites.
 
 ### Manual end-to-end test
 
@@ -285,9 +285,10 @@ This proposal is not implemented.
   `lens::serve`. Build the post-split binary separately.
 - **Actions:** Perform the same walkthrough with both binaries: open every
   document type, search and paginate, save a visible change, retry a failed
-  diagram, disable rendering, and request an unauthorized path. Compare the
-  page text, controls, routes, and browser network responses. Point the external
-  program at the post-split Lens library, build it, and repeat the walkthrough.
+  diagram, verify the session-fixed server destination, and request an
+  unauthorized path. Compare the page text, controls, routes, and browser
+  network responses. Point the external program at the post-split Lens library,
+  build it, and repeat the walkthrough.
 - **Expected result:** A user cannot distinguish the two builds. The
   external program still starts Lens through `lens::serve`; page assets and
   browser restrictions are still served; and only source module locations have
@@ -361,6 +362,11 @@ This proposal is not implemented.
   readable page until a complete save is available.
 
 ## 16. Explicit Public Diagram Rendering Consent
+
+Status: superseded by ADR-017. This proposal is retained as a rejected
+alternative: the accepted server-only design preserves the public default,
+supports a session-fixed private server, and removes renderer and disable
+choices.
 
 Make sending PlantUML source to a public rendering service an explicit user
 choice. A future breaking release should either default to disabled rendering
