@@ -68,6 +68,21 @@ pub fn render(
                     title,
                 )));
             }
+            Event::Start(Tag::Table(alignments)) => {
+                let width_class = if alignments.len() >= 4 {
+                    " markdown-table-wide"
+                } else {
+                    ""
+                };
+                events.push(Event::Html(
+                    format!(r#"<div class="markdown-table{width_class}" tabindex="0">"#).into(),
+                ));
+                events.push(Event::Start(Tag::Table(alignments)));
+            }
+            Event::End(Tag::Table(alignments)) => {
+                events.push(Event::End(Tag::Table(alignments)));
+                events.push(Event::Html("</div>".into()));
+            }
             Event::Html(value) => events.push(Event::Text(value)),
             event => events.push(event),
         }

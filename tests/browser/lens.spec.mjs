@@ -150,6 +150,60 @@ test("valid_frontmatter_then_renders_compact_semantic_metadata_table_without_del
   }
 });
 
+test("wide_markdown_table_then_remains_readable_with_local_horizontal_scrolling", async ({
+  page,
+}) => {
+  // Arrange
+  const fixture = await startBrowserFixture({
+    readme: [
+      "# Risk list",
+      "",
+      "| ID | Risk | Type | Likelihood | Impact | Mitigation |",
+      "|---|---|---|---|---|---|",
+      "| `R-01` | Renderer availability changes unexpectedly. | Technical | Medium | High | Retain a local rendering path and visible failure controls. |",
+      "| `R-02` | Unsafe content reaches the browser. | Security | Low | High | Escape document content and keep a restrictive content security policy. |",
+    ].join("\n"),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    const tableRegion = page.locator(".markdown-table");
+    const table = tableRegion.getByRole("table");
+    await expect(table).toBeVisible();
+    await expect(tableRegion).toHaveAttribute("tabindex", "0");
+
+    const presentation = await tableRegion.evaluate((region) => {
+      const renderedTable = region.querySelector("table");
+      const [firstRow, secondRow] = renderedTable.tBodies[0].rows;
+      return {
+        tableScrollsLocally: region.scrollWidth > region.clientWidth,
+        pageFitsViewport: document.documentElement.scrollWidth === window.innerWidth,
+        headerIsDistinct:
+          getComputedStyle(renderedTable.tHead.rows[0].cells[0]).backgroundColor !==
+          getComputedStyle(firstRow).backgroundColor,
+        rowsAreAlternating:
+          getComputedStyle(firstRow).backgroundColor !== getComputedStyle(secondRow).backgroundColor,
+        firstColumnStaysOnOneLine: getComputedStyle(firstRow.cells[0]).whiteSpace === "nowrap",
+        cellsAlignAtTop: getComputedStyle(firstRow.cells[firstRow.cells.length - 1]).verticalAlign === "top",
+      };
+    });
+    expect(presentation).toEqual({
+      tableScrollsLocally: true,
+      pageFitsViewport: true,
+      headerIsDistinct: true,
+      rowsAreAlternating: true,
+      firstColumnStaysOnOneLine: true,
+      cellsAlignAtTop: true,
+    });
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("malformed frontmatter then explains correction and renders markdown body", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({

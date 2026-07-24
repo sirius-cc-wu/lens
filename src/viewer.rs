@@ -885,6 +885,16 @@ article h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; margin: 0 0
 article > :first-child { margin-top: 0; }
 pre { overflow: auto; padding: 1rem; background: #e5e0d7; }
 code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.markdown-table { margin: 1.5rem 0; overflow-x: auto; border: 1px solid #b6b0a4; background: #fffdf8; }
+.markdown-table:focus-visible { outline: 3px solid #8b3f21; outline-offset: 2px; }
+.markdown-table table { width: 100%; border-collapse: collapse; font-family: system-ui, sans-serif; font-size: .875rem; line-height: 1.45; }
+.markdown-table-wide table { min-width: 48rem; }
+.markdown-table th, .markdown-table td { padding: .55rem .65rem; border-right: 1px solid #d4cec3; border-bottom: 1px solid #d4cec3; text-align: left; vertical-align: top; }
+.markdown-table th:last-child, .markdown-table td:last-child { border-right: 0; }
+.markdown-table tbody tr:last-child td { border-bottom: 0; }
+.markdown-table th { background: #1d2826; color: #fffdf8; font-size: .8rem; letter-spacing: .02em; }
+.markdown-table tbody tr:nth-child(even) { background: #f0ebe2; }
+.markdown-table th:first-child, .markdown-table td:first-child { white-space: nowrap; }
 .diagram { margin: 1.5rem 0; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; }
 .diagram img { display: block; width: 100%; height: auto; }
 .diagram-error { color: #9c2f19; font-family: system-ui, sans-serif; font-weight: 700; }
