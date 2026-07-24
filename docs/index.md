@@ -53,6 +53,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-014: Verify and publish tagged native releases](decisions/adr-014-release-automation.md)
 - [ADR-015: Render leading YAML metadata safely](decisions/adr-015-yaml-frontmatter-rendering.md)
 - [ADR-016: Persist navigation pane visibility in the browser tab](decisions/adr-016-collapsible-document-navigation-pane.md)
+- [ADR-017: Scope direct-file sessions to the nearest repository](decisions/adr-017-repository-scoped-direct-file-sessions.md)
 - [V1 release readiness](release-readiness.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)

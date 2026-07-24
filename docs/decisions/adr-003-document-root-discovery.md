@@ -14,6 +14,11 @@ Status: accepted
 
 Date: 2026-07-18
 
+Partially superseded by
+[ADR-017](adr-017-repository-scoped-direct-file-sessions.md) for direct-file
+root selection. The directory, current-directory, discovery, identifier, and
+routing decisions remain active.
+
 ## Context
 
 Lens E2 adds directory and current-directory targets plus navigation between

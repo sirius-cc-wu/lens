@@ -23,8 +23,16 @@ Preconditions:
 
 Postconditions on success:
 
-- A document root was identified from the canonical current directory, a
-  canonical directory target, or the canonical parent of a supported file target.
+- A document root was identified from:
+  - the canonical current directory when no target was supplied;
+  - the canonical directory when a directory target was supplied;
+  - the nearest canonical ancestor containing a supported `.git` marker when a
+    supported file inside a recognized Git repository was supplied; or
+  - the canonical parent when a supported file outside a recognized repository
+    was supplied.
+- A supported `.git` marker was either a non-symbolic-link directory or a
+  regular file. A `.git` symbolic link did not establish a repository root.
+- Repository recognition did not invoke Git or read `.git` contents.
 - A document set was created from supported Markdown and `.puml` files
   discovered within the document root.
 - Every document in the document set is associated with a stable identifier
@@ -32,6 +40,8 @@ Postconditions on success:
 - The explicitly named file, a root `README` document, a `docs/index` document,
   or the first discovered document became the viewing session's initial
   document.
+- An explicitly named file remained the initial document when repository
+  recognition made its document root broader than its parent.
 - A viewing session was created for the document root, document set, and initial
   document.
 - The source documents were not modified.
@@ -41,10 +51,12 @@ Postconditions on validation failure:
 - No viewing session was created.
 - Lens reports whether the target is missing, unreadable, hidden, a symbolic
   link, unsupported, or has no discoverable Markdown or PlantUML documents.
+- A direct file below a hidden repository entry was reported as hidden rather
+  than creating a session whose discovery excludes its initial document.
 
 Open Issues:
 
 - `UC-06` remains unresolved; the document set does not authorize code-file
   viewing.
-- Large-repository document discovery limits need measurement before
-  construction expands scope.
+- Large-repository discovery limits remain a residual risk because a direct
+  file can now authorize more supported documents than its parent contains.

@@ -3,13 +3,13 @@ type: "Improvement Proposal"
 title: "Scope Direct-File Sessions to the Repository Root"
 description: "Lets a directly opened document follow links beyond its parent directory while retaining one fixed, repository-bounded document set."
 id: "PROP-REPOSITORY-SCOPED-DIRECT-FILES"
-status: "proposed"
+status: "accepted"
 tags: [proposal, navigation, security, target]
 ---
 
 # Scope Direct-File Sessions to the Repository Root
 
-Status: proposed
+Status: accepted in D1
 
 ## Summary
 
@@ -189,8 +189,8 @@ An implementation of this proposal should:
 - add unit and browser evidence for repository-scoped navigation and
   out-of-repository rejection.
 
-If accepted, a successor architecture decision should partially supersede the
-direct-file-parent rule in
+[ADR-017](../decisions/adr-017-repository-scoped-direct-file-sessions.md)
+partially supersedes the direct-file-parent rule in
 [ADR-003](../decisions/adr-003-document-root-discovery.md) without rewriting
 the historical E2 iteration record.
 
@@ -256,8 +256,10 @@ repository directory.
   [`ADR-003`](../decisions/adr-003-document-root-discovery.md)
 - Security and scale risks: `R-03` and `R-09` in
   [`docs/risk-list.md`](../risk-list.md)
-- Future elaboration result: a focused iteration should resolve the successor
-  decision and convert these criteria into construction tests.
+- D1 elaboration result:
+  [`docs/iterations/d1-repository-scoped-direct-file-design.md`](../iterations/d1-repository-scoped-direct-file-design.md)
+  resolves the successor decision and converts these criteria into D2
+  construction targets.
 
 ## Out of Scope
 

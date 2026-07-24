@@ -10,7 +10,7 @@ tags: [requirements, use-case]
 
 # FEAT-01: View Markdown with PlantUML
 
-Status: refined in P6
+Status: refined in D1
 
 ## Actors
 
@@ -109,7 +109,12 @@ Trigger: The user runs `lens`, `lens <directory>`, `lens <markdown-file>`, or
 Main success scenario:
 
 1. Lens resolves the document root from the supplied target or current
-   directory.
+   directory:
+   - the current directory remains its own document root;
+   - a directory target remains its own document root;
+   - a supported file inside a Git repository uses the nearest enclosing
+     repository root; and
+   - a supported file outside a recognized repository uses its parent.
 2. Lens identifies Markdown documents and `.puml` files within the document
    root.
 3. Lens selects the explicitly named file, a root `README` document, a
@@ -123,6 +128,10 @@ Extensions:
 - 1a. If the target is missing, unreadable, hidden, a symbolic link, or neither
   a directory nor a supported document, Lens reports an actionable error
   and starts no viewing session.
+- 1b. If a direct file is inside nested repositories or a Git submodule, Lens
+  uses the nearest enclosing repository root.
+- 1c. If a direct file's repository-relative path crosses a hidden entry, Lens
+  rejects the target because discovery cannot admit the selected file.
 - 2a. If the document root has no Markdown or PlantUML documents, Lens reports an
   actionable error and starts no viewing session.
 
@@ -132,8 +141,14 @@ Special requirements:
 - Symbolic links found during document discovery are excluded.
 - Hidden files and directories found during document discovery are excluded.
 - A direct hidden or symbolic-link target is rejected before document discovery.
-- A direct Markdown or `.puml` file target remains the initial document but
-  authorizes its canonical parent as the document root.
+- Lens recognizes a repository root without invoking Git. The nearest
+  canonical ancestor containing a non-symbolic-link `.git` directory or a
+  regular `.git` file establishes the root.
+- A `.git` symbolic link does not establish a repository root.
+- A direct Markdown or `.puml` file remains the initial document even when its
+  repository root is broader than its parent.
+- Repository discovery remains fixed when the session starts. Links and
+  browser requests cannot add documents to the document set.
 
 ## UC-10: View a Standalone PlantUML File
 
