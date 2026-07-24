@@ -17,6 +17,12 @@ and [SSD-02](ssd-02-open-document-root.md). They show the implemented Rust
 modules, owned state, and runtime collaborators for developer discussion. They
 do not introduce additional behavior or abstractions.
 
+The accepted E4 target for removing renderer selection is modeled separately in
+the [server-only PlantUML rendering design](server-rendering-design.md). That
+target supersedes the renderer-specific portions of this implementation
+snapshot after construction, while the document-root responsibilities here
+remain active.
+
 ## CMP-01: Component and Deployment View
 
 ```plantuml

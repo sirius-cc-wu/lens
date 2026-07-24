@@ -2,13 +2,14 @@
 type: "Improvement Proposal"
 title: "Remove CLI Renderer Selection"
 description: "Removes renderer selection, local PlantUML command execution, and the in-page disable control, leaving server-based rendering configured by LENS_PLANTUML_SERVER."
-status: "proposed"
+id: "PROP-REMOVE-RENDERER"
+status: "accepted"
 tags: [proposal, plantuml, cli]
 ---
 
 # Remove `--renderer` and Local PlantUML CLI Rendering
 
-Status: proposed
+Status: accepted; elaborated in E4 with construction pending
 
 ## Summary
 
@@ -17,10 +18,10 @@ Remove the `--renderer` command-line option and stop launching the installed
 use a network service that converts PlantUML source into an image (a PlantUML
 server). The document page will no longer offer a control to disable rendering.
 
-When `LENS_PLANTUML_SERVER` is unset or empty, Lens will use the default online
-PlantUML server at `https://www.plantuml.com/plantuml`. A non-empty
-`LENS_PLANTUML_SERVER` value will replace that base URL for the entire viewing
-session.
+When `LENS_PLANTUML_SERVER` is unset or becomes empty after normalization, Lens
+will use the default online PlantUML server at
+`https://www.plantuml.com/plantuml`. A non-empty normalized value will replace
+that base URL for the entire viewing session.
 
 ## Motivation
 
@@ -47,12 +48,12 @@ consistent. It also retains a deployment choice: a user can direct Lens to a
 self-hosted or private PlantUML server without allowing a browser request to
 choose a command or destination.
 
-## Proposed Behavior
+## Accepted Behavior
 
 | Situation | Lens behavior |
 |---|---|
-| `LENS_PLANTUML_SERVER` is unset or contains only whitespace | Use `https://www.plantuml.com/plantuml`. |
-| `LENS_PLANTUML_SERVER` contains a non-empty base URL | Send every diagram request in the viewing session to that server. |
+| `LENS_PLANTUML_SERVER` is unset or is empty after trimming surrounding whitespace and trailing `/` characters | Use `https://www.plantuml.com/plantuml`. |
+| The normalized `LENS_PLANTUML_SERVER` value is non-empty | Send every diagram request in the viewing session to that server. |
 | The configured server is invalid, unavailable, or rejects a diagram | Show the existing per-diagram failure result and keep the PlantUML source visible. Do not fall back to the default server. |
 | The user passes `--renderer` | Exit with the command-line parser's unknown-argument error. |
 
@@ -116,6 +117,10 @@ A user who previously selected `local` must run or obtain access to a PlantUML
 server and set `LENS_PLANTUML_SERVER` to its base URL. Lens will not install,
 start, supervise, or discover that server.
 
+Library callers must remove the `RendererMode` argument from `serve`. This is a
+source-incompatible API change and must ship in a release that identifies the
+breaking CLI and library migration.
+
 Removing the `disabled` CLI value and the in-page disable control means Lens no
 longer offers a user-facing no-rendering mode. When Lens opens a document
 containing PlantUML, it requests each diagram from the configured server. Users
@@ -163,6 +168,9 @@ must remain visible and must not trigger failover.
 - The public `serve` entry point no longer requires a renderer argument.
 - User-facing and durable design documentation consistently describes one
   server-based rendering path and the environment override.
+- Release notes identify the removed CLI values, the removed Rust API type and
+  argument, and the self-hosted-server migration for former local-renderer
+  users.
 
 ## Verification
 
@@ -203,3 +211,17 @@ verification sections.
 - Accepting a PlantUML server URL from a browser request.
 - Changing document discovery, diagram encoding, or browser-session
   authorization.
+
+## Analysis and Design Trace
+
+- Requirement: `UC-01` and `UC-10` in
+  [`FEAT-01`](../features/markdown-viewing/use-cases.md)
+- System interaction: [`SSD-01`](../features/markdown-viewing/ssd-01-open-markdown-target.md)
+- Diagram request guarantees:
+  [`OC-05`](../features/markdown-viewing/oc-05-request-diagram.md)
+- Rust collaboration and type target:
+  [`RZ-05` and `DCD-04`](../features/markdown-viewing/server-rendering-design.md)
+- Architecture decision:
+  [`ADR-017`](../decisions/adr-017-session-plantuml-server.md)
+- Elaboration result:
+  [`E4`](../iterations/e4-server-only-plantuml-rendering.md)
