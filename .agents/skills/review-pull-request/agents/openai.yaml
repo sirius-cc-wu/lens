@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pull Request Review"
+  short_description: "Review changes across their dependency cone"
+  default_prompt: "Use $review-pull-request to review this pull request and report every actionable finding by severity."
