@@ -12,7 +12,8 @@ tags: [reference, glossary]
 |---|---|
 | Lens | The standalone CLI and its local browser viewer. |
 | Target | The optional supported file or directory argument passed to `lens`; when omitted, the current working directory is the target. |
-| Document root | The canonical directory Lens authorizes for one viewing session. It is the current directory, a directory target, or the canonical parent of a file target. |
+| Document root | The canonical directory Lens authorizes for one viewing session. By default it is the nearest recognized repository containing the target, with the selected directory or file parent as the fallback outside a repository. |
+| Target scope | The explicit narrow scope selected with `--scope target`; it authorizes only the selected directory, current directory, or selected file's parent instead of broadening to a repository. |
 | Document set | The Markdown and standalone `.puml` documents Lens discovers inside a document root and may serve during one viewing session. |
 | Document revision | A session-local, monotonically increasing number for one known document. Lens advances it only after successfully rendering changed saved contents. |
 | Viewing session | A local loopback session that exposes one selected Markdown document, fixed viewer assets, and the diagrams recognized in that document. |

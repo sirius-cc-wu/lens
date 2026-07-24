@@ -29,7 +29,7 @@ small and will be refined as elaboration resolves the listed risks.
 
 - [Vision and business case](vision.md)
 - [Improvement proposals](improvement-proposals.md)
-- [Proposed repository scope for direct-file sessions](proposals/repository-scoped-direct-file-sessions.md)
+- [Repository-scoped target sessions](proposals/repository-scoped-direct-file-sessions.md)
 - [Primary feature and use cases](features/markdown-viewing/use-cases.md) (`FEAT-01`)
 - [Document navigation pane use cases](features/document-navigation-pane/use-cases.md) (`FEAT-02`)
 - [Automatic refresh use cases](features/automatic-refresh/use-cases.md) (`FEAT-03`)
@@ -54,6 +54,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-015: Render leading YAML metadata safely](decisions/adr-015-yaml-frontmatter-rendering.md)
 - [ADR-016: Persist navigation pane visibility in the browser tab](decisions/adr-016-collapsible-document-navigation-pane.md)
 - [ADR-017: Scope direct-file sessions to the nearest repository](decisions/adr-017-repository-scoped-direct-file-sessions.md)
+- [ADR-018: Scope repository targets to the nearest repository](decisions/adr-018-repository-scoped-target-sessions.md)
 - [V1 release readiness](release-readiness.md)
 - [Development case](development-case.md)
 - [Elaboration phase plan](elaboration-phase-plan.md)

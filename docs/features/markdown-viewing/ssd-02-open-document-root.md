@@ -13,8 +13,8 @@ tags: [analysis, ssd]
 
 Use cases: `UC-02`, `UC-03`, and `UC-04`
 
-Scenario: The developer opens a direct repository document and follows a link
-to another discovered Markdown document outside the initial file's parent.
+Scenario: The developer opens a repository documentation directory and follows
+a link to another discovered Markdown document outside that directory.
 
 Actors:
 
@@ -46,11 +46,12 @@ System Events:
 
 Discovered System Operations:
 
-- `open_document_root(target_path?)`: resolve an authorized root, identify its
-  Markdown and PlantUML documents, select an initial document, and make a
-  viewing session available. A direct file uses the nearest enclosing
-  repository root when a supported `.git` marker exists and otherwise uses its
-  parent; directory and current-directory targets retain their explicit scope.
+- `open_document_root(target_path?, scope?)`: resolve an authorized root,
+  identify its Markdown and PlantUML documents, select an initial document,
+  and make a viewing session available. Repository scope uses the nearest
+  recognized repository for file, directory, and current-directory targets;
+  target scope preserves the selected directory, current directory, or file
+  parent as the root.
 - `request_document(document_id)`: return one document known to the current
   viewing session.
 
@@ -59,5 +60,5 @@ guidance response and does not interpret the request as a filesystem path.
 
 Root-selection extensions do not introduce another actor-system event. Nested
 repositories select the nearest supported marker, a `.git` symbolic link is
-ignored, and a direct file whose repository-relative path is hidden fails
-during `open_document_root`.
+ignored, and a target whose repository-relative path crosses a hidden entry
+fails during `open_document_root`.
