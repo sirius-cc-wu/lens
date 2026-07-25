@@ -36,10 +36,12 @@ Expected result: the suite builds Lens with Cargo, starts Cargo's reported
 executable against a temporary documentation repository, uses the installed
 Google Chrome channel in headless mode, and completes without contacting the
 public PlantUML service. It verifies rendered Markdown, navigation to a
-discovered document, a persistently collapsible navigation pane, submitted and
-no-JavaScript paginated identifier search, automatic refresh after a saved
-change, 404 guidance for an undiscovered document, and visible PlantUML success
-and failure behavior.
+discovered document, repository-scoped navigation from file, directory, and
+current-directory targets, explicit target-scoped guidance without source
+disclosure, outside-repository guidance without source disclosure, a
+persistently collapsible navigation pane, submitted and no-JavaScript paginated
+identifier search, automatic refresh after a saved change, 404 guidance for an
+undiscovered document, and visible PlantUML success and failure behavior.
 
 ## Installation Check
 
@@ -50,7 +52,8 @@ cargo install --path . --locked
 lens --help
 ```
 
-Expected result: `lens --help` describes an optional `TARGET` argument.
+Expected result: `lens --help` describes an optional `TARGET` argument and the
+`repository` and `target` scope values.
 
 ## Binary Archive Check
 
@@ -90,23 +93,32 @@ on each supported platform.
 
 ## Target Checks
 
-From a repository that contains `README.md` or `docs/index.md`:
+From a repository containing a nested feature document, an iteration document,
+and a file outside the repository:
 
 ```bash
 lens
 lens docs
-lens docs/features/markdown-viewing/oc-02-open-document-root.md
+lens docs/features/guide.md
+lens --scope target docs/features
 ```
 
 Expected results:
 
 - Lens prints a loopback URL and opens it with `xdg-open`, or prints the URL for
   manual opening if browser launch fails.
-- The initial document follows the root README, `docs/index`, then lexical-path
-  selection order.
-- A sibling Markdown link opens its discovered target document.
-- An unknown or out-of-root local path shows the Lens guidance page and does not
-  disclose a file.
+- File, directory, and current-directory targets recognize the nearest
+  non-symbolic-link `.git` directory or regular `.git` file as their default
+  root.
+- A direct-file session opens the selected file first. Directory and
+  current-directory sessions prefer documents below the selected directory
+  before repository-level fallback.
+- The default `docs/features` session follows a known-document link to the
+  iteration document outside that directory.
+- Passing `--scope target docs/features` keeps the explicit narrower scope and
+  returns guidance for that cross-directory link.
+- A link to the file outside the repository shows the Lens guidance page and
+  does not disclose its source.
 
 ## Rendering Checks
 

@@ -70,8 +70,10 @@ does not prescribe the implementation architecture.
 - Lens escapes raw Markdown HTML. PlantUML SVG is not inserted into the
   document markup; it is served only as an image with a restrictive content
   security policy.
-- The browser-facing server must restrict access to the resolved target scope;
-  a request must not permit arbitrary filesystem reads.
+- The browser-facing server must restrict access to the resolved document
+  root; a request must not permit arbitrary filesystem reads. Repository scope
+  selects the nearest recognized repository by default, while
+  `--scope target` preserves an explicit directory or file-parent boundary.
 - A viewing session serves only its discovered document set. Symbolic links and
   hidden files and directories found during discovery are excluded.
 - The browser view does not accept repository writes, PlantUML server
