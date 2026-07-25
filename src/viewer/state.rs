@@ -8,7 +8,7 @@ use std::{
 
 use reqwest::Client;
 
-use super::catalog::DocumentCatalog;
+use super::known_documents::KnownDocuments;
 use crate::{
     markdown::{render, render_standalone_plantuml, RenderedDocument},
     target::{DocumentKind, MarkdownDocument},
@@ -18,8 +18,8 @@ const REFRESH_INTERVAL: Duration = Duration::from_millis(500);
 
 pub(super) struct ViewerState {
     pub(super) documents: RwLock<Vec<ViewerDocument>>,
-    pub(super) catalog: DocumentCatalog,
-    known_documents: BTreeSet<String>,
+    pub(super) known_documents: KnownDocuments,
+    known_document_ids: BTreeSet<String>,
     pub(super) initial_document: usize,
     pub(super) client: Client,
     pub(super) plantuml_server: String,
@@ -65,7 +65,7 @@ impl ViewerState {
                 document_id,
                 &identifier,
                 kind,
-                &self.known_documents,
+                &self.known_document_ids,
             );
             let mut documents = self
                 .documents
@@ -102,13 +102,16 @@ pub(super) fn viewer_state(
     client: Client,
     plantuml_server: String,
 ) -> Arc<ViewerState> {
-    let catalog = DocumentCatalog::new(
+    let known_documents = KnownDocuments::new(
         documents
             .iter()
             .enumerate()
             .map(|(index, document)| (document.identifier.clone(), index)),
     );
-    let known_documents = catalog.known_document_ids();
+    let known_document_ids = documents
+        .iter()
+        .map(|document| document.identifier.clone())
+        .collect();
     let documents = documents
         .into_iter()
         .enumerate()
@@ -122,7 +125,7 @@ pub(super) fn viewer_state(
                 document_id,
                 &document.identifier,
                 document.kind,
-                &known_documents,
+                &known_document_ids,
             ),
             revision: 0,
         })
@@ -130,8 +133,8 @@ pub(super) fn viewer_state(
 
     Arc::new(ViewerState {
         documents: RwLock::new(documents),
-        catalog,
         known_documents,
+        known_document_ids,
         initial_document,
         client,
         plantuml_server,

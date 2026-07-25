@@ -7,7 +7,7 @@ import { basename, join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-test("controlled_renderer_and_navigation_pane_link_then_displays_selected_document", async ({ page }) => {
+test("known_markdown_link_then_displays_linked_document", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
 
@@ -21,42 +21,72 @@ test("controlled_renderer_and_navigation_pane_link_then_displays_selected_docume
         page.locator("img[data-diagram]").evaluate((image) => image.complete && image.naturalWidth > 0),
       )
       .toBe(true);
-    await page.getByRole("link", { name: "guides/guide.md" }).click();
+    await page.getByRole("link", { name: "Open guide" }).click();
 
     // Assert
     expect(new URL(page.url()).pathname).toBe("/documents/guides/guide.md");
     await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
     await expect(page.locator("article")).toContainText("The guide is a discovered document.");
-    await expect(
-      page.getByRole("navigation", { name: "Discovered documents" }).getByRole("link", {
-        name: "guides/guide.md",
-      }),
-    ).toHaveAttribute("aria-current", "page");
   } finally {
     await fixture.stop();
   }
 });
 
-test("standalone plantuml link then displays its rendered diagram", async ({ page }) => {
+test("known_markdown_link_then_browser_history_returns_to_initial_document", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
 
   try {
     await page.goto(fixture.lens.url);
-    await expect.poll(() => fixture.renderer.requests).toBe(1);
+    await page.getByRole("link", { name: "Open guide" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
 
     // Act
-    await page.getByRole("link", { name: "architecture.puml" }).click();
+    await page.goBack();
 
     // Assert
-    expect(new URL(page.url()).pathname).toBe("/documents/architecture.puml");
+    expect(new URL(page.url()).pathname).toBe("/");
+    await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("direct_plantuml_target_then_displays_diagram_without_navigation_pane", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ targetRelativePath: "architecture.puml" });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
     await expect(page.locator("article")).toContainText("Standalone PlantUML file.");
-    await expect.poll(() => fixture.renderer.requests).toBe(2);
+    await expect(page.getByRole("navigation", { name: "Discovered documents" })).toHaveCount(0);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
     await expect
       .poll(() =>
         page.locator("img[data-diagram]").evaluate((image) => image.complete && image.naturalWidth > 0),
       )
       .toBe(true);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("known_plantuml_route_then_displays_authorized_diagram", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    // Act
+    const response = await page.goto(`${fixture.lens.url}/documents/architecture.puml`);
+
+    // Assert
+    expect(response?.status()).toBe(200);
+    await expect(page.locator("article")).toContainText("Standalone PlantUML file.");
+    await expect(page.getByRole("navigation", { name: "Discovered documents" })).toHaveCount(0);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
   } finally {
     await fixture.stop();
   }
@@ -96,7 +126,7 @@ test("document_view_then_shows_compact_repository_relative_path", async ({ page 
     await page.goto(fixture.lens.url);
 
     // Act
-    await page.getByRole("link", { name: "guides/guide.md" }).click();
+    await page.getByRole("link", { name: "Open guide" }).click();
 
     // Assert
     const documentPath = page.locator(".document-header").getByRole("heading", { level: 1 });
@@ -225,136 +255,68 @@ test("malformed frontmatter then explains correction and renders markdown body",
   }
 });
 
-test("document_navigation_pane_then_lists_authorized_documents_and_marks_current", async ({ page }) => {
-  // Arrange
-  const fixture = await startBrowserFixture({ hiddenDocument: "Confidential source" });
-
-  try {
-    // Act
-    await page.goto(fixture.lens.url);
-
-    // Assert
-    const navigation = page.getByRole("navigation", { name: "Discovered documents" });
-    await expect(navigation.getByRole("link", { name: "README.md" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    await expect(navigation.getByRole("link", { name: "guides/guide.md" })).toBeVisible();
-    await expect(navigation).not.toContainText(".private.md");
-    await expect(navigation).not.toContainText("Confidential source");
-  } finally {
-    await fixture.stop();
-  }
-});
-
-test("navigation_pane_toggle_then_persists_visibility_and_restores_the_pane", async ({ page }) => {
+test("document_page_at_narrow_and_wide_viewports_then_uses_single_reading_column", async ({
+  page,
+}) => {
   // Arrange
   const fixture = await startBrowserFixture();
 
   try {
     await page.goto(fixture.lens.url);
-    const navigation = page.locator("#document-navigation");
-    const navigationToggle = page.locator("[data-document-navigation-toggle]");
-    const documentContent = page.locator(".document-content");
-    const expandedContentWidth = await documentContent.evaluate((content) => content.getBoundingClientRect().width);
 
-    // Act
-    await navigationToggle.press("Enter");
+    for (const viewport of [
+      { width: 390, height: 844 },
+      { width: 1440, height: 900 },
+    ]) {
+      // Act
+      await page.setViewportSize(viewport);
 
-    // Assert
-    await expect(navigationToggle).toHaveAttribute("aria-expanded", "false");
-    await expect(navigation).toBeHidden();
-    expect(await documentContent.evaluate((content) => content.getBoundingClientRect().width)).toBeGreaterThan(
-      expandedContentWidth,
-    );
-
-    // Act
-    await page.goto(`${fixture.lens.url}/documents/guides/guide.md`);
-
-    // Assert
-    await expect(navigationToggle).toHaveAttribute("aria-expanded", "false");
-    await expect(navigationToggle).toHaveText("Show documents");
-    await expect(navigation).toBeHidden();
-    await expect(page.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
-
-    // Act
-    await navigationToggle.press("Enter");
-
-    // Assert
-    await expect(navigationToggle).toHaveAttribute("aria-expanded", "true");
-    await expect(navigation).toBeVisible();
-    await expect(navigation.getByRole("link", { name: "guides/guide.md" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+      // Assert
+      await expect(page.getByRole("navigation", { name: "Discovered documents" })).toHaveCount(0);
+      await expect(page.getByRole("searchbox", { name: "Search discovered documents" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^(Hide|Show) documents$/ })).toHaveCount(0);
+      const layout = await page.locator("main").evaluate((main) => {
+        const content = main.querySelector(".document-content");
+        return {
+          mainWidth: main.getBoundingClientRect().width,
+          contentWidth: content.getBoundingClientRect().width,
+          pageFitsViewport: document.documentElement.scrollWidth === window.innerWidth,
+          collapsedAttribute: main.hasAttribute("data-document-navigation-collapsed"),
+          navigationStorage: sessionStorage.getItem("lens.documentNavigationCollapsed"),
+        };
+      });
+      expect(layout.contentWidth).toBeCloseTo(layout.mainWidth, 0);
+      expect(layout.pageFitsViewport).toBe(true);
+      expect(layout.collapsedAttribute).toBe(false);
+      expect(layout.navigationStorage).toBeNull();
+    }
   } finally {
     await fixture.stop();
   }
 });
 
-test("submitted_document_search_then_returns_matching_authorized_documents", async ({ page }) => {
+test("document_page_with_catalog_query_then_ignores_query_and_page", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
 
   try {
-    await page.goto(fixture.lens.url);
-    const navigation = page.getByRole("navigation", { name: "Discovered documents" });
-    const search = page.getByRole("searchbox", { name: "Search discovered documents" });
+    const knownDocumentUrl = `${fixture.lens.url}/documents/guides/guide.md`;
+    const ordinaryResponse = await page.request.get(knownDocumentUrl);
 
     // Act
-    await search.fill("guide");
-    await search.press("Enter");
+    const responseWithCatalogQuery = await page.request.get(
+      `${knownDocumentUrl}?query=README&page=99`,
+    );
 
     // Assert
-    await expect(navigation.getByRole("link", { name: "guides/guide.md" })).toBeVisible();
-    await expect(navigation.getByRole("link", { name: "README.md" })).toHaveCount(0);
-    expect(new URL(page.url()).pathname).toBe("/");
-    expect(new URL(page.url()).searchParams.get("query")).toBe("guide");
-
-    // Act
-    await search.fill("no-match");
-    await search.press("Enter");
-
-    // Assert
-    await expect(navigation.getByText("No discovered documents match the search.")).toBeVisible();
+    expect(responseWithCatalogQuery.status()).toBe(200);
+    expect(await responseWithCatalogQuery.text()).toBe(await ordinaryResponse.text());
   } finally {
     await fixture.stop();
   }
 });
 
-test("submitted_search_with_multiple_pages_then_navigates_without_javascript", async ({ browser }) => {
-  // Arrange
-  const fixture = await startBrowserFixture({ extraDocumentCount: 51 });
-  const context = await browser.newContext({ javaScriptEnabled: false });
-  const page = await context.newPage();
-
-  try {
-    await page.goto(fixture.lens.url);
-    const navigation = page.getByRole("navigation", { name: "Discovered documents" });
-    const search = page.getByRole("searchbox", { name: "Search discovered documents" });
-
-    // Act
-    await search.fill("reference");
-    await search.press("Enter");
-
-    // Assert
-    await expect(navigation.locator("[data-document-navigation-item]")).toHaveCount(50);
-    await expect(navigation.getByRole("link", { name: "Next results" })).toBeVisible();
-    expect(new URL(page.url()).searchParams.get("query")).toBe("reference");
-
-    // Act
-    await navigation.getByRole("link", { name: "Next results" }).click();
-
-    // Assert
-    await expect(navigation.getByRole("link", { name: "guides/reference-050.md" })).toBeVisible();
-    expect(new URL(page.url()).searchParams.get("page")).toBe("2");
-  } finally {
-    await context.close();
-    await fixture.stop();
-  }
-});
-
-test("undiscovered document path then returns 404 guidance without its source", async ({ page }) => {
+test("undiscovered_document_path_then_returns_404_guidance_without_its_source", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ hiddenDocument: "Confidential source" });
 
@@ -365,7 +327,7 @@ test("undiscovered document path then returns 404 guidance without its source", 
     // Assert
     expect(response?.status()).toBe(404);
     await expect(
-      page.getByRole("heading", { level: 1, name: "Document navigation unavailable" }),
+      page.getByRole("heading", { level: 1, name: "Document unavailable" }),
     ).toBeVisible();
     await expect(page.locator("article")).toContainText(
       "requested document is not part of this viewing session",
@@ -460,7 +422,7 @@ test("target_scoped_directory_link_outside_directory_then_returns_guidance_witho
     // Assert
     expect(response.status()).toBe(404);
     await expect(
-      page.getByRole("heading", { level: 1, name: "Document navigation unavailable" }),
+      page.getByRole("heading", { level: 1, name: "Document unavailable" }),
     ).toBeVisible();
     await expect(page.locator("article")).not.toContainText("Repository-scoped document.");
   } finally {
@@ -484,7 +446,7 @@ test("direct_file_link_outside_repository_then_returns_guidance_without_source",
     // Assert
     expect(response.status()).toBe(404);
     await expect(
-      page.getByRole("heading", { level: 1, name: "Document navigation unavailable" }),
+      page.getByRole("heading", { level: 1, name: "Document unavailable" }),
     ).toBeVisible();
     await expect(page.locator("article")).not.toContainText("Outside repository source");
   } finally {
@@ -590,7 +552,6 @@ async function startBrowserFixture({
   readme,
   rendererStatus,
   rendererStatuses,
-  extraDocumentCount,
   targetRelativePath,
   currentDirectoryRelativePath,
   scope,
@@ -621,7 +582,7 @@ async function startBrowserFixture({
   };
 
   try {
-    repository = await createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount });
+    repository = await createDocumentationRepository({ hiddenDocument, readme });
     renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
     lens = await startLens(
       repository,
@@ -641,7 +602,7 @@ async function startBrowserFixture({
   }
 }
 
-async function createDocumentationRepository({ hiddenDocument, readme, extraDocumentCount = 0 } = {}) {
+async function createDocumentationRepository({ hiddenDocument, readme } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const outsideDocument = `${directory}-outside.md`;
   const binDirectory = join(directory, "bin");
@@ -672,14 +633,6 @@ async function createDocumentationRepository({ hiddenDocument, readme, extraDocu
       ),
       writeFile(join(binDirectory, "xdg-open"), "#!/bin/sh\nexit 0\n"),
     ];
-    for (let index = 0; index < extraDocumentCount; index += 1) {
-      files.push(
-        writeFile(
-          join(directory, "guides", `reference-${index.toString().padStart(3, "0")}.md`),
-          `# Reference ${index}\n\nA discovered reference document.\n`,
-        ),
-      );
-    }
     if (hiddenDocument) {
       files.push(writeFile(join(directory, ".private.md"), hiddenDocument));
     }

@@ -1,34 +1,3 @@
-const navigationControl = document.querySelector('[data-document-navigation-control]');
-const navigationToggle = document.querySelector('[data-document-navigation-toggle]');
-const navigationPane = document.querySelector('#document-navigation');
-const documentLayout = document.querySelector('main');
-if (navigationControl && navigationToggle && navigationPane && documentLayout) {
-  const navigationPaneStateKey = 'lens.documentNavigationCollapsed';
-  const setNavigationPaneCollapsed = (collapsed) => {
-    navigationPane.hidden = collapsed;
-    documentLayout.dataset.documentNavigationCollapsed = String(collapsed);
-    navigationToggle.setAttribute('aria-expanded', String(!collapsed));
-    navigationToggle.textContent = collapsed ? 'Show documents' : 'Hide documents';
-  };
-  let collapsed = false;
-  try {
-    collapsed = sessionStorage.getItem(navigationPaneStateKey) === 'true';
-  } catch {
-    // Keep the navigation pane visible when browser session storage is unavailable.
-  }
-  setNavigationPaneCollapsed(collapsed);
-  navigationControl.hidden = false;
-  navigationToggle.addEventListener('click', () => {
-    collapsed = !navigationPane.hidden;
-    setNavigationPaneCollapsed(collapsed);
-    try {
-      sessionStorage.setItem(navigationPaneStateKey, String(collapsed));
-    } catch {
-      // Retain the current page's visibility when browser session storage is unavailable.
-    }
-  });
-}
-
 for (const image of document.querySelectorAll('[data-diagram]')) {
   const revealFailure = () => {
     const figure = image.closest('.diagram');
