@@ -28,6 +28,7 @@
 ## Code Reviews
 
 - Persist every completed code-review result as a Markdown document under `docs/reviews/`. The saved document is the durable review record.
+- For a pull-request review, create the review record on the pull request's head branch, commit the record, and push the commit to that same branch before completing the review. If the head branch is not writable, keep the commit locally and report the push failure instead of pushing to a different branch.
 - For every actionable review finding (review comment), include one PlantUML block that depicts the reported behavior and impact, and a second PlantUML block that depicts the suggested solution. Keep the exact file and line, explanation and impact, proposed fix, and test coverage in prose.
 - Apply the PlantUML validation requirement above to every review diagram. When a review has no actionable findings, save the no-findings result and its residual risks or validation gaps without inventing findings or diagrams.
 
