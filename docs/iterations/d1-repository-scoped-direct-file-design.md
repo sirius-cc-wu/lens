@@ -32,8 +32,8 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-017`, repository-scoped direct-file sessions:
-  [`docs/decisions/adr-017-repository-scoped-direct-file-sessions.md`](../decisions/adr-017-repository-scoped-direct-file-sessions.md) -
+- `ADR-018`, repository-scoped direct-file sessions:
+  [`docs/decisions/adr-018-repository-scoped-direct-file-sessions.md`](../decisions/adr-018-repository-scoped-direct-file-sessions.md) -
   records the marker, nearest-root, fallback, and fixed-session decisions.
 
 Artifacts to Refine:
@@ -69,7 +69,7 @@ Artifacts Consulted:
 
 Decisions to Record:
 
-- `ADR-017`: recognize only a non-symbolic-link `.git` directory or regular
+- `ADR-018`: recognize only a non-symbolic-link `.git` directory or regular
   `.git` file, select the nearest canonical ancestor, retain parent fallback,
   and leave explicit roots unchanged.
 - Reject a selected file below a hidden repository entry because discovery
@@ -78,7 +78,7 @@ Decisions to Record:
 Trace:
 
 - Proposal -> `FEAT-01` (`UC-02` through `UC-04`) -> `SSD-02` -> `OC-02` ->
-  `ADR-017` -> D2 target-loader and compiled-browser checks
+  `ADR-018` -> D2 target-loader and compiled-browser checks
 
 Exit Criteria:
 
@@ -97,7 +97,7 @@ Results:
 - `FEAT-01`, `SSD-02`, and `OC-02` now define nearest-repository selection for
   direct files, parent fallback outside a repository, and unchanged explicit
   directory and current-directory roots.
-- ADR-017 accepts both standard and worktree/submodule `.git` forms, ignores a
+- ADR-018 accepts both standard and worktree/submodule `.git` forms, ignores a
   symbolic-link marker, and keeps repository recognition independent of Git.
 - The existing target loader remains the cohesive owner of canonical target
   resolution and discovery; no new object collaboration, class model, or
@@ -110,7 +110,7 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-017`, repository-scoped direct-file sessions - records the
+- started: `ADR-018`, repository-scoped direct-file sessions - records the
   accepted authorization boundary.
 - refined: `FEAT-01`, `SSD-02`, and `OC-02` - define observable root selection
   and construction oracles.

@@ -14,7 +14,7 @@ Status: completed
 
 Phase Intent:
 
-- Implement ADR-018 through the target loader, CLI, and compiled-browser
+- Implement ADR-019 through the target loader, CLI, and compiled-browser
   boundary while retaining the fixed known-document authorization model.
 
 Goal:
@@ -57,7 +57,7 @@ Artifacts to Refine:
   default, initial anchor, local-reading implications, and narrow override.
 - Proposal, decision trace, and risks:
   [`docs/proposals/repository-scoped-direct-file-sessions.md`](../proposals/repository-scoped-direct-file-sessions.md),
-  [`docs/decisions/adr-018-repository-scoped-target-sessions.md`](../decisions/adr-018-repository-scoped-target-sessions.md), and
+  [`docs/decisions/adr-019-repository-scoped-target-sessions.md`](../decisions/adr-019-repository-scoped-target-sessions.md), and
   [`docs/risk-list.md`](../risk-list.md) - record implementation and executable
   authorization evidence.
 
@@ -67,18 +67,18 @@ Artifacts Consulted:
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - `OC-02`, root and initial-selection postconditions:
   [`docs/features/markdown-viewing/oc-02-open-document-root.md`](../features/markdown-viewing/oc-02-open-document-root.md)
-- `ADR-018`, repository-scoped target sessions:
-  [`docs/decisions/adr-018-repository-scoped-target-sessions.md`](../decisions/adr-018-repository-scoped-target-sessions.md)
+- `ADR-019`, repository-scoped target sessions:
+  [`docs/decisions/adr-019-repository-scoped-target-sessions.md`](../decisions/adr-019-repository-scoped-target-sessions.md)
 
 Decisions to Record:
 
-- None. D4 implements ADR-018 without changing its selected root, option, or
+- None. D4 implements ADR-019 without changing its selected root, option, or
   fallback behavior.
 
 Trace:
 
 - Product feedback -> `FEAT-01` (`UC-02` through `UC-04`) -> `SSD-02` ->
-  `OC-02` -> `ADR-018` -> target-loader examples, CLI help, and `BTE-01`
+  `OC-02` -> `ADR-019` -> target-loader examples, CLI help, and `BTE-01`
 
 Test-Driven Evidence:
 

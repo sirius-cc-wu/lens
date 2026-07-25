@@ -3,19 +3,25 @@ type: "Software Design"
 title: "Lens V1 UML Design Views"
 description: "Summarizes the implemented Rust components, runtime collaboration, modules, types, and ownership relationships for V1."
 feature: "FEAT-01"
-status: "implemented"
+status: "partially superseded"
+superseded_in_part_by: "C7"
 language: "Rust"
 tags: [design, uml]
 ---
 
 # V1 UML Design Views
 
-Status: V1 implementation snapshot
+Status: V1 implementation snapshot; renderer portions superseded by C7
 
 These diagrams complement the black-box [SSD-01](ssd-01-open-markdown-target.md)
-and [SSD-02](ssd-02-open-document-root.md). They show the implemented Rust
-modules, owned state, and runtime collaborators for developer discussion. They
-do not introduce additional behavior or abstractions.
+and [SSD-02](ssd-02-open-document-root.md). They show the runtime collaborators
+and implemented Rust modules, including owned state. They do not introduce
+additional behavior or abstractions.
+
+The current server-rendering collaboration is modeled separately in the
+[server-only PlantUML rendering design](server-rendering-design.md). C7
+supersedes the renderer-specific portions of this implementation snapshot,
+while the document-root responsibilities here remain active.
 
 ## CMP-01: Component and Deployment View
 
@@ -150,18 +156,43 @@ package "target" {
 package "viewer" {
   class "viewer module" as ViewerModule <<module>> {
     +serve(target: MarkdownTarget): Result<(), anyhow::Error>
-    -router(state: Arc<ViewerState>): Router
-    -request_diagram(client, diagram): Result<Vec<u8>, anyhow::Error>
+  }
+  class "browser module" as BrowserModule <<module>> {
+    ~open_browser(url): Result<(), std::io::Error>
+    -browser_command(platform, url): BrowserCommand
+  }
+  class "routes module" as RoutesModule <<module>> {
+    ~router(state: Arc<ViewerState>): Router
+    -document_view(state, document_id, query): Response
+    -diagram(state, document_id, diagram_id): Response
+  }
+  class "page module" as PageModule <<module>> {
+    ~page(title, document, navigation): String
+    ~navigation_pane(catalog_page, current_document, route): String
+  }
+  class "rendering module" as RenderingModule <<module>> {
+    ~renderer_client(): Result<reqwest::Client, anyhow::Error>
+    ~request_diagram(client, server, diagram): Result<Vec<u8>, anyhow::Error>
+  }
+  class "state module" as StateModule <<module>> {
+    ~viewer_state(documents, initial_document, client, server): Arc<ViewerState>
+    ~watch_documents(state): ()
+  }
+  class "catalog module" as CatalogModule <<module>> {
+    ~search(request): CatalogPage
   }
   class ViewerState <<struct>> {
-    -documents: Vec<ViewerDocument>
-    -document_ids: BTreeMap<String, usize>
-    -initial_document: usize
-    -client: reqwest::Client
+    ~documents: RwLock<Vec<ViewerDocument>>
+    ~catalog: DocumentCatalog
+    ~known_documents: BTreeSet<String>
+    ~initial_document: usize
+    ~client: reqwest::Client
+    ~plantuml_server: String
   }
   class ViewerDocument <<struct>> {
-    -canonical_path: PathBuf
-    -rendered: RenderedDocument
+    ~canonical_path: PathBuf
+    ~rendered: RenderedDocument
+    ~revision: u64
   }
 }
 
@@ -191,11 +222,20 @@ Lib --> ViewerModule : re-exports function
 TargetModule --> MarkdownTarget : creates
 MarkdownTarget *-- "1..*" MarkdownDocument : owns
 ViewerModule --> MarkdownTarget : consumes
-ViewerModule --> ViewerState : creates
+ViewerModule ..> BrowserModule : opens loopback URL
+ViewerModule ..> RenderingModule : creates HTTP client
+ViewerModule ..> RoutesModule : serves router
+ViewerModule ..> StateModule : creates session and starts refresh
+RoutesModule ..> PageModule : composes responses
+RoutesModule ..> RenderingModule : requests diagrams
+RoutesModule --> ViewerState : reads session state
+StateModule --> ViewerState : creates and refreshes
+StateModule ..> MarkdownModule : renders documents
+StateModule ..> CatalogModule : builds authorized catalog
 ViewerState *-- "1..*" ViewerDocument : owns
 ViewerDocument *-- "1" RenderedDocument : owns
 ViewerState *-- "1" "reqwest::Client" : owns
-ViewerModule ..> MarkdownModule : renders documents
+PageModule ..> CatalogModule : renders catalog pages
 MarkdownModule --> RenderedDocument : creates
 RenderedDocument *-- "0..*" Diagram : owns
 MarkdownModule ..> PlantUmlModule : builds diagram URL
@@ -210,5 +250,14 @@ Rust adaptation notes:
   function-call collaboration.
 - `MarkdownTarget::into_parts(self)` consumes the target at the transition to
   the viewer, making the ownership transfer explicit.
-- There are no traits because renderer, target, and viewer variation points are
-  not open in V1.
+- `ViewerState` remains one session-owned, cross-task value behind `Arc`; its
+  document collection stays behind `RwLock`. The split does not add locks or
+  hold a lock across an `.await`.
+- The viewer module is the composition root. Route functions coordinate Axum
+  requests, while state, page, rendering, catalog, and browser modules own their
+  existing specialized behavior and tests.
+- JavaScript and CSS remain compile-time-owned data included by the page module
+  from dedicated asset files; they do not become runtime filesystem inputs.
+- There are no new traits because the viewer uses one session-configured
+  PlantUML server, and the extracted modules introduce no new runtime variation
+  point.

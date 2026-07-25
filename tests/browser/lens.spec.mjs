@@ -492,7 +492,7 @@ test("direct_file_link_outside_repository_then_returns_guidance_without_source",
   }
 });
 
-test("renderer fails before client script loads then reveals the source", async ({ page }) => {
+test("plantuml server fails before client script loads then reveals the source", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ rendererStatus: 503 });
 
@@ -522,25 +522,27 @@ test("renderer fails before client script loads then reveals the source", async 
   }
 });
 
-test("disabled renderer then preserves plantuml source without a diagram request", async ({ page }) => {
+test("document page then omits rendering status and disable control", async ({ page }) => {
   // Arrange
-  const fixture = await startBrowserFixture({ rendererMode: "disabled" });
+  const fixture = await startBrowserFixture();
 
   try {
     // Act
     await page.goto(fixture.lens.url);
 
     // Assert
-    await expect(page.locator(".diagram-disabled")).toBeVisible();
-    await expect(page.locator("img[data-diagram]")).toHaveCount(0);
-    await expect(page.locator(".diagram-source")).toContainText("Alice -> Bob: browser fixture");
-    await expect.poll(() => fixture.renderer.requests).toBe(0);
+    await expect(page.getByText("PlantUML server rendering")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Disable diagram rendering for this session" }),
+    ).toHaveCount(0);
+    await expect(page.locator(".diagram-disabled")).toHaveCount(0);
+    await expect.poll(() => fixture.renderer.requests).toBe(1);
   } finally {
     await fixture.stop();
   }
 });
 
-test("renderer failure then retry button loads the diagram", async ({ page }) => {
+test("plantuml server failure then retry button loads the diagram", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ rendererStatuses: [503, 200] });
 
@@ -564,24 +566,19 @@ test("renderer failure then retry button loads the diagram", async ({ page }) =>
   }
 });
 
-test("disable renderer control then blocks further rendering for the session", async ({ page }) => {
+test("renderer disable request then returns not found", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture();
 
   try {
     await page.goto(fixture.lens.url);
     await expect.poll(() => fixture.renderer.requests).toBe(1);
-    await expect(page.getByText("Diagram renderer: public.")).toBeVisible();
 
     // Act
-    await page.getByRole("button", { name: "Disable diagram rendering for this session" }).click();
+    const response = await page.request.post(`${fixture.lens.url}/renderer/disable`);
 
     // Assert
-    await expect(page.getByText("Diagram rendering is disabled for this viewing session.")).toBeVisible();
-    await expect(page.locator(".diagram-disabled")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Disable diagram rendering for this session" })).toHaveCount(0);
-    const diagramResponse = await page.request.get(`${fixture.lens.url}/diagrams/0/0`);
-    expect(diagramResponse.status()).toBe(503);
+    expect(response.status()).toBe(404);
     expect(fixture.renderer.requests).toBe(1);
   } finally {
     await fixture.stop();
@@ -591,7 +588,6 @@ test("disable renderer control then blocks further rendering for the session", a
 async function startBrowserFixture({
   hiddenDocument,
   readme,
-  rendererMode,
   rendererStatus,
   rendererStatuses,
   extraDocumentCount,
@@ -630,7 +626,6 @@ async function startBrowserFixture({
     lens = await startLens(
       repository,
       renderer.url,
-      rendererMode,
       targetRelativePath,
       currentDirectoryRelativePath,
       scope,
@@ -734,7 +729,6 @@ async function startRenderer({ status = 200, statuses } = {}) {
 async function startLens(
   repository,
   rendererUrl,
-  rendererMode,
   targetRelativePath,
   currentDirectoryRelativePath,
   scope,
@@ -746,9 +740,6 @@ async function startLens(
   const commandArguments = currentDirectoryRelativePath
     ? []
     : [targetRelativePath ? join(repository.directory, targetRelativePath) : repository.directory];
-  if (rendererMode) {
-    commandArguments.push("--renderer", rendererMode);
-  }
   if (scope) {
     commandArguments.push("--scope", scope);
   }

@@ -199,8 +199,8 @@ An implementation of this proposal should:
 - add unit, CLI, and browser evidence for repository-scoped directory
   navigation, target scope, and out-of-repository rejection.
 
-[ADR-018](../decisions/adr-018-repository-scoped-target-sessions.md)
-supersedes ADR-017 and the target-root selection rules in
+[ADR-019](../decisions/adr-019-repository-scoped-target-sessions.md)
+supersedes ADR-018 and the target-root selection rules in
 [ADR-003](../decisions/adr-003-document-root-discovery.md) without rewriting
 the historical E2, D1, or D2 iteration records.
 
@@ -264,7 +264,7 @@ target and follow a link into another repository directory.
 - Document-root postconditions:
   [`OC-02`](../features/markdown-viewing/oc-02-open-document-root.md)
 - Current architecture decision:
-  [`ADR-018`](../decisions/adr-018-repository-scoped-target-sessions.md)
+  [`ADR-019`](../decisions/adr-019-repository-scoped-target-sessions.md)
 - Security and scale risks: `R-03` and `R-09` in
   [`docs/risk-list.md`](../risk-list.md)
 - D1 elaboration result:

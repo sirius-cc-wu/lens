@@ -34,8 +34,8 @@ Risks Addressed:
 
 Artifacts to Start:
 
-- `ADR-018`, repository-scoped target sessions:
-  [`docs/decisions/adr-018-repository-scoped-target-sessions.md`](../decisions/adr-018-repository-scoped-target-sessions.md) -
+- `ADR-019`, repository-scoped target sessions:
+  [`docs/decisions/adr-019-repository-scoped-target-sessions.md`](../decisions/adr-019-repository-scoped-target-sessions.md) -
   records the unified default scope, explicit override, and initial-selection
   anchor.
 
@@ -50,9 +50,9 @@ Artifacts to Refine:
   [`docs/features/markdown-viewing/oc-02-open-document-root.md`](../features/markdown-viewing/oc-02-open-document-root.md) -
   define observable root selection, the target scope option, and directory
   initial-selection behavior.
-- `ADR-003` and `ADR-017`:
+- `ADR-003` and `ADR-018`:
   [`docs/decisions/adr-003-document-root-discovery.md`](../decisions/adr-003-document-root-discovery.md) and
-  [`docs/decisions/adr-017-repository-scoped-direct-file-sessions.md`](../decisions/adr-017-repository-scoped-direct-file-sessions.md) -
+  [`docs/decisions/adr-018-repository-scoped-direct-file-sessions.md`](../decisions/adr-018-repository-scoped-direct-file-sessions.md) -
   preserve the historical decisions while pointing to their successor.
 - Glossary, supplementary specification, risk list, and documentation index:
   [`docs/glossary.md`](../glossary.md),
@@ -87,7 +87,7 @@ Decisions to Record:
 Trace:
 
 - Product feedback -> `FEAT-01` (`UC-02` through `UC-04`) -> `SSD-02` ->
-  `OC-02` -> `ADR-018` -> D4 target-loader, CLI, and compiled-browser checks
+  `OC-02` -> `ADR-019` -> D4 target-loader, CLI, and compiled-browser checks
 
 Exit Criteria:
 
@@ -102,7 +102,7 @@ Exit Criteria:
 
 Results:
 
-- Accepted ADR-018, superseding the target-root rules in ADR-003 and ADR-017.
+- Accepted ADR-019, superseding the target-root rules in ADR-003 and ADR-018.
 - Unified repository recognition across all target kinds and retained a
   visible `--scope target` compatibility and privacy boundary.
 - Defined the selected directory as an initial-selection anchor, including a
@@ -116,10 +116,10 @@ Results:
 
 Artifact Outcomes:
 
-- started: `ADR-018`, repository-scoped target sessions - records the new
+- started: `ADR-019`, repository-scoped target sessions - records the new
   default and explicit narrow mode.
 - refined: proposal, `FEAT-01`, `SSD-02`, and `OC-02` - define the broadened
   behavior and executable construction oracles.
-- refined: `ADR-003` and `ADR-017` - retain history and point to ADR-018.
+- refined: `ADR-003` and `ADR-018` - retain history and point to ADR-019.
 - refined: glossary, supplementary specification, `R-03`, `R-09`, and index -
   align terminology, constraints, risks, and navigation.

@@ -13,9 +13,6 @@ struct Arguments {
 
     #[arg(long, value_enum, default_value_t = lens::TargetScope::Repository)]
     scope: lens::TargetScope,
-
-    #[arg(long, value_enum, default_value_t = lens::RendererMode::Public)]
-    renderer: lens::RendererMode,
 }
 
 #[tokio::main]
@@ -23,5 +20,5 @@ async fn main() -> anyhow::Result<()> {
     let arguments = Arguments::parse();
     let target =
         lens::load_markdown_target_with_scope(arguments.target.as_deref(), arguments.scope)?;
-    lens::serve(target, arguments.renderer).await
+    lens::serve(target).await
 }

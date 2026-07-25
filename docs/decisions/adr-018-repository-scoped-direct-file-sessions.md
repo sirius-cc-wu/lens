@@ -1,24 +1,24 @@
 ---
 type: "Architecture Decision"
-title: "ADR-017: Scope Direct-File Sessions to the Nearest Repository"
+title: "ADR-018: Scope Direct-File Sessions to the Nearest Repository"
 description: "Selects the nearest recognized Git repository as the fixed document root for a directly opened supported file."
-id: "ADR-017"
+id: "ADR-018"
 status: "superseded"
 date: "2026-07-24"
 tags: [architecture, decision, navigation, security]
 ---
 
-# ADR-017: Scope Direct-File Sessions to the Nearest Repository
+# ADR-018: Scope Direct-File Sessions to the Nearest Repository
 
 Status: superseded by
-[ADR-018](adr-018-repository-scoped-target-sessions.md)
+[ADR-019](adr-019-repository-scoped-target-sessions.md)
 
 Date: 2026-07-24
 
 Partially supersedes
 [ADR-003](adr-003-document-root-discovery.md) for direct-file root selection.
 
-ADR-018 later applies repository-root selection to directory and
+ADR-019 later applies repository-root selection to directory and
 current-directory targets and replaces the implicit narrow-directory behavior
 with an explicit scope option. The decision below remains the historical D1
 direct-file decision.

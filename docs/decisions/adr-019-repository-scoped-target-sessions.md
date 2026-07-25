@@ -1,26 +1,26 @@
 ---
 type: "Architecture Decision"
-title: "ADR-018: Scope Repository Targets to the Nearest Repository"
+title: "ADR-019: Scope Repository Targets to the Nearest Repository"
 description: "Uses the nearest recognized Git repository as the default document root for file, directory, and current-directory targets."
-id: "ADR-018"
+id: "ADR-019"
 status: "accepted"
 date: "2026-07-24"
 tags: [architecture, decision, navigation, security]
 ---
 
-# ADR-018: Scope Repository Targets to the Nearest Repository
+# ADR-019: Scope Repository Targets to the Nearest Repository
 
 Status: accepted
 
 Date: 2026-07-24
 
-Supersedes [ADR-017](adr-017-repository-scoped-direct-file-sessions.md) and the
+Supersedes [ADR-018](adr-018-repository-scoped-direct-file-sessions.md) and the
 target-root selection rules in
 [ADR-003](adr-003-document-root-discovery.md).
 
 ## Context
 
-ADR-017 broadened only a directly opened file to the nearest repository.
+ADR-018 broadened only a directly opened file to the nearest repository.
 Directory and current-directory targets remained exact filesystem boundaries.
 That distinction is not visible in the repository's Markdown links: running
 `lens docs/iterations` leaves valid links to `docs/features` unavailable even
@@ -45,7 +45,7 @@ parent.
 
 In target scope, Lens does not broaden through repository recognition. A
 directory or current-directory target is the document root, and a supported
-file's parent is the document root. This mode preserves the pre-ADR-017
+file's parent is the document root. This mode preserves the pre-ADR-018
 boundary explicitly.
 
 The original target remains the initial-selection anchor:

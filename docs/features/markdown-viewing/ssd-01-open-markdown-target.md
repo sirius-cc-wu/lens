@@ -1,7 +1,7 @@
 ---
 type: "System Sequence Diagram"
 title: "SSD-01: Open a Markdown Target"
-description: "Shows the developer, browser, Lens, and PlantUML renderer interactions for opening one Markdown target."
+description: "Shows the developer, browser, Lens, and session-configured PlantUML server interactions for opening one Markdown target."
 id: "SSD-01"
 use_case: "UC-01"
 scenario: "Open a readable Markdown file containing one or more PlantUML blocks."
@@ -20,14 +20,14 @@ Actors:
 
 - Developer or technical writer
 - Operating system browser
-- PlantUML public server
+- Configured PlantUML server
 
 ```plantuml
 @startuml
 actor Developer
 participant ":Lens" as Lens
 actor Browser
-participant "PlantUML public server" as PlantUML
+participant "Configured PlantUML server" as PlantUML
 
 Developer -> Lens: open_markdown_target(target_path)
 Lens --> Developer: view_url
@@ -52,13 +52,17 @@ System Events:
 Discovered System Operations:
 
 - `open_markdown_target(target_path)`: resolve one Markdown file, create a
-  local viewing session, and make its local URL available.
+  local viewing session with one fixed PlantUML server, and make its local URL
+  available.
 - `request_document_view()`: return the selected document with Markdown
   rendered and recognized PlantUML blocks represented as diagrams.
-- `request_diagram(diagram_id)`: retrieve one selected diagram from the public
-  renderer without exposing an arbitrary file or URL request surface.
+- `request_diagram(diagram_id)`: retrieve one selected diagram from the
+  session-fixed PlantUML server without exposing an arbitrary file or URL
+  request surface. See [OC-05](oc-05-request-diagram.md).
 
 Extension: If target validation fails, `open_markdown_target(target_path)`
 returns an actionable error and creates no viewing session. If diagram rendering
 fails, `request_diagram(diagram_id)` returns a rendering failure; the browser
-keeps the original PlantUML source visible.
+keeps the original PlantUML source visible and Lens does not contact a fallback
+server. Passing the removed `--renderer` argument fails before
+`open_markdown_target(target_path)` occurs.

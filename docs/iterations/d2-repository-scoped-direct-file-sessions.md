@@ -61,18 +61,18 @@ Artifacts Consulted:
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - `OC-02`, root-selection postconditions:
   [`docs/features/markdown-viewing/oc-02-open-document-root.md`](../features/markdown-viewing/oc-02-open-document-root.md)
-- `ADR-017`, repository-scoped direct-file sessions:
-  [`docs/decisions/adr-017-repository-scoped-direct-file-sessions.md`](../decisions/adr-017-repository-scoped-direct-file-sessions.md)
+- `ADR-018`, repository-scoped direct-file sessions:
+  [`docs/decisions/adr-018-repository-scoped-direct-file-sessions.md`](../decisions/adr-018-repository-scoped-direct-file-sessions.md)
 
 Decisions to Record:
 
-- None. D2 implements ADR-017 without changing its selected boundary or
+- None. D2 implements ADR-018 without changing its selected boundary or
   alternatives.
 
 Trace:
 
 - Proposal -> `FEAT-01` (`UC-02` through `UC-04`) -> `SSD-02` -> `OC-02` ->
-  `ADR-017` -> target-loader examples and `BTE-01`
+  `ADR-018` -> target-loader examples and `BTE-01`
 
 Test-Driven Evidence:
 

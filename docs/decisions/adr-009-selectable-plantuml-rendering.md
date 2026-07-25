@@ -3,14 +3,15 @@ type: "Architecture Decision"
 title: "ADR-009: Select a PlantUML Renderer per Viewing Session"
 description: "Defines public, local, and disabled PlantUML renderer choices fixed for each viewing session."
 id: "ADR-009"
-status: "accepted"
+status: "superseded"
+superseded_by: "ADR-017"
 date: "2026-07-19"
 tags: [architecture, decision, plantuml]
 ---
 
 # ADR-009: Select a PlantUML Renderer per Viewing Session
 
-Status: accepted
+Status: superseded by ADR-017
 
 Date: 2026-07-19
 
@@ -52,3 +53,4 @@ failed, or invalid local command follows the existing per-diagram failure path.
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - Risk: `R-01` in [`docs/risk-list.md`](../risk-list.md)
 - Iteration: [`P1`](../iterations/p1-local-plantuml-rendering.md)
+- Successor: [ADR-017](adr-017-session-plantuml-server.md)

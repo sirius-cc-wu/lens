@@ -42,5 +42,8 @@ Open Issues:
 
 - `UC-02` and `UC-03` will define the target-root and navigation rules for
   directories. This contract intentionally authorizes only one Markdown file.
-- `request_diagram(diagram_id)` needs a separate contract if caching or retry
-  behavior becomes a durable product decision.
+
+Related Contract:
+
+- [`OC-05`](oc-05-request-diagram.md) defines the fixed-server,
+  visible-failure, and retry guarantees for `request_diagram(diagram_id)`.
