@@ -123,3 +123,6 @@ visibility are the relevant rules.
 - Risks: [`R-02`, `R-03`, and `R-04`](../risk-list.md)
 - Design iteration:
   [`D5`](../iterations/d5-validated-vscode-source-link-design.md)
+- Construction iterations:
+  [`C8`](../iterations/c8-source-link-authorization.md) and
+  [`C9`](../iterations/c9-accessible-source-link-handoff.md)

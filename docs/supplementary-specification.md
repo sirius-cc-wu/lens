@@ -36,6 +36,10 @@ does not prescribe the implementation architecture.
   nested and unknown values structurally, accepts `---` or `...` as the
   closing delimiter, and presents an actionable error without hiding the body
   when the header is malformed.
+- A relative link to a qualifying visible regular file inside the fixed
+  document root is rendered as a percent-encoded stable `vscode:` URL with a
+  visible and accessible editor-handoff indication. Known Markdown and
+  PlantUML documents retain Lens navigation.
 - Lens must not collect telemetry or require an account for the initial release.
 
 ## Automated Browser Verification
@@ -47,6 +51,9 @@ does not prescribe the implementation architecture.
   through the same supported session-configuration path available to users.
   When the normalized value is empty, Lens uses the public server defined by
   ADR-017.
+- Browser checks inspect generated source-link destinations and accessible
+  names without selecting the external scheme or requiring VS Code to be
+  installed.
 
 ## Rendering and Resilience
 
@@ -76,6 +83,10 @@ does not prescribe the implementation architecture.
   `--scope target` preserves an explicit directory or file-parent boundary.
 - A viewing session serves only its discovered document set. Symbolic links and
   hidden files and directories found during discovery are excluded.
+- Lens-generated editor links reuse the canonical session root and require a
+  readable, visible, non-symbolic regular file. No browser route accepts a
+  source path or serves source contents, and Lens does not launch an editor
+  process.
 - The browser view does not accept repository writes, PlantUML server
   configuration, or a route that changes diagram-rendering state.
 - Failure of a configured PlantUML server must not send the same source to the

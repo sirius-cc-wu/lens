@@ -10,7 +10,7 @@ tags: [requirements, use-case]
 
 # FEAT-01: View Markdown with PlantUML
 
-Status: implemented and refined through D5
+Status: implemented and refined through C9
 
 ## Actors
 

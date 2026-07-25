@@ -29,6 +29,7 @@ pub fn render(
     let mut events = Vec::new();
     let mut diagrams = Vec::new();
     let mut plantuml_source: Option<String> = None;
+    let mut source_link_stack = Vec::new();
 
     for event in parser {
         if let Some(source) = plantuml_source.as_mut() {
@@ -57,18 +58,27 @@ pub fn render(
                 plantuml_source = Some(String::new());
             }
             Event::Start(Tag::Link(link_type, destination, title)) => {
+                let resolved = resolve_link(
+                    &destination,
+                    current_document,
+                    current_document_path,
+                    known_documents,
+                    source_links,
+                );
+                source_link_stack.push(resolved.opens_in_vscode);
                 events.push(Event::Start(Tag::Link(
                     link_type,
-                    resolve_link(
-                        &destination,
-                        current_document,
-                        current_document_path,
-                        known_documents,
-                        source_links,
-                    )
-                    .into(),
+                    resolved.destination.into(),
                     title,
                 )));
+            }
+            Event::End(Tag::Link(link_type, destination, title)) => {
+                if source_link_stack.pop().unwrap_or(false) {
+                    events.push(Event::Html(
+                        r#"<span class="source-link-indicator"> (opens in VS Code)</span>"#.into(),
+                    ));
+                }
+                events.push(Event::End(Tag::Link(link_type, destination, title)));
             }
             Event::Start(Tag::Table(alignments)) => {
                 let width_class = if alignments.len() >= 4 {
@@ -278,27 +288,45 @@ fn diagram_placeholder(document_id: usize, diagram_id: usize, source: &str) -> S
     )
 }
 
+struct ResolvedLink {
+    destination: String,
+    opens_in_vscode: bool,
+}
+
 fn resolve_link(
     destination: &str,
     current_document: &str,
     current_document_path: &Path,
     known_documents: &BTreeSet<String>,
     source_links: &SourceLinkResolver,
-) -> String {
+) -> ResolvedLink {
     let (path, suffix) = split_link_suffix(destination);
     if path.is_empty() {
-        return destination.to_owned();
+        return ResolvedLink {
+            destination: destination.to_owned(),
+            opens_in_vscode: false,
+        };
     }
 
     if let Some(candidate) = normalize_relative_link(current_document, path) {
         if known_documents.contains(&candidate) {
-            return format!("/documents/{candidate}{suffix}");
+            return ResolvedLink {
+                destination: format!("/documents/{candidate}{suffix}"),
+                opens_in_vscode: false,
+            };
         }
     }
 
-    source_links
-        .resolve(current_document_path, path)
-        .unwrap_or_else(|| destination.to_owned())
+    match source_links.resolve(current_document_path, path) {
+        Some(destination) => ResolvedLink {
+            destination,
+            opens_in_vscode: true,
+        },
+        None => ResolvedLink {
+            destination: destination.to_owned(),
+            opens_in_vscode: false,
+        },
+    }
 }
 
 fn split_link_suffix(destination: &str) -> (&str, &str) {
@@ -414,6 +442,7 @@ mod tests {
         assert!(document
             .html
             .contains("href=\"/documents/README.md#install\""));
+        assert!(!document.html.contains("source-link-indicator"));
     }
 
     #[test]
@@ -430,6 +459,7 @@ mod tests {
         assert!(document
             .html
             .contains("href=\"/documents/architecture.puml\""));
+        assert!(!document.html.contains("source-link-indicator"));
     }
 
     #[test]
@@ -465,6 +495,9 @@ mod tests {
         // Assert
         assert!(document.html.contains("href=\"vscode://file/"));
         assert!(document.html.contains("/src/lib.rs\""));
+        assert!(document
+            .html
+            .contains(r#"<span class="source-link-indicator"> (opens in VS Code)</span>"#));
         assert!(!document.html.contains("#L10"));
         fs::remove_dir_all(root).expect("source-link fixture should be removable");
     }

@@ -41,7 +41,9 @@ current-directory targets, explicit target-scoped guidance without source
 disclosure, outside-repository guidance without source disclosure, a
 persistently collapsible navigation pane, submitted and no-JavaScript paginated
 identifier search, automatic refresh after a saved change, 404 guidance for an
-undiscovered document, and visible PlantUML success and failure behavior.
+undiscovered document, accessible VS Code destinations only for qualifying
+source links, preserved document and rejected-link destinations, absent source
+routes, and visible PlantUML success and failure behavior.
 
 ## Installation Check
 
@@ -120,6 +122,32 @@ Expected results:
 - A link to the file outside the repository shows the Lens guidance page and
   does not disclose its source.
 
+## VS Code Source-Link Checks
+
+From a disposable repository containing `docs/design.md`, `src/example.rs`, a
+source filename with a space, a hidden file, a symbolic link, a directory, a
+missing target, a Markdown document, and an outside file:
+
+```bash
+cargo build --locked
+lens <disposable-repository>
+```
+
+Expected results:
+
+- Qualifying regular-file links visibly state **(opens in VS Code)**. Selecting
+  them may show browser confirmation and then opens the canonical file in the
+  stable VS Code installation, including the filename containing a space.
+- The Markdown document opens through Lens. Hidden, symbolic, directory,
+  missing, absolute, and out-of-root targets receive no generated `vscode:`
+  destination and expose no source through Lens.
+- Hovering a source link and refreshing a changed Markdown document do not open
+  an editor. The Lens page remains usable after every selection.
+- If the `vscode:` handler is unavailable, the browser reports that failure
+  without preventing Lens from rendering or continuing to serve the document.
+- VS Code Insiders is not selected automatically because it uses the distinct
+  `vscode-insiders:` scheme.
+
 ## Rendering Checks
 
 Open a document containing a valid PlantUML block and one with invalid PlantUML.
@@ -141,7 +169,9 @@ Expected results:
 - Linux, macOS, and Windows launch their default browser through `xdg-open`,
   `open`, and `cmd /C start` respectively. A launch failure still prints the
   loopback URL for manual opening.
-- Documentation-only: source-code browsing is not part of V1.
+- Documentation-only HTTP surface: Lens does not serve source-code contents;
+  qualifying local links may hand a validated path to the optional stable VS
+  Code URL handler.
 - The public PlantUML server is the default, and `LENS_PLANTUML_SERVER` fixes a
   replacement server for the full session. Local-command and disabled rendering
   modes are not supported.

@@ -8,6 +8,24 @@ tags: [release]
 
 # Pending Lens Release Notes
 
+## Open Repository File Links in VS Code
+
+Relative links to existing visible regular files inside the viewing session's
+fixed document root now open their canonical local path through VS Code's
+stable `vscode:` URL handler. Generated links visibly state
+**(opens in VS Code)** and correctly encode spaces and non-ASCII path text.
+
+Known Markdown and PlantUML documents continue to open inside Lens. Hidden,
+symbolic, missing, directory, absolute, and out-of-root targets receive no
+generated editor URL. Lens adds no source-content route and launches no editor
+process.
+
+VS Code remains optional, and a browser may request confirmation before opening
+it. The separate `vscode-insiders:` scheme is not selected automatically. See
+the [README source-link guidance](../README.md#vs-code-source-links),
+[ADR-020](decisions/adr-020-validated-vscode-source-links.md), and the
+[C9 transition record](iterations/c9-accessible-source-link-handoff.md).
+
 ## Breaking: One PlantUML Server per Viewing Session
 
 Lens now has one server-based PlantUML rendering path. The command-line

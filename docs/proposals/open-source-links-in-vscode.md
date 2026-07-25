@@ -3,13 +3,20 @@ type: "Improvement Proposal"
 title: "Open Source-File Links in Visual Studio Code"
 description: "Rewrites validated repository file links so selecting one opens the local file in Visual Studio Code without serving its contents through Lens."
 id: "PROP-OPEN-SOURCE-LINKS-IN-VSCODE"
-status: "accepted"
+status: "implemented"
 tags: [proposal, navigation, source-code, vscode]
 ---
 
 # Open Source-File Links in Visual Studio Code
 
-Status: accepted for construction in D5
+Status: implemented through D5, C8, and C9
+
+Implementation trace:
+
+- [ADR-020: Emit validated VS Code source links](../decisions/adr-020-validated-vscode-source-links.md)
+- [D5 design iteration](../iterations/d5-validated-vscode-source-link-design.md)
+- [C8 authorization iteration](../iterations/c8-source-link-authorization.md)
+- [C9 transition iteration](../iterations/c9-accessible-source-link-handoff.md)
 
 ## Summary
 
