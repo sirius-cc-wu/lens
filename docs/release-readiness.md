@@ -36,12 +36,14 @@ Expected result: the suite builds Lens with Cargo, starts Cargo's reported
 executable against a temporary documentation repository, uses the installed
 Google Chrome channel in headless mode, and completes without contacting the
 public PlantUML service. It verifies rendered Markdown, navigation to a
-discovered document, repository-scoped navigation from file, directory, and
-current-directory targets, explicit target-scoped guidance without source
-disclosure, outside-repository guidance without source disclosure, a
-persistently collapsible navigation pane, submitted and no-JavaScript paginated
-identifier search, automatic refresh after a saved change, 404 guidance for an
-undiscovered document, and visible PlantUML success and failure behavior.
+discovered document through an authored link, browser Back history,
+repository-scoped navigation from file, directory, and current-directory
+targets, explicit target-scoped guidance without source disclosure,
+outside-repository guidance without source disclosure, narrow and wide
+single-column layout without navigation controls or storage, inert former
+`query` and `page` parameters, automatic refresh after a saved change, 404
+guidance for an undiscovered document, and visible direct-target,
+known-document-route, success, and failure behavior for PlantUML.
 
 ## Installation Check
 
@@ -119,6 +121,42 @@ Expected results:
   returns guidance for that cross-directory link.
 - A link to the file outside the repository shows the Lens guidance page and
   does not disclose its source.
+
+## Focused Review Checks
+
+Prepare a repository with a root `README`, an unlinked nested Markdown
+document, two Markdown documents that link to each other, a standalone `.puml`
+file, a hidden document, and a symbolic-link document.
+
+Start Lens with paths selected by a coding agent or shell:
+
+```bash
+lens path/to/linked-document.md
+lens path/to/unlinked-document.md
+lens path/to/diagram.puml
+lens --scope target path/to/linked-document.md
+```
+
+An optional POSIX-shell composition such as
+`lens "$(fd --type file --full-path '<file-pattern>' .)"` is valid only when
+the selector returns exactly one path. `fd` is not a Lens dependency.
+
+Expected results:
+
+- The selected document opens first in one reading column at narrow and wide
+  viewports. No catalog, search form, pagination, current-result marker, pane
+  control, collapsed attribute, or navigation browser-storage value appears.
+- Authored Markdown links work within the discovered scope, browser Back
+  returns to the prior document, and the unlinked document opens through a new
+  direct invocation.
+- The standalone `.puml` target and its known document URL render one diagram.
+- A known document URL with former `query` and `page` parameters returns the
+  same document response as the URL without them.
+- Unknown, hidden, symbolic-link, traversal, and out-of-root identifiers return
+  Lens-owned guidance without exposing source.
+- Repository scope retains repository links; `--scope target` retains the
+  narrower filesystem boundary. Saving the displayed document still refreshes
+  the page, and diagram failure/retry remains per diagram.
 
 ## Rendering Checks
 

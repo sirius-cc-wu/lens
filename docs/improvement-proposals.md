@@ -32,17 +32,18 @@ manual checks supplement, rather than replace, the automated checks in
 
 Define performance budgets, meaning maximum acceptable time and resource use,
 for repositories containing 1,000 and 10,000 discovered documents. Measure
-startup discovery time, idle refresh work, memory use, and catalog-search
-latency before selecting an optimization.
+startup discovery time, initial-response time, idle refresh work, and memory
+use before selecting an optimization.
 
 Current discovery reads every supported document eagerly, automatic refresh
-rereads every known document every 500 milliseconds, and each catalog search
-scans the complete identifier set. Candidate changes include checking file
-metadata before reading content, retaining normalized search keys, completing a
-search count and result page in one traversal, and using filesystem events.
-Any event-based design must filter changes through the immutable set of
-canonical document paths authorized when the session starts. Add repeatable
-performance fixtures and record the accepted budgets as release evidence.
+rereads every known document every 500 milliseconds, and session creation keeps
+both rendered documents and fixed authorization identifiers in memory.
+Candidate changes include checking file metadata before reading content,
+rendering the initial document before the rest of the set when authorization
+allows it, and using filesystem events. Any event-based design must filter
+changes through the immutable set of canonical document paths authorized when
+the session starts. Add repeatable performance fixtures and record the accepted
+budgets as release evidence.
 
 ### Manual end-to-end test
 
@@ -53,21 +54,22 @@ This proposal is not implemented.
   system, processor, memory, and storage. Close other Lens sessions.
 - **Actions:** Start Lens at least 20 times on each repository and record time
   until the first page responds and peak memory use. For one run, record idle
-  CPU and file activity for 60 seconds. Submit each matching, non-matching,
-  first-page, and last-page search at least 20 times. Add and change files
-  outside the document paths authorized at startup.
+  CPU and file activity for 60 seconds. Open several known document routes and
+  save the displayed document repeatedly. Add and change files outside the
+  document paths authorized at startup.
 - **Expected result:** Report the median and the threshold met by 95 percent of
-  samples (95th percentile) for startup and search time, plus peak resident
-  memory (RSS) and idle work. Every result stays within the recorded budgets,
-  the browser remains responsive, and out-of-session changes never appear.
+  samples (95th percentile) for startup and known-document response time, plus
+  peak resident memory (RSS) and idle work. Every result stays within the
+  recorded budgets, the browser remains responsive, and out-of-session changes
+  never appear.
 
 ## 15. Bounded and Adversarial Input Handling
 
 Define explicit limits for document size, discovered document count, directory
 depth, and YAML frontmatter nesting. When a repository exceeds a limit, report
 the affected resource and corrective action instead of allowing unbounded
-startup memory or parsing work. Keep the existing query-size and diagram-output
-limits consistent with this policy.
+startup memory or parsing work. Keep the existing diagram-output limit
+consistent with this policy.
 
 Add adversarial tests, meaning tests built from malicious or unusually extreme
 input, for relative-path traversal, percent-encoded and Unicode identifiers,

@@ -53,8 +53,8 @@ Artifacts to Refine:
 
 Artifacts Consulted:
 
-- Navigation-pane removal proposal:
-  [`docs/proposals/remove-document-navigation-pane.md`](../proposals/remove-document-navigation-pane.md)
+- Navigation-pane removal proposal, retired after implementation in R3; its
+  durable outcome is ADR-020.
 - `FEAT-01`, safe authored Markdown navigation:
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - `ADR-003`, document-root discovery:

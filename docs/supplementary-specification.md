@@ -57,9 +57,10 @@ does not prescribe the implementation architecture.
   new source or changing its destination.
 - Rendered diagrams should preserve aspect ratio and fit within the document
   viewport without horizontal stretching.
-- A user can hide and restore the document navigation pane with an accessible
-  control. That presentation preference lasts only in the current browser tab
-  and does not alter the viewing session's authorized documents or routes.
+- Every successful document response uses one document-focused reading column
+  at narrow and wide viewports. Generic document discovery and selection happen
+  before Lens starts; authored links and browser history remain available
+  within the fixed viewing session.
 - Target errors and rendering errors identify the affected path or diagram and
   provide a next action where possible.
 - A PlantUML request times out after 10 seconds. Lens rejects a server
@@ -75,7 +76,9 @@ does not prescribe the implementation architecture.
   selects the nearest recognized repository by default, while
   `--scope target` preserves an explicit directory or file-parent boundary.
 - A viewing session serves only its discovered document set. Symbolic links and
-  hidden files and directories found during discovery are excluded.
+  hidden files and directories found during discovery are excluded. Document
+  and revision routes resolve only identifiers from that fixed set, even though
+  Lens does not expose the set as a searchable catalog.
 - The browser view does not accept repository writes, PlantUML server
   configuration, or a route that changes diagram-rendering state.
 - Failure of a configured PlantUML server must not send the same source to the
@@ -86,6 +89,6 @@ does not prescribe the implementation architecture.
 - A single ordinary repository Markdown document should become readable without
 perceptible unnecessary work. Quantitative limits will be set from `E1`
 measurements rather than guessed in inception.
-- Navigation search uses only the active session's authorized document
-  identifiers. A submitted query is at most 256 UTF-8 bytes and each response
-  contains at most 50 result links; typing alone does not issue a request.
+- Discovery and automatic refresh work should remain practical for ordinary
+  repositories. Quantitative document-count, startup, memory, and idle-refresh
+  limits require the repeatable measurements proposed in improvement 14.

@@ -44,6 +44,26 @@ lens --scope target docs/features/markdown-viewing
 LENS_PLANTUML_SERVER=http://127.0.0.1:8080/plantuml lens docs
 ```
 
+Lens is a focused human-review surface. A coding agent can locate a relevant
+document with repository context and start Lens with that known path:
+
+```bash
+lens docs/features/markdown-viewing/use-cases.md
+```
+
+A user working directly in a POSIX shell can compose Lens with a preferred file
+finder:
+
+```bash
+lens "$(fd --type file --full-path '<file-pattern>' .)"
+```
+
+The shell replaces the `fd` expression with its output before Lens starts
+(shell command substitution). The command must produce exactly one path because
+Lens accepts one optional positional target. `fd` is only an example; Lens does
+not install, invoke, or require it, and the file finder's root, matching, and
+ignore behavior remain user-managed.
+
 By default, a current-directory, directory, Markdown, or `.puml` target inside
 a Git repository uses the nearest enclosing repository as its document root. A
 directory or current-directory target outside a recognized repository remains
@@ -60,18 +80,18 @@ selection.
 Lens discovers `.md`, `.markdown`, and `.puml` files under the document root.
 It excludes hidden entries and symbolic links. Relative Markdown links resolve
 only when their target is a discovered Markdown document; all other local paths
-receive a Lens guidance page without filesystem access. A standalone `.puml`
-file appears in the same navigation pane and renders as one diagram.
+receive a Lens guidance page without filesystem access. Authored links and
+browser history support review of meaningful document relationships. To review
+an unlinked document, start Lens with that document as the target. A standalone
+`.puml` file renders as one diagram when selected directly or requested through
+its known document URL during the active session.
 
 A repository-scoped session reads supported visible documents throughout that
-repository during discovery and refresh. Use `--scope target` when the viewing
-session should remain limited to the selected directory, current directory, or
-selected file's parent.
-
-Use **Hide documents** to give the current document more room, and **Show
-documents** to restore the pane. Lens remembers that choice while the same
-browser tab views documents from the current loopback session; it does not
-change which documents are available.
+repository during discovery and refresh. The fixed discovered set authorizes
+known document routes and relative Markdown links even though Lens does not
+display it as a catalog. Use `--scope target` when the viewing session should
+remain limited to the selected directory, current directory, or selected
+file's parent.
 
 ### Hidden directories
 

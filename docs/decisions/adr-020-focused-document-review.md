@@ -99,10 +99,13 @@ for the active session.
 
 ## Trace
 
-- Proposal: remove the document navigation pane (retired after R3 transition)
+- Origin: implemented navigation-pane removal proposal, deleted after R3
+  transition
 - Elaboration: [R1 focused document review boundary](../iterations/r1-focused-document-review-boundary.md)
 - Construction:
   [R2 remove the document navigation pane](../iterations/r2-remove-document-navigation-pane.md)
+- Transition:
+  [R3 focused document review transition](../iterations/r3-focused-document-review-transition.md)
 - Preserved authorization: [ADR-003](adr-003-document-root-discovery.md)
 - Preserved session scope: [ADR-019](adr-019-repository-scoped-target-sessions.md)
 - Preserved authored links: `UC-04` in
