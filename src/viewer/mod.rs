@@ -17,9 +17,10 @@ use state::{viewer_state, watch_documents};
 use crate::target::MarkdownTarget;
 
 pub async fn serve(target: MarkdownTarget) -> Result<()> {
-    let (documents, initial_document) = target.into_parts();
+    let (document_root, documents, initial_document) = target.into_parts();
     let initial_path = documents[initial_document].canonical_path.clone();
     let state = viewer_state(
+        document_root,
         documents,
         initial_document,
         renderer_client()?,

@@ -585,6 +585,7 @@ dependencies = [
  "futures-util",
  "idna_adapter",
  "indexmap",
+ "percent-encoding",
  "pulldown-cmark",
  "reqwest",
  "serde_yaml",

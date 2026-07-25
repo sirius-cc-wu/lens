@@ -23,6 +23,7 @@ pub(crate) enum DocumentKind {
 
 #[derive(Debug)]
 pub struct MarkdownTarget {
+    document_root: PathBuf,
     documents: Vec<MarkdownDocument>,
     initial_document: usize,
 }
@@ -40,8 +41,8 @@ enum InitialSelection {
 }
 
 impl MarkdownTarget {
-    pub(crate) fn into_parts(self) -> (Vec<MarkdownDocument>, usize) {
-        (self.documents, self.initial_document)
+    pub(crate) fn into_parts(self) -> (PathBuf, Vec<MarkdownDocument>, usize) {
+        (self.document_root, self.documents, self.initial_document)
     }
 }
 
@@ -134,6 +135,7 @@ pub fn load_markdown_target_with_scope(
         .expect("a non-empty document set must have an initial document");
 
     Ok(MarkdownTarget {
+        document_root,
         documents,
         initial_document,
     })
@@ -506,6 +508,10 @@ mod tests {
         let target = load_markdown_target(Some(&selected)).expect("Markdown file should load");
 
         // Assert
+        assert_eq!(
+            target.document_root,
+            fs::canonicalize(&repository).expect("repository root should canonicalize")
+        );
         assert_target(
             &target,
             1,

@@ -1,5 +1,6 @@
 mod markdown;
 mod plantuml;
+mod source_link;
 mod target;
 mod viewer;
 

@@ -1,7 +1,9 @@
-use std::{collections::BTreeSet, fmt::Write as _};
+use std::{collections::BTreeSet, fmt::Write as _, path::Path};
 
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag};
 use serde_yaml::{Mapping, Value};
+
+use crate::source_link::{normalize_relative_link, SourceLinkResolver};
 
 #[derive(Clone, Debug)]
 pub struct Diagram {
@@ -18,7 +20,9 @@ pub fn render(
     markdown: &str,
     document_id: usize,
     current_document: &str,
+    current_document_path: &Path,
     known_documents: &BTreeSet<String>,
+    source_links: &SourceLinkResolver,
 ) -> RenderedDocument {
     let frontmatter = frontmatter(markdown);
     let parser = Parser::new_ext(frontmatter.body, Options::all());
@@ -55,7 +59,14 @@ pub fn render(
             Event::Start(Tag::Link(link_type, destination, title)) => {
                 events.push(Event::Start(Tag::Link(
                     link_type,
-                    resolve_document_link(&destination, current_document, known_documents).into(),
+                    resolve_link(
+                        &destination,
+                        current_document,
+                        current_document_path,
+                        known_documents,
+                        source_links,
+                    )
+                    .into(),
                     title,
                 )));
             }
@@ -267,24 +278,27 @@ fn diagram_placeholder(document_id: usize, diagram_id: usize, source: &str) -> S
     )
 }
 
-fn resolve_document_link(
+fn resolve_link(
     destination: &str,
     current_document: &str,
+    current_document_path: &Path,
     known_documents: &BTreeSet<String>,
+    source_links: &SourceLinkResolver,
 ) -> String {
     let (path, suffix) = split_link_suffix(destination);
-    if path.is_empty() || !is_markdown_path(path) {
+    if path.is_empty() {
         return destination.to_owned();
     }
 
-    let Some(candidate) = normalize_document_path(current_document, path) else {
-        return destination.to_owned();
-    };
-    if known_documents.contains(&candidate) {
-        format!("/documents/{candidate}{suffix}")
-    } else {
-        destination.to_owned()
+    if let Some(candidate) = normalize_relative_link(current_document, path) {
+        if known_documents.contains(&candidate) {
+            return format!("/documents/{candidate}{suffix}");
+        }
     }
+
+    source_links
+        .resolve(current_document_path, path)
+        .unwrap_or_else(|| destination.to_owned())
 }
 
 fn split_link_suffix(destination: &str) -> (&str, &str) {
@@ -295,36 +309,6 @@ fn split_link_suffix(destination: &str) -> (&str, &str) {
         Some(index) => destination.split_at(index),
         None => (destination, ""),
     }
-}
-
-fn is_markdown_path(path: &str) -> bool {
-    path.rsplit_once('.').is_some_and(|(_, extension)| {
-        extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown")
-    })
-}
-
-fn normalize_document_path(current_document: &str, destination: &str) -> Option<String> {
-    if destination.starts_with('/') || destination.contains('\u{005C}') {
-        return None;
-    }
-
-    let mut components = current_document
-        .split('/')
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    components.pop();
-
-    for component in destination.split('/') {
-        match component {
-            "" | "." => {}
-            ".." => {
-                components.pop()?;
-            }
-            component => components.push(component.to_owned()),
-        }
-    }
-
-    (!components.is_empty()).then(|| components.join("/"))
 }
 
 pub fn escape_html(value: &str) -> String {
@@ -344,9 +328,29 @@ pub fn escape_html(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, fs, path::PathBuf};
 
-    use super::{render, render_standalone_plantuml};
+    use super::{render, render_standalone_plantuml, RenderedDocument};
+    use crate::source_link::SourceLinkResolver;
+
+    fn render_test(
+        markdown: &str,
+        document_id: usize,
+        current_document: &str,
+        known_documents: &BTreeSet<String>,
+    ) -> RenderedDocument {
+        let document_root = std::env::current_dir().expect("test root should be available");
+        let current_document_path = document_root.join(current_document);
+        let source_links = SourceLinkResolver::new(document_root);
+        render(
+            markdown,
+            document_id,
+            current_document,
+            &current_document_path,
+            known_documents,
+            &source_links,
+        )
+    }
 
     #[test]
     fn plantuml_block_then_adds_document_scoped_diagram_endpoint() {
@@ -354,7 +358,7 @@ mod tests {
         let markdown = "```plantuml\n@startuml\nAlice -> Bob: hello\n@enduml\n```";
 
         // Act
-        let document = render(markdown, 3, "guides/intro.md", &BTreeSet::new());
+        let document = render_test(markdown, 3, "guides/intro.md", &BTreeSet::new());
 
         // Assert
         assert_eq!(document.diagrams.len(), 1);
@@ -371,7 +375,7 @@ mod tests {
         let markdown = "```plantuml\n@startuml\nAlice -> Bob: server\n@enduml\n```";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
         assert!(document.html.contains("src=\"/diagrams/0/0\""));
@@ -404,12 +408,65 @@ mod tests {
             BTreeSet::from(["README.md".to_owned(), "guides/intro.md".to_owned()]);
 
         // Act
-        let document = render(markdown, 0, "guides/intro.md", &known_documents);
+        let document = render_test(markdown, 0, "guides/intro.md", &known_documents);
 
         // Assert
         assert!(document
             .html
             .contains("href=\"/documents/README.md#install\""));
+    }
+
+    #[test]
+    fn known_relative_plantuml_link_then_targets_document_route() {
+        // Arrange
+        let markdown = "[Architecture](../architecture.puml)";
+        let known_documents =
+            BTreeSet::from(["architecture.puml".to_owned(), "guides/intro.md".to_owned()]);
+
+        // Act
+        let document = render_test(markdown, 0, "guides/intro.md", &known_documents);
+
+        // Assert
+        assert!(document
+            .html
+            .contains("href=\"/documents/architecture.puml\""));
+    }
+
+    #[test]
+    fn source_link_with_suffix_then_emits_vscode_url_without_suffix() {
+        // Arrange
+        let root = temporary_source_link_root("suffix");
+        let document_path = root.join("docs/design.md");
+        let source_path = root.join("src/lib.rs");
+        fs::create_dir_all(source_path.parent().expect("source should have a parent"))
+            .expect("source directory should be created");
+        fs::create_dir_all(
+            document_path
+                .parent()
+                .expect("document should have a parent"),
+        )
+        .expect("document directory should be created");
+        fs::write(&document_path, "# Design").expect("document should be created");
+        fs::write(&source_path, "source").expect("source should be created");
+        let document_path = fs::canonicalize(document_path).expect("document should canonicalize");
+        let source_links =
+            SourceLinkResolver::new(fs::canonicalize(&root).expect("root should canonicalize"));
+
+        // Act
+        let document = render(
+            "[Source](../src/lib.rs#L10)",
+            0,
+            "docs/design.md",
+            &document_path,
+            &BTreeSet::from(["docs/design.md".to_owned()]),
+            &source_links,
+        );
+
+        // Assert
+        assert!(document.html.contains("href=\"vscode://file/"));
+        assert!(document.html.contains("/src/lib.rs\""));
+        assert!(!document.html.contains("#L10"));
+        fs::remove_dir_all(root).expect("source-link fixture should be removable");
     }
 
     #[test]
@@ -419,7 +476,7 @@ mod tests {
         let known_documents = BTreeSet::from(["guides/intro.md".to_owned()]);
 
         // Act
-        let document = render(markdown, 0, "guides/intro.md", &known_documents);
+        let document = render_test(markdown, 0, "guides/intro.md", &known_documents);
 
         // Assert
         assert!(document.html.contains("href=\"../../secret.md\""));
@@ -434,7 +491,7 @@ mod tests {
         let markdown = "```rust\nlet answer = 42;\n```";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
         assert!(document.diagrams.is_empty());
@@ -448,7 +505,7 @@ mod tests {
         let markdown = "<script>alert('unsafe')</script>";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
         assert!(!document.html.contains("<script>"));
@@ -461,7 +518,7 @@ mod tests {
         let markdown = "---\ntitle: Lens guide\nauthor: Ada\ntags:\n  - rust\n  - docs\npublication:\n  audience: maintainers\n---\n# Guide\n\nBody text.";
 
         // Act
-        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document.html.contains("class=\"document-metadata\""));
@@ -483,7 +540,7 @@ mod tests {
         let markdown = "---\ntitle: Alternate delimiter\n...\n# Guide";
 
         // Act
-        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document
@@ -499,7 +556,7 @@ mod tests {
         let markdown = "---\ntitle: [missing bracket\n---\n# Guide";
 
         // Act
-        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document.html.contains("class=\"frontmatter-error\""));
@@ -516,7 +573,7 @@ mod tests {
         let markdown = "---\ncustom:\n  note: <unsafe>\n---\n# Guide";
 
         // Act
-        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document
@@ -532,7 +589,7 @@ mod tests {
         let markdown = "---\ntitle: Unclosed metadata\n# Guide";
 
         // Act
-        let document = render(markdown, 0, "guide.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "guide.md", &BTreeSet::new());
 
         // Assert
         assert!(document
@@ -548,9 +605,16 @@ mod tests {
         let markdown = "```plantuml\nAlice -> Bob: <unsafe>\n```";
 
         // Act
-        let document = render(markdown, 0, "document.md", &BTreeSet::new());
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
         assert!(document.html.contains("&lt;unsafe&gt;"));
+    }
+
+    fn temporary_source_link_root(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "lens-markdown-source-link-{}-{name}",
+            std::process::id()
+        ))
     }
 }

@@ -11,6 +11,7 @@ use reqwest::Client;
 use super::catalog::DocumentCatalog;
 use crate::{
     markdown::{render, render_standalone_plantuml, RenderedDocument},
+    source_link::SourceLinkResolver,
     target::{DocumentKind, MarkdownDocument},
 };
 
@@ -20,6 +21,7 @@ pub(super) struct ViewerState {
     pub(super) documents: RwLock<Vec<ViewerDocument>>,
     pub(super) catalog: DocumentCatalog,
     known_documents: BTreeSet<String>,
+    source_links: SourceLinkResolver,
     pub(super) initial_document: usize,
     pub(super) client: Client,
     pub(super) plantuml_server: String,
@@ -53,7 +55,7 @@ impl ViewerState {
             .collect::<Vec<_>>();
 
         for (document_id, identifier, canonical_path, stored_source, kind) in documents {
-            let Ok(source) = fs::read_to_string(canonical_path) else {
+            let Ok(source) = fs::read_to_string(&canonical_path) else {
                 continue;
             };
             if source == stored_source {
@@ -64,8 +66,10 @@ impl ViewerState {
                 &source,
                 document_id,
                 &identifier,
+                &canonical_path,
                 kind,
                 &self.known_documents,
+                &self.source_links,
             );
             let mut documents = self
                 .documents
@@ -97,6 +101,7 @@ impl ViewerDocument {
 }
 
 pub(super) fn viewer_state(
+    document_root: PathBuf,
     documents: Vec<MarkdownDocument>,
     initial_document: usize,
     client: Client,
@@ -109,22 +114,28 @@ pub(super) fn viewer_state(
             .map(|(index, document)| (document.identifier.clone(), index)),
     );
     let known_documents = catalog.known_document_ids();
+    let source_links = SourceLinkResolver::new(document_root);
     let documents = documents
         .into_iter()
         .enumerate()
-        .map(|(document_id, document)| ViewerDocument {
-            identifier: document.identifier.clone(),
-            canonical_path: document.canonical_path,
-            source: document.source.clone(),
-            kind: document.kind,
-            rendered: render_document(
+        .map(|(document_id, document)| {
+            let rendered = render_document(
                 &document.source,
                 document_id,
                 &document.identifier,
+                &document.canonical_path,
                 document.kind,
                 &known_documents,
-            ),
-            revision: 0,
+                &source_links,
+            );
+            ViewerDocument {
+                identifier: document.identifier,
+                canonical_path: document.canonical_path,
+                source: document.source,
+                kind: document.kind,
+                rendered,
+                revision: 0,
+            }
         })
         .collect();
 
@@ -132,6 +143,7 @@ pub(super) fn viewer_state(
         documents: RwLock::new(documents),
         catalog,
         known_documents,
+        source_links,
         initial_document,
         client,
         plantuml_server,
@@ -142,11 +154,20 @@ fn render_document(
     source: &str,
     document_id: usize,
     identifier: &str,
+    canonical_path: &std::path::Path,
     kind: DocumentKind,
     known_documents: &BTreeSet<String>,
+    source_links: &SourceLinkResolver,
 ) -> RenderedDocument {
     match kind {
-        DocumentKind::Markdown => render(source, document_id, identifier, known_documents),
+        DocumentKind::Markdown => render(
+            source,
+            document_id,
+            identifier,
+            canonical_path,
+            known_documents,
+            source_links,
+        ),
         DocumentKind::PlantUml => render_standalone_plantuml(document_id, source),
     }
 }
@@ -193,6 +214,9 @@ mod tests {
         let path = temporary_document_path("changed-document");
         fs::write(&path, "# Before refresh").expect("test document should be writable");
         let state = viewer_state(
+            path.parent()
+                .expect("test document should have a parent")
+                .to_path_buf(),
             vec![file_backed_test_document(path.clone(), "# Before refresh")],
             0,
             renderer_client().expect("test client should initialize"),
@@ -222,6 +246,9 @@ mod tests {
         let path = temporary_document_path("unreadable-document");
         fs::write(&path, "# Readable document").expect("test document should be writable");
         let state = viewer_state(
+            path.parent()
+                .expect("test document should have a parent")
+                .to_path_buf(),
             vec![file_backed_test_document(
                 path.clone(),
                 "# Readable document",
@@ -243,5 +270,51 @@ mod tests {
             .expect("viewer documents lock should not be poisoned");
         assert_eq!(revision, Some(0));
         assert!(documents[0].rendered.html.contains("Readable document"));
+    }
+
+    #[test]
+    fn changed_document_source_link_then_reuses_session_root() {
+        // Arrange
+        let root =
+            std::env::temp_dir().join(format!("lens-viewer-source-link-{}", std::process::id()));
+        let document_path = root.join("docs/README.md");
+        let source_path = root.join("src/lib.rs");
+        fs::create_dir_all(
+            document_path
+                .parent()
+                .expect("document should have a parent"),
+        )
+        .expect("document directory should be creatable");
+        fs::create_dir_all(source_path.parent().expect("source should have a parent"))
+            .expect("source directory should be creatable");
+        fs::write(&document_path, "# Before refresh").expect("test document should be writable");
+        fs::write(&source_path, "source").expect("test source should be writable");
+        let document_path =
+            fs::canonicalize(document_path).expect("test document should canonicalize");
+        let root = fs::canonicalize(root).expect("test root should canonicalize");
+        let state = viewer_state(
+            root.clone(),
+            vec![file_backed_test_document(
+                document_path.clone(),
+                "# Before refresh",
+            )],
+            0,
+            renderer_client().expect("test client should initialize"),
+            test_server(),
+        );
+        fs::write(&document_path, "[Source](../src/lib.rs)").expect("test document should update");
+
+        // Act
+        state.refresh_known_documents();
+
+        // Assert
+        let documents = state
+            .documents
+            .read()
+            .expect("viewer documents lock should not be poisoned");
+        assert!(documents[0].rendered.html.contains("href=\"vscode://file/"));
+        assert!(documents[0].rendered.html.contains("/src/lib.rs\""));
+        drop(documents);
+        fs::remove_dir_all(root).expect("test fixture should be removable");
     }
 }

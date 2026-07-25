@@ -180,6 +180,7 @@ mod tests {
         initial_document: usize,
     ) -> axum::Router {
         router(viewer_state(
+            std::env::current_dir().expect("test root should be available"),
             documents,
             initial_document,
             renderer_client().expect("test client should initialize"),
