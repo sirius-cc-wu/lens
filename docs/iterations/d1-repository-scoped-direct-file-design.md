@@ -53,9 +53,8 @@ Artifacts to Refine:
 - `ADR-003`, document-root discovery:
   [`docs/decisions/adr-003-document-root-discovery.md`](../decisions/adr-003-document-root-discovery.md) -
   identify its partially superseded direct-file rule.
-- Proposal, risk list, and documentation index:
-  [`docs/proposals/repository-scoped-direct-file-sessions.md`](../proposals/repository-scoped-direct-file-sessions.md),
-  [`docs/risk-list.md`](../risk-list.md), and [`docs/index.md`](../index.md) -
+- Proposal outcome, risk list, and documentation index:
+  [`docs/risk-list.md`](../risk-list.md) and [`docs/index.md`](../index.md) -
   record acceptance, residual risks, and the durable decision.
 
 Artifacts Consulted:

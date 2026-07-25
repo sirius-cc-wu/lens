@@ -53,9 +53,8 @@ PlantUML block. Its document-set and authorization rules remain accepted.
 
 ## Trace
 
-- Proposal: [Standalone PlantUML Files](../improvement-proposals.md#6-standalone-plantuml-files)
+- Implementation: [P6 standalone PlantUML files](../iterations/p6-standalone-plantuml-files.md)
 - Requirements: `UC-02`, `UC-03`, `UC-04`, and `UC-10` in
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - Existing authorization: [ADR-003](adr-003-document-root-discovery.md)
-- Iteration: [`P6`](../iterations/p6-standalone-plantuml-files.md)
 - Partial successor: [ADR-017](adr-017-session-plantuml-server.md)

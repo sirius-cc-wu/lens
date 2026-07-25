@@ -46,7 +46,6 @@ must run the script on a native runner for each published target.
 
 ## Trace
 
-- Proposal: [Cross-Platform Support](../improvement-proposals.md#7-cross-platform-support)
+- Implementation: [P7 cross-platform support](../iterations/p7-cross-platform-support.md)
 - Previous scope: [ADR-004](adr-004-v1-release-scope.md)
 - Artifact format: [ADR-010](adr-010-linux-binary-release-artifacts.md)
-- Iteration: [`P7`](../iterations/p7-cross-platform-support.md)

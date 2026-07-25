@@ -83,10 +83,10 @@ for this feature. A trait or asynchronous search service would add an unearned
 variation point. `DocumentCatalog`, `CatalogPage`, and their focused tests have
 their own state and helpers, while loopback routes and document rendering
 change independently; therefore C5 will place them in
-`src/viewer/catalog.rs`. Proposal 13 later separated the independently changing
-Axum controllers, session state, and page composition into `viewer::routes`,
-`viewer::state`, and `viewer::page`, with `src/viewer/mod.rs` as their thin
-composition root.
+`src/viewer/catalog.rs`. Iterations M2 through M6 later separated the
+independently changing Axum controllers, session state, and page composition
+into `viewer::routes`, `viewer::state`, and `viewer::page`, with
+`src/viewer/mod.rs` as their thin composition root.
 
 ## DCD-02: Rust Design View
 

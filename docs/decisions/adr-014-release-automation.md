@@ -52,7 +52,6 @@ and checksums and uses the repository-scoped `GITHUB_TOKEN` with
 
 ## Trace
 
-- Proposal: [Release Automation](../improvement-proposals.md#8-release-automation)
+- Implementation: [P8 release automation](../iterations/p8-release-automation.md)
 - Artifact contract: [ADR-010](adr-010-linux-binary-release-artifacts.md)
 - Platform support: [ADR-013](adr-013-cross-platform-support.md)
-- Iteration: [`P8`](../iterations/p8-release-automation.md)

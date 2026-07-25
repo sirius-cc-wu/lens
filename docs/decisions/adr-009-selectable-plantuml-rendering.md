@@ -48,9 +48,8 @@ failed, or invalid local command follows the existing per-diagram failure path.
 
 ## Trace
 
-- Proposal: [Local PlantUML Rendering](../improvement-proposals.md#1-local-plantuml-rendering)
+- Implementation: [P1 local PlantUML rendering](../iterations/p1-local-plantuml-rendering.md)
 - Requirement: `UC-01` in
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - Risk: `R-01` in [`docs/risk-list.md`](../risk-list.md)
-- Iteration: [`P1`](../iterations/p1-local-plantuml-rendering.md)
 - Successor: [ADR-017](adr-017-session-plantuml-server.md)

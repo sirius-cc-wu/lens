@@ -202,11 +202,11 @@ For example, `lens docs` cannot authorize a link from `docs/design.md` to
 user can run `lens` or `lens <repository-root>` to make both paths part of the
 same fixed scope.
 
-The separate
-[repository-scoped direct-file proposal](repository-scoped-direct-file-sessions.md)
-would let a directly opened document inside a Git repository use the repository
-root. This feature can be implemented independently and must follow whichever
-root-selection rule is accepted when implementation begins.
+The
+[repository-scoped target-session decision](../decisions/adr-019-repository-scoped-target-sessions.md)
+lets a directly opened document inside a Git repository use the repository
+root. This feature can be implemented independently and must follow the active
+session's selected root.
 
 ## Compatibility
 

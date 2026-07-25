@@ -46,9 +46,8 @@ Artifacts to Start:
 
 Artifacts to Refine:
 
-- `PROP-REMOVE-RENDERER`:
-  [`docs/proposals/remove-renderer.md`](../proposals/remove-renderer.md) -
-  resolve normalization and library-release acceptance details and add trace.
+- `PROP-REMOVE-RENDERER` - resolve normalization and library-release
+  acceptance details and add trace.
 - `FEAT-01`, `SSD-01`, and `OC-01`:
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md),
   [`docs/features/markdown-viewing/ssd-01-open-markdown-target.md`](../features/markdown-viewing/ssd-01-open-markdown-target.md),

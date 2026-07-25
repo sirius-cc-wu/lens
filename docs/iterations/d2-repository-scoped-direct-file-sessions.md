@@ -50,10 +50,9 @@ Artifacts to Refine:
   [`docs/release-readiness.md`](../release-readiness.md) - explain repository
   recognition, broader local discovery, explicit narrower scope, and
   acceptance checks.
-- Proposal and risk list:
-  [`docs/proposals/repository-scoped-direct-file-sessions.md`](../proposals/repository-scoped-direct-file-sessions.md)
-  and [`docs/risk-list.md`](../risk-list.md) - record implementation and
-  executable authorization evidence.
+- Proposal outcome and risk list:
+  [`docs/risk-list.md`](../risk-list.md) - record implementation and executable
+  authorization evidence.
 
 Artifacts Consulted:
 

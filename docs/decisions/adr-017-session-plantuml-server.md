@@ -91,8 +91,6 @@ ten-second request timeouts, 2 MiB response limits, and SVG checks remain.
 
 ## Trace
 
-- Proposal:
-  [`PROP-REMOVE-RENDERER`](../proposals/remove-renderer.md)
 - Requirements: `UC-01` and `UC-10` in
   [`FEAT-01`](../features/markdown-viewing/use-cases.md)
 - Operation contract:

@@ -39,7 +39,6 @@ Artifacts to Start:
 Artifacts to Refine:
 
 - `PROP-REMOVE-RENDERER`, `FEAT-01`, `RZ-05`, and `DCD-04`:
-  [`docs/proposals/remove-renderer.md`](../proposals/remove-renderer.md),
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md),
   and
   [`docs/features/markdown-viewing/server-rendering-design.md`](../features/markdown-viewing/server-rendering-design.md)

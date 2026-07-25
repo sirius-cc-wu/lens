@@ -32,8 +32,9 @@ The command defaults to the host Rust target, accepts `--target` and `--output`,
 requires a supported target name, and refuses to overwrite either output file.
 It uses `cargo build --locked --release --target` so the package follows the
 locked dependency set. `scripts/package-linux-release.sh` remains a compatibility
-entry point. GitHub Release upload is deliberately deferred to proposal 8; that
-workflow must call this command rather than duplicate packaging logic.
+entry point. GitHub Release upload is handled by
+[ADR-014](adr-014-release-automation.md); that workflow must call this command
+rather than duplicate packaging logic.
 
 ## Consequences
 
@@ -46,7 +47,6 @@ workflow must call this command rather than duplicate packaging logic.
 
 ## Trace
 
-- Proposal: [Prebuilt Linux Binaries](../improvement-proposals.md#2-prebuilt-linux-binaries)
+- Implementation: [P2 Linux binary packaging](../iterations/p2-linux-binary-packaging.md)
 - Risk: `R-07` in [`docs/risk-list.md`](../risk-list.md)
 - Verification: [`docs/release-readiness.md`](../release-readiness.md)
-- Iteration: [`P2`](../iterations/p2-linux-binary-packaging.md)

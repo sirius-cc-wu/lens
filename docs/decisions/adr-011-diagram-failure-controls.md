@@ -57,9 +57,8 @@ server-based rendering, but it does not expose the configured server URL.
 
 ## Trace
 
-- Proposal: [Diagram Failure Controls](../improvement-proposals.md#5-diagram-failure-controls)
+- Implementation: [P5 diagram failure controls](../iterations/p5-diagram-failure-controls.md)
 - Requirement: `UC-01` in
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md)
 - Security boundary: [`docs/supplementary-specification.md`](../supplementary-specification.md)
-- Iteration: [`P5`](../iterations/p5-diagram-failure-controls.md)
 - Partial successor: [ADR-017](adr-017-session-plantuml-server.md)

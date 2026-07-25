@@ -41,9 +41,8 @@ Artifacts to Start:
 
 Artifacts to Refine:
 
-- Proposal:
-  [`docs/proposals/repository-scoped-direct-file-sessions.md`](../proposals/repository-scoped-direct-file-sessions.md) -
-  broaden the accepted outcome from direct files to all target kinds.
+- Proposal outcome - broaden the accepted outcome from direct files to all
+  target kinds.
 - `FEAT-01`, `SSD-02`, and `OC-02`:
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md),
   [`docs/features/markdown-viewing/ssd-02-open-document-root.md`](../features/markdown-viewing/ssd-02-open-document-root.md), and

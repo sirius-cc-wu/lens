@@ -18,9 +18,9 @@ Date: 2026-07-19
 
 The authorized document navigation pane helps users move through a Lens viewing
 session, but it also consumes horizontal space needed for long documents,
-diagrams, and code examples. Proposal 12 requires a user to hide and restore
-that pane without turning a presentation choice into a change to the session's
-document authorization or routes.
+diagrams, and code examples. A collapsible pane lets a user hide and restore it
+without turning a presentation choice into a change to the session's document
+authorization or routes.
 
 ## Decision
 
@@ -69,7 +69,6 @@ exposing a button that cannot act.
 
 ## Trace
 
-- Proposal: [Collapsible Document Navigation Pane](../improvement-proposals.md#12-collapsible-document-navigation-pane)
+- Implementation: [C6 collapsible document navigation pane](../iterations/c6-collapsible-document-navigation-pane.md)
 - Requirements: [`FEAT-02`](../features/document-navigation-pane/use-cases.md)
 - Authorization basis: [ADR-003](adr-003-document-root-discovery.md)
-- Iteration: [`C6`](../iterations/c6-collapsible-document-navigation-pane.md)

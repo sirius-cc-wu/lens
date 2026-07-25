@@ -29,8 +29,6 @@ small and will be refined as elaboration resolves the listed risks.
 
 - [Vision and business case](vision.md)
 - [Improvement proposals](improvement-proposals.md)
-- [Implemented proposal: remove renderer selection](proposals/remove-renderer.md)
-- [Repository-scoped target sessions](proposals/repository-scoped-direct-file-sessions.md)
 - [Primary feature and use cases](features/markdown-viewing/use-cases.md) (`FEAT-01`)
 - [Document navigation pane use cases](features/document-navigation-pane/use-cases.md) (`FEAT-02`)
 - [Automatic refresh use cases](features/automatic-refresh/use-cases.md) (`FEAT-03`)

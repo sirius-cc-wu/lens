@@ -50,6 +50,5 @@ Markdown renderer rather than discarding document content.
 
 ## Trace
 
-- Proposal: [YAML Frontmatter Rendering](../improvement-proposals.md#10-yaml-frontmatter-rendering)
+- Implementation: [P10 YAML frontmatter rendering](../iterations/p10-yaml-frontmatter-rendering.md)
 - Security boundary: [`docs/supplementary-specification.md`](../supplementary-specification.md)
-- Iteration: [`P10`](../iterations/p10-yaml-frontmatter-rendering.md)

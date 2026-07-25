@@ -72,10 +72,12 @@ Links cannot add a document or cause a filesystem-path lookup.
 
 ## Trace
 
-- Proposal:
-  [repository-scoped direct-file sessions](../proposals/repository-scoped-direct-file-sessions.md)
 - Use cases: [`FEAT-01`, `UC-02` through `UC-04`](../features/markdown-viewing/use-cases.md)
 - System sequence:
   [`SSD-02`](../features/markdown-viewing/ssd-02-open-document-root.md)
 - Contract: [`OC-02`](../features/markdown-viewing/oc-02-open-document-root.md)
 - Risks: [`R-03` and `R-09`](../risk-list.md)
+- Design iteration:
+  [`D1`](../iterations/d1-repository-scoped-direct-file-design.md)
+- Construction iteration:
+  [`D2`](../iterations/d2-repository-scoped-direct-file-sessions.md)

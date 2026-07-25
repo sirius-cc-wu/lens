@@ -55,11 +55,10 @@ Artifacts to Refine:
   [`README.md`](../../README.md) and
   [`docs/release-readiness.md`](../release-readiness.md) - explain the unified
   default, initial anchor, local-reading implications, and narrow override.
-- Proposal, decision trace, and risks:
-  [`docs/proposals/repository-scoped-direct-file-sessions.md`](../proposals/repository-scoped-direct-file-sessions.md),
-  [`docs/decisions/adr-019-repository-scoped-target-sessions.md`](../decisions/adr-019-repository-scoped-target-sessions.md), and
-  [`docs/risk-list.md`](../risk-list.md) - record implementation and executable
-  authorization evidence.
+- Proposal outcome, decision trace, and risks:
+  [`docs/decisions/adr-019-repository-scoped-target-sessions.md`](../decisions/adr-019-repository-scoped-target-sessions.md)
+  and [`docs/risk-list.md`](../risk-list.md) - record implementation and
+  executable authorization evidence.
 
 Artifacts Consulted:
 

@@ -19,7 +19,7 @@ Date: 2026-07-19
 ADR-006 made every document response carry the complete, browser-filtered
 catalog of authorized document identifiers. That was a safe first navigation
 pane, but its response size and browser work grow with every discovered
-document. Proposal 11 needs navigation to remain usable for large document
+document. Catalog search needs navigation to remain usable for large document
 trees without widening the fixed viewing-session boundary from ADR-003.
 
 ## Decision
@@ -79,7 +79,7 @@ of any query or page parameters.
 
 ## Trace
 
-- Proposal: [Scalable Document Navigation Search](../improvement-proposals.md#11-scalable-document-navigation-search)
+- Implementation: [C5 scalable document navigation search](../iterations/c5-scalable-document-navigation-search.md)
 - Requirements: [`FEAT-02`](../features/document-navigation-pane/use-cases.md)
 - Supersedes: [ADR-006](adr-006-document-navigation-pane.md)
 - Authorization basis: [ADR-003](adr-003-document-root-discovery.md)

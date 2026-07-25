@@ -1,7 +1,7 @@
 ---
 type: "Improvement Proposals"
 title: Lens Improvement Proposals
-description: "Tracks stable post-V1 improvement proposals, their rationale, implementation status, and manual end-to-end verification."
+description: "Tracks stable post-V1 improvement proposals, their rationale, and manual end-to-end verification."
 status: "proposed"
 tags: [planning, proposals]
 ---
@@ -12,289 +12,21 @@ Status: proposed
 
 These are candidate improvements after the V1 release. They are not release
 commitments; a future iteration should select one based on user value, risk, and
-implementation evidence. Implemented proposals remain as historical context
-with their status recorded, and proposal numbers are stable and are not reused.
+implementation evidence. Implemented proposals are removed from this list; the
+remaining numbers are stable and are not reused.
 
 ## Manual End-to-End Test Convention
 
 Each **Manual end-to-end test** exercises Lens as a user would: start the built
 command, interact with the browser or release service, and inspect the visible
-result. For an implemented proposal, the walkthrough can be performed today.
-For a proposed improvement, it defines the acceptance walkthrough that must
-pass after implementation.
+result. For a proposed improvement, it defines the acceptance walkthrough that
+must pass after implementation.
 
 Build the current command with `cargo build --locked` before a local
 walkthrough. Use a disposable document directory unless a proposal says
 otherwise, and stop each Lens process before starting the next case. These
 manual checks supplement, rather than replace, the automated checks in
 [`docs/release-readiness.md`](release-readiness.md).
-
-## 1. Local PlantUML Rendering
-
-Add a `--renderer public|local|disabled` option. A local renderer would keep
-diagram source on the user's machine and avoid dependence on the public
-PlantUML service. This is the highest-value proposal because it addresses the
-current privacy and renderer-availability risks.
-
-Status: implemented in P1 and superseded by ADR-017 and C7. Lens no longer
-exposes these modes; this entry and walkthrough remain as historical context.
-
-### Manual end-to-end test
-
-- **Setup:** Create a Markdown document containing one valid PlantUML block.
-  Install the `plantuml` command, and disconnect the machine from the network
-  after installation.
-- **Actions:** Run `target/debug/lens --renderer local <document>`, then repeat
-  with `--renderer disabled`. Reconnect the network and repeat with
-  `--renderer public`.
-- **Expected result:** The local session identifies the local renderer and
-  displays the diagram while offline. The disabled session identifies
-  rendering as disabled, displays no image, and keeps the source readable. The
-  public session identifies the public renderer and displays the diagram after
-  network access returns.
-
-## 2. Prebuilt Linux Binaries
-
-Publish Linux binaries and checksums with GitHub Releases. This would let users
-install Lens without a Rust toolchain and reduce the friction of the current
-source-install path.
-
-Status: implemented in P2. The release-packaging command builds a target-bound
-Linux archive containing Lens, the README, and license, and writes a SHA-256
-checksum beside it. Proposal 8 will publish those verified artifacts from tags.
-
-### Manual end-to-end test
-
-- **Setup:** On Linux, download a release archive and its checksum into a clean
-  environment where Rust and Cargo are not installed.
-- **Actions:** Verify the checksum with `sha256sum --check`, extract the archive,
-  and run the extracted `lens --help`. Start the extracted binary against a
-  disposable Markdown directory.
-- **Expected result:** The checksum passes; the archive contains one
-  target-named directory with `lens`, `README.md`, and `LICENSE`; and the
-  extracted binary opens the document without requiring a Rust toolchain.
-
-## 5. Diagram Failure Controls
-
-Expose renderer status, allow a failed diagram request to be retried, and let a
-user disable diagram rendering for a session. These controls would make public
-renderer failures clearer and give users a predictable fallback.
-
-Status: implemented in P5 and partially superseded by ADR-017 and C7.
-Per-diagram failure, visible source, and retry remain active. The
-session-disable control was removed because it could not prevent requests that
-start while a page loads.
-
-### Manual end-to-end test
-
-- **Setup:** Create two Markdown documents containing valid PlantUML blocks.
-  Disconnect the machine from the network, then start Lens with the public
-  renderer.
-- **Actions:** Open the first document and observe its failures and source.
-  Reconnect the network and select **Retry diagram rendering** on one diagram.
-  Then select **Disable diagram rendering for this session** and navigate to the
-  second document.
-- **Expected result:** Each failure explains the renderer problem without
-  hiding its source. Retry loads only the selected diagram after connectivity
-  returns. Disabling updates the session status, prevents later diagrams from
-  loading, and leaves every diagram source readable.
-
-## 6. Standalone PlantUML Files
-
-Allow Lens to open `.puml` files directly as well as PlantUML blocks embedded in
-Markdown. This broadens diagram viewing without turning Lens into a general
-source-code browser.
-
-Status: implemented in P6. Lens discovers visible `.puml` files alongside
-Markdown, accepts a direct `.puml` target, and serves each standalone source as
-one diagram through the existing session-bound renderer route.
-
-### Manual end-to-end test
-
-- **Setup:** In one disposable directory, create `README.md`, a visible
-  `architecture.puml`, and a hidden `.private.puml`.
-- **Actions:** Start Lens on the directory, follow the navigation link to
-  `architecture.puml`, and then start a new session by passing
-  `architecture.puml` as the direct target.
-- **Expected result:** The visible PlantUML file appears in navigation and both
-  routes display one rendered diagram plus its source disclosure. The hidden
-  file never appears, and requesting its path does not reveal its source.
-
-## 7. Cross-Platform Support
-
-Support macOS and Windows browser launch paths with platform-specific tests and
-release artifacts. Linux remains the only supported V1 platform until this work
-has evidence.
-
-Status: implemented in P7. Lens selects the native Linux, macOS, or Windows
-browser-launch command through platform-tested command construction, and the
-target-aware release packager produces archives for each supported target on a
-release runner using that operating system (native release runner).
-
-### Manual end-to-end test
-
-- **Setup:** Download the release archive and checksum built natively for
-  Linux, macOS, or Windows. Repeat the walkthrough on all three operating
-  systems.
-- **Actions:** Verify the checksum, extract the archive, and run the native
-  binary against a Markdown directory. Confirm that the default browser opens.
-  Repeat in a shell where the platform launcher (`xdg-open`, `open`, or
-  `cmd`) is intentionally unavailable.
-- **Expected result:** Linux and macOS run `lens`, Windows runs `lens.exe`, and
-  each opens its native default browser. When launching is unavailable, Lens
-  remains running and prints a loopback URL that opens manually.
-
-## 8. Release Automation
-
-Add GitHub Actions checks for formatting, tests, Clippy, package verification,
-tagged releases, and binary publishing. This would make each release
-repeatable and reduce regression risk.
-
-Status: implemented in P8. GitHub Actions verifies formatting, Rust tests,
-Clippy, package metadata, and the browser suite on pull requests and `main`.
-A `v<package-version>` tag starts native Linux, macOS, and Windows packaging,
-then publishes the archives and SHA-256 checksums only after every matrix job
-succeeds.
-
-### Manual end-to-end test
-
-- **Setup:** Use a test fork for failure cases and the main repository for an
-  approved release candidate. Open a pull request with a harmless documentation
-  change.
-- **Actions:** Inspect the **Verify** workflow and confirm that formatting,
-  Rust tests, Clippy, package metadata, and browser tests all run. In the fork,
-  push a tag whose version differs from `Cargo.toml`. For the approved release,
-  push the matching `v<package-version>` tag.
-- **Expected result:** The pull request cannot present a fully green workflow
-  until every check passes. The mismatched tag publishes nothing. The matching
-  tag waits for Linux, macOS, and Windows package jobs, then creates one GitHub
-  Release containing every native archive and checksum.
-
-## 10. YAML Frontmatter Rendering
-
-Detect YAML frontmatter at the beginning of Markdown documents and render it as
-readable document metadata instead of leaving it hidden or treating it as body
-text. Define a consistent presentation for common fields, preserve unknown and
-nested values safely, and show an actionable result when frontmatter is
-malformed. Add fixtures and browser tests covering valid metadata, delimiters,
-and invalid YAML.
-
-Status: implemented in P10. Lens recognizes a leading `---` header and either
-`---` or `...` closing delimiter, displays scalar, list, nested, and unknown
-YAML values as escaped metadata, and retains the Markdown body with a
-correction message when the header cannot be parsed.
-
-### Manual end-to-end test
-
-- **Setup:** Create four Markdown files: valid metadata closed with `---`, valid
-  metadata closed with `...`, malformed YAML, and an unclosed header. Include
-  scalar, list, nested, unknown, and HTML-shaped values plus ordinary body text.
-- **Actions:** Open the directory in Lens and visit all four files from the
-  navigation pane.
-- **Expected result:** Both valid headers appear as structured document
-  metadata without delimiters in the body. Nested and unknown values remain
-  visible, and HTML-shaped values display as text rather than execute. Both
-  invalid files show corrective guidance while keeping the Markdown body
-  readable.
-
-## 11. Scalable Document Navigation Search
-
-Status: implemented in C5. Lens searches only the immutable, authorized
-session catalog through a native GET form, returns no more than 50 identifiers
-per page, and keeps pagination usable without JavaScript.
-
-Replace the complete document list in every navigation pane with server-side
-identifier search and a capped result set. Lens would build an index from the
-active session's already authorized document identifiers when it starts, then
-return only a bounded first page of matching identifiers and allow the user to
-request further results. This would make large documentation trees practical
-without scanning the filesystem or making arbitrary paths reachable after the
-session begins. It requires revisiting ADR-006, which currently requires the
-complete catalog in every document response, and defining pagination,
-no-JavaScript navigation, result limits, and request-rate behavior.
-
-### Manual end-to-end test
-
-- **Setup:** Create 51 visible documents whose identifiers contain
-  `reference`, plus one unrelated document and one hidden document. Start Lens,
-  then create one more matching file after the session is already running.
-- **Actions:** Search for mixed-case `ReFeReNcE`, confirm the first result page,
-  and follow **Next results**. Disable JavaScript and repeat. Submit a query
-  longer than 256 UTF-8 bytes, request an invalid page number, and try the URL
-  of the file created after startup.
-- **Expected result:** Search is case-insensitive, shows no more than 50
-  authorized identifiers per page, and reaches the 51st result through native
-  links with JavaScript disabled. The long query shows limit guidance, the
-  invalid page returns the first valid result page, and neither the hidden nor
-  post-start file becomes reachable.
-
-## 12. Collapsible Document Navigation Pane
-
-Status: implemented in C6. Lens provides a browser-operated hide/show control
-for the navigation pane, exposes its state to assistive technology, and keeps
-the preference while the same browser tab views other authorized documents.
-
-Let the user hide and restore the document navigation pane so the document
-content can use more of the browser window. Provide a visible, keyboard-
-operable control with an accessible expanded-state indication, and retain a
-usable way to restore the pane after it is hidden. Remembering the user's
-choice for the current viewing session would avoid making the user repeat the
-action on every document change. This changes presentation only: hiding the
-pane must not change the active session's authorized document set or document
-routes.
-
-### Manual end-to-end test
-
-- **Setup:** Start Lens on a directory containing at least two documents. Use
-  only the keyboard for the first hide and restore cycle.
-- **Actions:** Focus **Hide documents**, activate it, and navigate directly to
-  the second authorized document in the same tab. Confirm the pane remains
-  hidden, then activate **Show documents**. Open the same Lens URL in a new tab.
-- **Expected result:** The control is reachable and operable by keyboard, its
-  label reflects the visible state, and hiding gives the document more width.
-  The same tab preserves the hidden state across document navigation and
-  restores the pane with the current document marked. The new tab starts with
-  its own visible pane, and every authorized route works in either state.
-
-## 13. Modular Viewer Responsibilities
-
-Status: implemented in M2 through M6.
-
-Split the viewer implementation along its existing capability boundaries while
-preserving behavior and the public `lens::serve` path. The current viewer module
-owns session state, document refresh, browser launching, HTTP routes, navigation
-markup, PlantUML requests, JavaScript, CSS, and their tests. These concerns can
-change independently and already have distinct types, dependencies, and test
-scenarios.
-
-Using the C7 server-only rendering baseline, keep session and refresh state
-together, move route handlers and page composition into cohesive modules,
-isolate server-backed diagram rendering, and place browser-launch construction
-with its platform tests. Store the JavaScript and CSS as dedicated assets
-embedded into the binary at compile time. Make the extraction mechanical: do
-not rename public APIs or redesign behavior, and retain tests with the module
-that owns each behavior. Verify the split with the complete Rust and browser
-suites.
-
-### Manual end-to-end test
-
-This proposal is not implemented.
-
-- **Setup:** Before the split, keep a copy of the current Lens binary. Prepare a
-  directory that exercises Markdown navigation, catalog search, automatic
-  refresh, standalone and embedded PlantUML, renderer failure, and YAML
-  frontmatter. Also keep a small external program that starts Lens through
-  `lens::serve`. Build the post-split binary separately.
-- **Actions:** Perform the same walkthrough with both binaries: open every
-  document type, search and paginate, save a visible change, retry a failed
-  diagram, verify the session-fixed server destination, and request an
-  unauthorized path. Compare the page text, controls, routes, and browser
-  network responses. Point the external program at the post-split Lens library,
-  build it, and repeat the walkthrough.
-- **Expected result:** A user cannot distinguish the two builds. The
-  external program still starts Lens through `lens::serve`; page assets and
-  browser restrictions are still served; and only source module locations have
-  changed.
 
 ## 14. Measured Large-Repository Scalability
 
@@ -471,9 +203,9 @@ must pass the existing locked Rust and browser suites.
 
 Establish a post-V1 release record with a changelog and a package-version bump
 before the next tag. Update package metadata and introductory documentation to
-describe Linux, macOS, and Windows consistently. Keep completed proposals as
-clearly marked historical evidence or move them to a dedicated history section
-so that active proposals are immediately distinguishable.
+describe Linux, macOS, and Windows consistently. Retire completed proposals
+from the active list after linking accepted decisions to their construction
+records so that implementation history remains discoverable.
 
 ### Manual end-to-end test
 

@@ -108,8 +108,6 @@ easier to explain and verify.
 
 ## Trace
 
-- Proposal:
-  [repository-scoped target sessions](../proposals/repository-scoped-direct-file-sessions.md)
 - Use cases: [`FEAT-01`, `UC-02` through `UC-04`](../features/markdown-viewing/use-cases.md)
 - System sequence:
   [`SSD-02`](../features/markdown-viewing/ssd-02-open-document-root.md)

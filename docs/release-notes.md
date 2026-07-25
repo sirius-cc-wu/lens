@@ -36,5 +36,5 @@ failure. The in-page rendering-disable control and `/renderer/disable` route
 have been removed.
 
 See the [README migration guidance](../README.md#plantuml), the
-[implemented proposal](proposals/remove-renderer.md), and the
+[accepted server decision](decisions/adr-017-session-plantuml-server.md), and the
 [C7 construction record](iterations/c7-server-only-plantuml-rendering.md).
