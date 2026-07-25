@@ -3,13 +3,13 @@ type: "Improvement Proposal"
 title: "Open Source-File Links in Visual Studio Code"
 description: "Rewrites validated repository file links so selecting one opens the local file in Visual Studio Code without serving its contents through Lens."
 id: "PROP-OPEN-SOURCE-LINKS-IN-VSCODE"
-status: "proposed"
+status: "accepted"
 tags: [proposal, navigation, source-code, vscode]
 ---
 
 # Open Source-File Links in Visual Studio Code
 
-Status: proposed
+Status: accepted for construction in D5
 
 ## Summary
 
