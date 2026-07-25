@@ -14,6 +14,12 @@ Status: accepted
 
 Date: 2026-07-18
 
+The target-root selection rules are superseded by
+[ADR-019](adr-019-repository-scoped-target-sessions.md), following the
+direct-file refinement recorded in
+[ADR-018](adr-018-repository-scoped-direct-file-sessions.md). The discovery,
+identifier, routing, and initial-selection-order decisions remain active.
+
 ## Context
 
 Lens E2 adds directory and current-directory targets plus navigation between

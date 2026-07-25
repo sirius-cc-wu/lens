@@ -10,7 +10,7 @@ tags: [requirements, use-case]
 
 # FEAT-01: View Markdown with PlantUML
 
-Status: implemented in C7
+Status: implemented and refined through D4
 
 ## Actors
 
@@ -107,17 +107,18 @@ Goal: Open Markdown documentation and standalone PlantUML files from the
 current directory, a directory argument, or a supported file argument.
 
 Trigger: The user runs `lens`, `lens <directory>`, `lens <markdown-file>`, or
-`lens <plantuml-file>`.
+`lens <plantuml-file>`, optionally with `--scope repository|target`.
 
 Main success scenario:
 
-1. Lens resolves the document root from the supplied target or current
-   directory.
+1. In the default repository scope, Lens resolves the document root to the
+   nearest recognized repository containing the current directory, directory
+   target, or supported file target.
 2. Lens identifies Markdown documents and `.puml` files within the document
    root.
-3. Lens selects the explicitly named file, a root `README` document, a
-   `docs/index` document, or the first discovered document as the initial
-   document.
+3. Lens selects the explicitly named file or uses the selected directory as an
+   initial-selection anchor, preferring its root `README`, its `docs/index`, or
+   its first discovered document.
 4. Lens opens a local viewing session for the document root.
 5. The user reads the initial document in the browser.
 
@@ -126,6 +127,18 @@ Extensions:
 - 1a. If the target is missing, unreadable, hidden, a symbolic link, or neither
   a directory nor a supported document, Lens reports an actionable error
   and starts no viewing session.
+- 1b. If the target is inside nested repositories or a Git submodule, Lens uses
+  the nearest enclosing repository root.
+- 1c. If no recognized repository contains the target, Lens uses the selected
+  directory or current directory, or a supported file's parent.
+- 1d. With `--scope target`, Lens uses the selected directory or current
+  directory, or a supported file's parent, without repository recognition.
+- 1e. If repository scope would place the selected target below a hidden
+  repository-relative entry, Lens rejects the target because discovery cannot
+  admit its initial-selection anchor.
+- 3a. If a repository-scoped selected directory contains no supported
+  document, Lens falls back to the repository root's `README`, `docs/index`, or
+  first discovered document.
 - 2a. If the document root has no Markdown or PlantUML documents, Lens reports an
   actionable error and starts no viewing session.
 
@@ -135,8 +148,17 @@ Special requirements:
 - Symbolic links found during document discovery are excluded.
 - Hidden files and directories found during document discovery are excluded.
 - A direct hidden or symbolic-link target is rejected before document discovery.
-- A direct Markdown or `.puml` file target remains the initial document but
-  authorizes its canonical parent as the document root.
+- Lens recognizes a repository root without invoking Git. The nearest
+  canonical ancestor containing a non-symbolic-link `.git` directory or a
+  regular `.git` file establishes the root.
+- A `.git` symbolic link does not establish a repository root.
+- A direct Markdown or `.puml` file remains the initial document, and a
+  directory remains the initial-selection anchor, when the repository root is
+  broader than the target.
+- `--scope target` preserves an explicit narrow session for privacy,
+  compatibility, or reduced discovery work.
+- Repository discovery remains fixed when the session starts. Links and
+  browser requests cannot add documents to the document set.
 
 ## UC-10: View a Standalone PlantUML File
 

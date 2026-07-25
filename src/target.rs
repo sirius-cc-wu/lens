@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use clap::ValueEnum;
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -24,6 +25,18 @@ pub(crate) enum DocumentKind {
 pub struct MarkdownTarget {
     documents: Vec<MarkdownDocument>,
     initial_document: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+pub enum TargetScope {
+    #[default]
+    Repository,
+    Target,
+}
+
+enum InitialSelection {
+    Document(PathBuf),
+    Directory(PathBuf),
 }
 
 impl MarkdownTarget {
@@ -55,6 +68,13 @@ pub enum TargetError {
 }
 
 pub fn load_markdown_target(path: Option<&Path>) -> Result<MarkdownTarget, TargetError> {
+    load_markdown_target_with_scope(path, TargetScope::Repository)
+}
+
+pub fn load_markdown_target_with_scope(
+    path: Option<&Path>,
+    scope: TargetScope,
+) -> Result<MarkdownTarget, TargetError> {
     let requested_path = match path {
         Some(path) => path.to_path_buf(),
         None => env::current_dir().map_err(|source| TargetError::Unreadable {
@@ -75,19 +95,34 @@ pub fn load_markdown_target(path: Option<&Path>) -> Result<MarkdownTarget, Targe
     }
     let canonical_target = canonicalize(&requested_path)?;
 
-    let (document_root, initial_path) = if metadata.is_dir() {
-        (canonical_target, None)
+    let (target_root, initial_selection) = if metadata.is_dir() {
+        (
+            canonical_target.clone(),
+            InitialSelection::Directory(canonical_target.clone()),
+        )
     } else if metadata.is_file() && document_kind(&canonical_target).is_some() {
-        let document_root = canonical_target
+        let parent = canonical_target
             .parent()
             .expect("a regular file has a parent directory")
             .to_path_buf();
-        (document_root, Some(canonical_target))
+        (parent, InitialSelection::Document(canonical_target.clone()))
     } else {
         return Err(TargetError::UnsupportedTarget {
             path: canonical_target,
         });
     };
+
+    let document_root = match scope {
+        TargetScope::Repository => {
+            nearest_repository_root(&target_root).unwrap_or_else(|| target_root.clone())
+        }
+        TargetScope::Target => target_root,
+    };
+    if contains_hidden_entry(&document_root, &canonical_target) {
+        return Err(TargetError::HiddenTarget {
+            path: canonical_target,
+        });
+    }
 
     let documents = discover_documents(&document_root)?;
     if documents.is_empty() {
@@ -95,8 +130,8 @@ pub fn load_markdown_target(path: Option<&Path>) -> Result<MarkdownTarget, Targe
             path: document_root,
         });
     }
-    let initial_document = select_initial_document(&documents, initial_path.as_deref())
-        .expect("the selected file must be present in its discovered document set");
+    let initial_document = select_initial_document(&documents, &initial_selection)
+        .expect("a non-empty document set must have an initial document");
 
     Ok(MarkdownTarget {
         documents,
@@ -167,14 +202,43 @@ fn discover_documents_in(
 
 fn select_initial_document(
     documents: &[MarkdownDocument],
-    initial_path: Option<&Path>,
+    initial_selection: &InitialSelection,
 ) -> Option<usize> {
-    if let Some(initial_path) = initial_path {
-        return documents
+    match initial_selection {
+        InitialSelection::Document(initial_path) => documents
             .iter()
-            .position(|document| document.canonical_path == initial_path);
+            .position(|document| document.canonical_path == *initial_path),
+        InitialSelection::Directory(directory) => {
+            select_initial_document_in_directory(documents, directory)
+                .or_else(|| select_repository_initial_document(documents))
+        }
     }
+}
 
+fn select_initial_document_in_directory(
+    documents: &[MarkdownDocument],
+    directory: &Path,
+) -> Option<usize> {
+    documents
+        .iter()
+        .position(|document| {
+            identifier_relative_to(directory, &document.canonical_path)
+                .is_some_and(|identifier| is_root_readme(&identifier))
+        })
+        .or_else(|| {
+            documents.iter().position(|document| {
+                identifier_relative_to(directory, &document.canonical_path)
+                    .is_some_and(|identifier| is_document_index(&identifier))
+            })
+        })
+        .or_else(|| {
+            documents
+                .iter()
+                .position(|document| document.canonical_path.starts_with(directory))
+        })
+}
+
+fn select_repository_initial_document(documents: &[MarkdownDocument]) -> Option<usize> {
     documents
         .iter()
         .position(|document| is_root_readme(&document.identifier))
@@ -184,6 +248,14 @@ fn select_initial_document(
                 .position(|document| is_document_index(&document.identifier))
         })
         .or(Some(0))
+}
+
+fn identifier_relative_to(root: &Path, path: &Path) -> Option<String> {
+    path.strip_prefix(root).ok().map(|relative| {
+        relative
+            .to_string_lossy()
+            .replace(std::path::MAIN_SEPARATOR, "/")
+    })
 }
 
 fn is_root_readme(identifier: &str) -> bool {
@@ -244,6 +316,33 @@ fn target_metadata(path: &Path) -> Result<fs::Metadata, TargetError> {
     })
 }
 
+fn nearest_repository_root(directory: &Path) -> Option<PathBuf> {
+    directory
+        .ancestors()
+        .find(|ancestor| is_repository_root(ancestor))
+        .map(Path::to_path_buf)
+}
+
+fn is_repository_root(directory: &Path) -> bool {
+    fs::symlink_metadata(directory.join(".git"))
+        .ok()
+        .is_some_and(|metadata| {
+            let file_type = metadata.file_type();
+            !file_type.is_symlink() && (file_type.is_dir() || file_type.is_file())
+        })
+}
+
+fn contains_hidden_entry(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root).ok().is_some_and(|relative| {
+        relative.components().any(|component| {
+            let std::path::Component::Normal(name) = component else {
+                return false;
+            };
+            is_hidden(name)
+        })
+    })
+}
+
 fn is_markdown_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -267,7 +366,10 @@ fn document_kind(path: &Path) -> Option<DocumentKind> {
 mod tests {
     use std::{fs, path::Path};
 
-    use super::{is_hidden_target, load_markdown_target, MarkdownTarget, TargetError};
+    use super::{
+        is_hidden_target, load_markdown_target, load_markdown_target_with_scope, MarkdownTarget,
+        TargetError, TargetScope,
+    };
 
     #[test]
     fn current_directory_marker_then_is_not_hidden_target() {
@@ -382,13 +484,106 @@ mod tests {
     }
 
     #[test]
-    fn direct_markdown_file_then_selects_file_and_discovers_siblings() {
+    fn direct_file_in_repository_then_discovers_repository_documents() {
         // Arrange
-        let directory = temporary_directory("file-document-root");
-        let selected = directory.join("selected.md");
+        let repository = temporary_directory("direct-file-repository");
+        fs::create_dir(repository.join(".git")).expect("Git marker should be creatable");
+        fs::create_dir_all(repository.join("docs/features"))
+            .expect("feature directory should be creatable");
+        fs::create_dir_all(repository.join("docs/iterations"))
+            .expect("iteration directory should be creatable");
+        let selected = repository.join("docs/features/guide.md");
+        fs::write(&selected, "# Guide\n").expect("selected fixture should be writable");
+        fs::write(
+            repository.join("docs/iterations/evidence.md"),
+            "# Evidence\n",
+        )
+        .expect("iteration fixture should be writable");
+        fs::write(repository.join("README.md"), "# Repository\n")
+            .expect("README fixture should be writable");
+
+        // Act
+        let target = load_markdown_target(Some(&selected)).expect("Markdown file should load");
+
+        // Assert
+        assert_target(
+            &target,
+            1,
+            &[
+                "README.md",
+                "docs/features/guide.md",
+                "docs/iterations/evidence.md",
+            ],
+        );
+        remove_directory(repository);
+    }
+
+    #[test]
+    fn direct_file_in_worktree_then_uses_worktree_root() {
+        // Arrange
+        let worktree = temporary_directory("direct-file-worktree");
+        fs::write(worktree.join(".git"), "gitdir: /tmp/example\n")
+            .expect("Git file marker should be writable");
+        fs::create_dir_all(worktree.join("docs/guides"))
+            .expect("guide directory should be creatable");
+        let selected = worktree.join("docs/guides/selected.markdown");
         fs::write(&selected, "# Selected\n").expect("selected fixture should be writable");
-        fs::write(directory.join("sibling.md"), "# Sibling\n")
+        fs::write(worktree.join("README.md"), "# Worktree\n")
+            .expect("README fixture should be writable");
+
+        // Act
+        let target = load_markdown_target(Some(&selected)).expect("Markdown file should load");
+
+        // Assert
+        assert_target(&target, 1, &["README.md", "docs/guides/selected.markdown"]);
+        remove_directory(worktree);
+    }
+
+    #[test]
+    fn direct_file_in_nested_repository_then_uses_nearest_repository_root() {
+        // Arrange
+        let outer_repository = temporary_directory("nested-repository");
+        fs::create_dir(outer_repository.join(".git"))
+            .expect("outer Git marker should be creatable");
+        fs::write(outer_repository.join("README.md"), "# Outer\n")
+            .expect("outer README fixture should be writable");
+        let inner_repository = outer_repository.join("vendor/module");
+        fs::create_dir_all(inner_repository.join(".git"))
+            .expect("inner Git marker should be creatable");
+        fs::create_dir(inner_repository.join("docs"))
+            .expect("inner docs directory should be creatable");
+        let selected = inner_repository.join("docs/architecture.puml");
+        fs::write(&selected, "@startuml\n@enduml\n")
+            .expect("selected PlantUML fixture should be writable");
+        fs::write(inner_repository.join("README.md"), "# Inner\n")
+            .expect("inner README fixture should be writable");
+
+        // Act
+        let target = load_markdown_target(Some(&selected)).expect("PlantUML file should load");
+
+        // Assert
+        assert_target(&target, 1, &["README.md", "docs/architecture.puml"]);
+        assert!(matches!(
+            target.documents[1].kind,
+            super::DocumentKind::PlantUml
+        ));
+        remove_directory(outer_repository);
+    }
+
+    #[test]
+    fn direct_file_without_repository_then_discovers_only_parent_documents() {
+        // Arrange
+        let directory = temporary_directory("file-without-repository");
+        fs::create_dir_all(directory.join("docs/features"))
+            .expect("feature directory should be creatable");
+        fs::create_dir(directory.join("docs/iterations"))
+            .expect("iteration directory should be creatable");
+        let selected = directory.join("docs/features/selected.md");
+        fs::write(&selected, "# Selected\n").expect("selected fixture should be writable");
+        fs::write(directory.join("docs/features/sibling.md"), "# Sibling\n")
             .expect("sibling fixture should be writable");
+        fs::write(directory.join("docs/iterations/outside.md"), "# Outside\n")
+            .expect("outside-parent fixture should be writable");
 
         // Act
         let target = load_markdown_target(Some(&selected)).expect("Markdown file should load");
@@ -396,6 +591,195 @@ mod tests {
         // Assert
         assert_target(&target, 0, &["selected.md", "sibling.md"]);
         remove_directory(directory);
+    }
+
+    #[test]
+    fn directory_target_inside_repository_then_discovers_repository_documents() {
+        // Arrange
+        let repository = temporary_directory("directory-inside-repository");
+        fs::create_dir(repository.join(".git")).expect("Git marker should be creatable");
+        fs::create_dir_all(repository.join("docs/features"))
+            .expect("feature directory should be creatable");
+        fs::create_dir(repository.join("docs/iterations"))
+            .expect("iteration directory should be creatable");
+        fs::write(repository.join("docs/features/guide.md"), "# Guide\n")
+            .expect("guide fixture should be writable");
+        fs::write(
+            repository.join("docs/iterations/evidence.md"),
+            "# Evidence\n",
+        )
+        .expect("iteration fixture should be writable");
+        fs::write(repository.join("README.md"), "# Repository\n")
+            .expect("README fixture should be writable");
+        let selected_directory = repository.join("docs/features");
+
+        // Act
+        let target =
+            load_markdown_target(Some(&selected_directory)).expect("directory should load");
+
+        // Assert
+        assert_target(
+            &target,
+            1,
+            &[
+                "README.md",
+                "docs/features/guide.md",
+                "docs/iterations/evidence.md",
+            ],
+        );
+        remove_directory(repository);
+    }
+
+    #[test]
+    fn empty_selected_directory_then_uses_repository_initial_document() {
+        // Arrange
+        let repository = temporary_directory("empty-selected-directory");
+        fs::create_dir(repository.join(".git")).expect("Git marker should be creatable");
+        fs::create_dir(repository.join("empty")).expect("selected directory should be creatable");
+        fs::write(repository.join("README.md"), "# Repository\n")
+            .expect("README fixture should be writable");
+
+        // Act
+        let target = load_markdown_target(Some(&repository.join("empty")))
+            .expect("repository document root should load");
+
+        // Assert
+        assert_target(&target, 0, &["README.md"]);
+        remove_directory(repository);
+    }
+
+    #[test]
+    fn target_scoped_directory_inside_repository_then_discovers_only_target_documents() {
+        // Arrange
+        let repository = temporary_directory("target-scoped-directory");
+        fs::create_dir(repository.join(".git")).expect("Git marker should be creatable");
+        fs::create_dir_all(repository.join("docs/features"))
+            .expect("feature directory should be creatable");
+        fs::create_dir(repository.join("docs/iterations"))
+            .expect("iteration directory should be creatable");
+        fs::write(repository.join("docs/features/guide.md"), "# Guide\n")
+            .expect("guide fixture should be writable");
+        fs::write(
+            repository.join("docs/iterations/evidence.md"),
+            "# Evidence\n",
+        )
+        .expect("iteration fixture should be writable");
+
+        // Act
+        let target = load_markdown_target_with_scope(
+            Some(&repository.join("docs/features")),
+            TargetScope::Target,
+        )
+        .expect("target-scoped directory should load");
+
+        // Assert
+        assert_target(&target, 0, &["guide.md"]);
+        remove_directory(repository);
+    }
+
+    #[test]
+    fn target_scoped_file_inside_repository_then_discovers_only_parent_documents() {
+        // Arrange
+        let repository = temporary_directory("target-scoped-file");
+        fs::create_dir(repository.join(".git")).expect("Git marker should be creatable");
+        fs::create_dir_all(repository.join("docs/features"))
+            .expect("feature directory should be creatable");
+        let selected = repository.join("docs/features/selected.md");
+        fs::write(&selected, "# Selected\n").expect("selected fixture should be writable");
+        fs::write(repository.join("docs/features/sibling.md"), "# Sibling\n")
+            .expect("sibling fixture should be writable");
+        fs::write(repository.join("README.md"), "# Repository\n")
+            .expect("README fixture should be writable");
+
+        // Act
+        let target = load_markdown_target_with_scope(Some(&selected), TargetScope::Target)
+            .expect("target-scoped file should load");
+
+        // Assert
+        assert_target(&target, 0, &["selected.md", "sibling.md"]);
+        remove_directory(repository);
+    }
+
+    #[test]
+    fn repository_scoped_directory_below_hidden_entry_then_returns_hidden_target_error() {
+        // Arrange
+        let repository = temporary_directory("hidden-repository-directory");
+        fs::create_dir(repository.join(".git")).expect("Git marker should be creatable");
+        fs::create_dir(repository.join(".private")).expect("hidden directory should be creatable");
+        fs::create_dir(repository.join(".private/docs"))
+            .expect("selected directory should be creatable");
+        fs::write(repository.join(".private/docs/guide.md"), "# Guide\n")
+            .expect("guide fixture should be writable");
+
+        // Act
+        let result = load_markdown_target(Some(&repository.join(".private/docs")));
+
+        // Assert
+        assert!(matches!(result, Err(TargetError::HiddenTarget { .. })));
+        remove_directory(repository);
+    }
+
+    #[test]
+    fn target_scoped_directory_below_hidden_parent_then_discovers_documents() {
+        // Arrange
+        let repository = temporary_directory("target-scoped-hidden-parent");
+        fs::create_dir(repository.join(".git")).expect("Git marker should be creatable");
+        fs::create_dir(repository.join(".private")).expect("hidden directory should be creatable");
+        let selected = repository.join(".private/docs");
+        fs::create_dir(&selected).expect("selected directory should be creatable");
+        fs::write(selected.join("guide.md"), "# Guide\n")
+            .expect("guide fixture should be writable");
+
+        // Act
+        let target = load_markdown_target_with_scope(Some(&selected), TargetScope::Target)
+            .expect("target-scoped directory should load");
+
+        // Assert
+        assert_target(&target, 0, &["guide.md"]);
+        remove_directory(repository);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symbolic_git_marker_then_uses_enclosing_repository_root() {
+        use std::os::unix::fs::symlink;
+
+        // Arrange
+        let repository = temporary_directory("symbolic-git-marker");
+        fs::create_dir(repository.join(".git")).expect("outer Git marker should be creatable");
+        fs::write(repository.join("README.md"), "# Outer\n")
+            .expect("outer README fixture should be writable");
+        let nested = repository.join("nested");
+        fs::create_dir(&nested).expect("nested directory should be creatable");
+        symlink(repository.join(".git"), nested.join(".git"))
+            .expect("symbolic Git marker should be creatable");
+        fs::create_dir(nested.join("docs")).expect("nested docs directory should be creatable");
+        let selected = nested.join("docs/guide.md");
+        fs::write(&selected, "# Guide\n").expect("selected fixture should be writable");
+
+        // Act
+        let target = load_markdown_target(Some(&selected)).expect("Markdown file should load");
+
+        // Assert
+        assert_target(&target, 1, &["README.md", "nested/docs/guide.md"]);
+        remove_directory(repository);
+    }
+
+    #[test]
+    fn direct_file_below_hidden_repository_entry_then_returns_hidden_target_error() {
+        // Arrange
+        let repository = temporary_directory("hidden-repository-document");
+        fs::create_dir(repository.join(".git")).expect("Git marker should be creatable");
+        fs::create_dir(repository.join(".private")).expect("hidden directory should be creatable");
+        let selected = repository.join(".private/guide.md");
+        fs::write(&selected, "# Guide\n").expect("selected fixture should be writable");
+
+        // Act
+        let result = load_markdown_target(Some(&selected));
+
+        // Assert
+        assert!(matches!(result, Err(TargetError::HiddenTarget { .. })));
+        remove_directory(repository);
     }
 
     #[test]
