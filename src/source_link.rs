@@ -151,10 +151,19 @@ fn vscode_url(path: &Path) -> Option<String> {
             .map_or_else(|| verbatim.to_owned(), |unc| format!("//{unc}"));
     }
     let normalized = normalized.strip_prefix('/').unwrap_or(&normalized);
+    if has_ambiguous_vscode_position_suffix(normalized) {
+        return None;
+    }
     Some(format!(
         "vscode://file/{}",
         utf8_percent_encode(normalized, VSCODE_PATH_ENCODE_SET)
     ))
+}
+
+fn has_ambiguous_vscode_position_suffix(path: &str) -> bool {
+    path.rsplit_once(':').is_some_and(|(_, suffix)| {
+        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 #[cfg(test)]
@@ -255,6 +264,27 @@ mod tests {
 
         // Assert
         assert!(resolved.ends_with("/src/source%20file-%E6%B8%AC%E8%A9%A6.rs"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_file_with_numeric_colon_suffix_then_omits_vscode_url() {
+        // Arrange
+        let fixture = Fixture::new("numeric-colon-suffix");
+        fixture.write("src/report:33");
+        fixture.write("src/report:33:4");
+        fixture.write("src/report:section");
+        let resolver = fixture.resolver();
+
+        // Act
+        let line_ambiguous = resolver.resolve(&fixture.document(), "../src/report:33");
+        let column_ambiguous = resolver.resolve(&fixture.document(), "../src/report:33:4");
+        let unambiguous = resolver.resolve(&fixture.document(), "../src/report:section");
+
+        // Assert
+        assert!(line_ambiguous.is_none());
+        assert!(column_ambiguous.is_none());
+        assert!(unambiguous.is_some());
     }
 
     #[test]

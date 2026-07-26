@@ -242,7 +242,8 @@ Extensions:
 - 2a. If the target is a discovered Markdown or PlantUML document, Lens keeps
   its existing in-browser document navigation.
 - 2b. If the target is missing, unreadable, hidden, symbolic, a directory,
-  absolute, or outside the fixed root, Lens preserves its existing
+  absolute, outside the fixed root, or has a path ending in a colon and number
+  (an ambiguous VS Code position suffix), Lens preserves its existing
   unavailable-document behavior and generates no editor URL.
 - 2c. External URLs, authored `vscode:` URLs, and same-document fragments keep
   their authored browser behavior; Lens neither validates nor endorses them.

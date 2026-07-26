@@ -36,7 +36,8 @@ Scope: Lens
 - Every Lens-generated `vscode:` link visibly states that it opens in VS Code,
   and that statement is part of the link's accessible name.
 - A missing, unreadable, hidden, symbolic, directory, absolute, invalidly
-  encoded, or out-of-root target received no Lens-generated `vscode:` URL.
+  encoded, or out-of-root target, or a target whose canonical path ended in a
+  colon and number, received no Lens-generated `vscode:` URL.
 - External destinations, authored `vscode:` destinations, and same-document
   fragments retained their authored destinations.
 - The response contained no source-file bytes, no source-file route, and no

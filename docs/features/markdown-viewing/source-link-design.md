@@ -102,6 +102,8 @@ polymorphism, or additional synchronization is needed.
 
 - Resolution is intentionally fail-closed: decoding, metadata, readability, or
   canonicalization errors produce no generated editor URL.
+- A canonical path ending in a colon and number is ambiguous with VS Code's
+  line and column syntax, so serialization produces no generated editor URL.
 - Every path component beneath the root is inspected with symbolic-link
   metadata before final canonicalization. Final containment protects against a
   changed or platform-normalized target.
