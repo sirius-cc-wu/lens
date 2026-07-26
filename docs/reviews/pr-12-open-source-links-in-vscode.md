@@ -18,7 +18,7 @@ request's reported head commit.
 ## Findings
 
 1. **[Medium] Numeric colon segments can make VS Code open the wrong file
-   — `src/source_link.rs:154`**
+   — [`src/source_link.rs:154`](../../src/source_link.rs#L154)**
 
    Explanation and impact: `vscode_url` emits every colon in a canonical path
    unchanged. VS Code reserves `:line:column` at the end of a
@@ -78,7 +78,7 @@ request's reported head commit.
    destination and preserves the authored link.
 
 2. **[Low] Email autolinks can become malformed editor destinations
-   — `src/markdown.rs:60`**
+   — [`src/markdown.rs:60`](../../src/markdown.rs#L60)**
 
    Explanation and impact: The renderer passes every `Tag::Link` through
    source-file resolution without distinguishing `LinkType::Email`. If a
