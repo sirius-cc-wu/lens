@@ -14,7 +14,7 @@ Status: completed
 
 Phase Intent:
 
-- Implement the security-sensitive filesystem and URL core behind ADR-020
+- Implement the security-sensitive filesystem and URL core behind ADR-021
   through focused executable examples.
 
 Goal:
@@ -53,24 +53,24 @@ Artifacts Consulted:
 
 - `OC-06`, request a document with source links:
   [`docs/features/markdown-viewing/oc-06-request-document-source-links.md`](../features/markdown-viewing/oc-06-request-document-source-links.md)
-- `ADR-020`, validated VS Code source links:
-  [`docs/decisions/adr-020-validated-vscode-source-links.md`](../decisions/adr-020-validated-vscode-source-links.md)
+- `ADR-021`, validated VS Code source links:
+  [`docs/decisions/adr-021-validated-vscode-source-links.md`](../decisions/adr-021-validated-vscode-source-links.md)
 - `DCD-05`, Rust responsibility design:
   [`docs/features/markdown-viewing/source-link-design.md`](../features/markdown-viewing/source-link-design.md)
 
 Decisions to Record:
 
-- None. C8 implements ADR-020's authorization and serialization rules without
+- None. C8 implements ADR-021's authorization and serialization rules without
   changing its external-editor scope.
 
 Trace:
 
-- `UC-06` -> `SSD-06` -> `OC-06` -> `ADR-020` -> `DCD-05` -> source resolver,
+- `UC-06` -> `SSD-06` -> `OC-06` -> `ADR-021` -> `DCD-05` -> source resolver,
   Markdown destination checks, and focused Rust examples
 
 Test-Driven Evidence:
 
-- Oracle: OC-06 and ADR-020 define qualifying target properties, fail-closed
+- Oracle: OC-06 and ADR-021 define qualifying target properties, fail-closed
   cases, and platform URL syntax independently from production code.
 - Slice size: authorization and serialization share one stable resolver
   boundary and are the highest-risk prerequisite for renderer presentation.

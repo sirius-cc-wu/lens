@@ -56,7 +56,7 @@ Artifacts to Refine:
   constraints, and acceptance checks.
 - Proposal, decision, requirements, and risks:
   [`docs/proposals/open-source-links-in-vscode.md`](../proposals/open-source-links-in-vscode.md),
-  [`docs/decisions/adr-020-validated-vscode-source-links.md`](../decisions/adr-020-validated-vscode-source-links.md),
+  [`docs/decisions/adr-021-validated-vscode-source-links.md`](../decisions/adr-021-validated-vscode-source-links.md),
   [`docs/features/markdown-viewing/use-cases.md`](../features/markdown-viewing/use-cases.md), and
   [`docs/risk-list.md`](../risk-list.md) - record completed construction and
   executable trace.
@@ -70,12 +70,12 @@ Artifacts Consulted:
 
 Decisions to Record:
 
-- None. C9 completes ADR-020 without adding configurable schemes, source
+- None. C9 completes ADR-021 without adding configurable schemes, source
   positions, browser routes, or Lens-owned editor launch.
 
 Trace:
 
-- `UC-06` -> `SSD-06` -> `OC-06` -> `ADR-020` -> `RZ-06` -> C8 resolver ->
+- `UC-06` -> `SSD-06` -> `OC-06` -> `ADR-021` -> `RZ-06` -> C8 resolver ->
   C9 accessible markup, compiled-browser evidence, and user guidance
 
 Test-Driven Evidence:
@@ -104,7 +104,7 @@ Exit Criteria:
   preservation, hover without navigation, and the absence of a source route.
 - User guidance explains the fixed root, optional stable VS Code handler,
   browser confirmation, and unsupported VS Code Insiders scheme.
-- The proposal is marked implemented and links D5, C8, C9, and ADR-020.
+- The proposal is marked implemented and links D5, C8, C9, and ADR-021.
 - Required automated and manual acceptance checks pass, with any unavailable
   external validation reported accurately.
 
@@ -120,7 +120,7 @@ Results:
 - Added README, release-readiness, release-note, supplementary-requirement, and
   risk guidance for the fixed root, optional stable VS Code handler, browser
   confirmation, unsupported Insiders scheme, and no-source-route boundary.
-- Marked the proposal implemented and completed its D5, C8, C9, and ADR-020
+- Marked the proposal implemented and completed its D5, C8, C9, and ADR-021
   trace.
 - `cargo test --locked` passed all 80 library and 5 CLI tests.
   `cargo clippy --locked --all-targets --all-features -- -D warnings`,
@@ -145,5 +145,5 @@ Artifact Outcomes:
   notes - explain operation, compatibility, and manual acceptance.
 - completed: `PROP-OPEN-SOURCE-LINKS-IN-VSCODE` - records implementation
   through D5, C8, and C9.
-- refined: `ADR-020`, `FEAT-01`, `R-02`, and `R-03` - link executable
+- refined: `ADR-021`, `FEAT-01`, `R-02`, and `R-03` - link executable
   construction and transition evidence.

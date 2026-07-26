@@ -25,6 +25,13 @@
 - Prefer the concrete resource or operation over generic phrases such as "resource acquisition," while retaining exact identifiers needed to match code and logs.
 - Before completing work that adds or materially changes a PlantUML block, validate it with the configured PlantUML server. If the server is unavailable, report the skipped validation rather than claiming the diagram is verified.
 
+## Code Reviews
+
+- Persist every completed code-review result as a Markdown document under `docs/reviews/`. The saved document is the durable review record.
+- For a pull-request review, create the review record on the pull request's head branch, commit the record, and push the commit to that same branch before completing the review. If the head branch is not writable, keep the commit locally and report the push failure instead of pushing to a different branch.
+- For every actionable review finding (review comment), include one PlantUML block that depicts the reported behavior and impact, and a second PlantUML block that depicts the suggested solution. Keep the exact file and line, explanation and impact, proposed fix, and test coverage in prose.
+- Apply the PlantUML validation requirement above to every review diagram. When a review has no actionable findings, save the no-findings result and its residual risks or validation gaps without inventing findings or diagrams.
+
 ## Behavior-Oriented Tests
 
 - Name tests `<condition_or_action>_then_<observable_result>`, such as `missing_shutdown_ack_then_times_out_and_marks_rescan_failed`.

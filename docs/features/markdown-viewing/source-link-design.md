@@ -117,5 +117,5 @@ polymorphism, or additional synchronization is needed.
 - System sequence: [`SSD-06`](ssd-06-open-source-link.md)
 - Contract: [`OC-06`](oc-06-request-document-source-links.md)
 - Decision:
-  [`ADR-020`](../../decisions/adr-020-validated-vscode-source-links.md)
+  [`ADR-021`](../../decisions/adr-021-validated-vscode-source-links.md)
 - Risks: [`R-02`, `R-03`, and `R-04`](../../risk-list.md)

@@ -8,7 +8,7 @@ use std::{
 
 use reqwest::Client;
 
-use super::catalog::DocumentCatalog;
+use super::known_documents::KnownDocuments;
 use crate::{
     markdown::{render, render_standalone_plantuml, RenderedDocument},
     source_link::SourceLinkResolver,
@@ -19,8 +19,8 @@ const REFRESH_INTERVAL: Duration = Duration::from_millis(500);
 
 pub(super) struct ViewerState {
     pub(super) documents: RwLock<Vec<ViewerDocument>>,
-    pub(super) catalog: DocumentCatalog,
-    known_documents: BTreeSet<String>,
+    pub(super) known_documents: KnownDocuments,
+    known_document_ids: BTreeSet<String>,
     source_links: SourceLinkResolver,
     pub(super) initial_document: usize,
     pub(super) client: Client,
@@ -68,7 +68,7 @@ impl ViewerState {
                 &identifier,
                 &canonical_path,
                 kind,
-                &self.known_documents,
+                &self.known_document_ids,
                 &self.source_links,
             );
             let mut documents = self
@@ -107,14 +107,17 @@ pub(super) fn viewer_state(
     client: Client,
     plantuml_server: String,
 ) -> Arc<ViewerState> {
-    let catalog = DocumentCatalog::new(
+    let known_documents = KnownDocuments::new(
         documents
             .iter()
             .enumerate()
             .map(|(index, document)| (document.identifier.clone(), index)),
     );
-    let known_documents = catalog.known_document_ids();
     let source_links = SourceLinkResolver::new(document_root);
+    let known_document_ids = documents
+        .iter()
+        .map(|document| document.identifier.clone())
+        .collect();
     let documents = documents
         .into_iter()
         .enumerate()
@@ -125,7 +128,7 @@ pub(super) fn viewer_state(
                 &document.identifier,
                 &document.canonical_path,
                 document.kind,
-                &known_documents,
+                &known_document_ids,
                 &source_links,
             );
             ViewerDocument {
@@ -141,8 +144,8 @@ pub(super) fn viewer_state(
 
     Arc::new(ViewerState {
         documents: RwLock::new(documents),
-        catalog,
         known_documents,
+        known_document_ids,
         source_links,
         initial_document,
         client,

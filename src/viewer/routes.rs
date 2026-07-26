@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, RawQuery, State},
+    extract::{Path, State},
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -9,11 +9,7 @@ use axum::{
 };
 
 use super::{
-    catalog::NavigationRequest,
-    page::{
-        app_script, app_stylesheet, content_security_policy, deferred_navigation_page,
-        navigation_pane, page,
-    },
+    page::{app_script, app_stylesheet, content_security_policy, document_unavailable_page, page},
     rendering::request_diagram,
     state::ViewerState,
 };
@@ -30,26 +26,17 @@ pub(super) fn router(state: Arc<ViewerState>) -> Router {
         .with_state(state)
 }
 
-async fn initial_document_view(
-    State(state): State<Arc<ViewerState>>,
-    RawQuery(raw_query): RawQuery,
-) -> Response {
-    let request = NavigationRequest::from_raw_query(raw_query.as_deref());
-    rendered_document_response(&state, state.initial_document, &request, "/")
+async fn initial_document_view(State(state): State<Arc<ViewerState>>) -> Response {
+    rendered_document_response(&state, state.initial_document)
 }
 
 async fn document_view(
     State(state): State<Arc<ViewerState>>,
     Path(document_id): Path<String>,
-    RawQuery(raw_query): RawQuery,
 ) -> Response {
     let document_id = document_id.trim_start_matches('/');
-    let request = NavigationRequest::from_raw_query(raw_query.as_deref());
-    match state.catalog.known_document_index(document_id) {
-        Some(known_document) => {
-            let route = format!("/documents/{document_id}");
-            rendered_document_response(&state, known_document, &request, &route)
-        }
+    match state.known_documents.index(document_id) {
+        Some(known_document) => rendered_document_response(&state, known_document),
         None => not_found().await.into_response(),
     }
 }
@@ -59,7 +46,7 @@ async fn document_revision(
     Path(document_id): Path<String>,
 ) -> Response {
     let document_id = document_id.trim_start_matches('/');
-    match state.catalog.known_document_index(document_id) {
+    match state.known_documents.index(document_id) {
         Some(document_id) => (
             [(header::CACHE_CONTROL, "no-store")],
             state
@@ -72,13 +59,7 @@ async fn document_revision(
     }
 }
 
-fn rendered_document_response(
-    state: &ViewerState,
-    document_id: usize,
-    request: &NavigationRequest,
-    current_route: &str,
-) -> Response {
-    let navigation = navigation_pane(state.catalog.search(request), document_id, current_route);
+fn rendered_document_response(state: &ViewerState, document_id: usize) -> Response {
     let documents = state
         .documents
         .read()
@@ -89,7 +70,6 @@ fn rendered_document_response(
         Html(page(
             &document.identifier,
             document.rendered.html.clone(),
-            navigation,
             Some((&document.identifier, document.revision)),
         )),
     )
@@ -114,7 +94,7 @@ async fn not_found() -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
-        Html(deferred_navigation_page()),
+        Html(document_unavailable_page()),
     )
 }
 

@@ -5,11 +5,14 @@ description: "Specifies bounded identifier search and paging over the immutable 
 id: "OC-03"
 operation: "request_document(document_id, query?, page?)"
 traces: [UC-07, UC-08, SSD-03, ADR-003]
-status: "active"
+status: "retired"
 tags: [analysis, operation-contract, navigation]
 ---
 
 # OC-03: Request a Bounded Document Catalog Page
+
+Status: retired by [ADR-020](../../decisions/adr-020-focused-document-review.md);
+retained as the historical contract for C3 and C5
 
 Operation: `request_document(document_id, query?, page?)`
 

@@ -3,7 +3,7 @@ use std::net::TcpListener;
 use anyhow::{Context, Result};
 
 mod browser;
-mod catalog;
+mod known_documents;
 mod page;
 mod rendering;
 mod routes;

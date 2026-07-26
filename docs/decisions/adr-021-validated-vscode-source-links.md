@@ -1,14 +1,14 @@
 ---
 type: "Architecture Decision"
-title: "ADR-020: Emit Validated VS Code Source Links"
+title: "ADR-021: Emit Validated VS Code Source Links"
 description: "Hands qualifying repository files to VS Code with generated platform URLs while keeping filesystem paths out of Lens browser routes."
-id: "ADR-020"
+id: "ADR-021"
 status: "accepted"
 date: "2026-07-26"
 tags: [architecture, decision, navigation, security, vscode]
 ---
 
-# ADR-020: Emit Validated VS Code Source Links
+# ADR-021: Emit Validated VS Code Source Links
 
 Status: accepted
 

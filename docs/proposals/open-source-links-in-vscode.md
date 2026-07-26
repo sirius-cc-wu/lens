@@ -13,7 +13,7 @@ Status: implemented through D5, C8, and C9
 
 Implementation trace:
 
-- [ADR-020: Emit validated VS Code source links](../decisions/adr-020-validated-vscode-source-links.md)
+- [ADR-021: Emit validated VS Code source links](../decisions/adr-021-validated-vscode-source-links.md)
 - [D5 design iteration](../iterations/d5-validated-vscode-source-link-design.md)
 - [C8 authorization iteration](../iterations/c8-source-link-authorization.md)
 - [C9 transition iteration](../iterations/c9-accessible-source-link-handoff.md)

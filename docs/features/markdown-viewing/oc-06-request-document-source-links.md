@@ -15,7 +15,7 @@ Operation: `request_document(document_id)`
 
 Cross References: `UC-06`,
 [SSD-06](ssd-06-open-source-link.md), and
-[ADR-020](../../decisions/adr-020-validated-vscode-source-links.md)
+[ADR-021](../../decisions/adr-021-validated-vscode-source-links.md)
 
 Scope: Lens
 

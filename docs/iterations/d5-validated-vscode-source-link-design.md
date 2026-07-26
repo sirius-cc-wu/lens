@@ -40,8 +40,8 @@ Artifacts to Start:
 - `OC-06`, request a document with source links:
   [`docs/features/markdown-viewing/oc-06-request-document-source-links.md`](../features/markdown-viewing/oc-06-request-document-source-links.md) -
   make authorization and no-route postconditions testable.
-- `ADR-020`, validated VS Code source links:
-  [`docs/decisions/adr-020-validated-vscode-source-links.md`](../decisions/adr-020-validated-vscode-source-links.md) -
+- `ADR-021`, validated VS Code source links:
+  [`docs/decisions/adr-021-validated-vscode-source-links.md`](../decisions/adr-021-validated-vscode-source-links.md) -
   choose direct validated URLs over source serving or process launch.
 - `RZ-06` and `DCD-05`, source-link realization and Rust design:
   [`docs/features/markdown-viewing/source-link-design.md`](../features/markdown-viewing/source-link-design.md) -
@@ -82,7 +82,7 @@ Decisions to Record:
 Trace:
 
 - `PROP-OPEN-SOURCE-LINKS-IN-VSCODE` -> `FEAT-01` (`UC-06`) -> `SSD-06` ->
-  `OC-06` -> `ADR-020` -> `RZ-06` -> `DCD-05` -> C8 and C9 executable slices
+  `OC-06` -> `ADR-021` -> `RZ-06` -> `DCD-05` -> C8 and C9 executable slices
 
 Exit Criteria:
 
@@ -105,7 +105,7 @@ Results:
 - Established `SSD-06` and `OC-06`, separating Lens's known-document request
   from the user-selected browser and operating-system handoff and making the
   no-route, no-source-content, and no-process guarantees explicit.
-- Accepted ADR-020 and assigned the implementation to an immutable
+- Accepted ADR-021 and assigned the implementation to an immutable
   `SourceLinkResolver`, Markdown link transformation, and session-root
   ownership without adding a trait, lock, or browser path operation.
 - Recorded C8 as the authorization and serialization slice and C9 as the
@@ -116,7 +116,7 @@ Results:
 
 Artifact Outcomes:
 
-- started: `SSD-06`, `OC-06`, `ADR-020`, and
+- started: `SSD-06`, `OC-06`, `ADR-021`, and
   `SOURCE-LINK-DESIGN` at their canonical feature and decision paths.
 - refined: `FEAT-01` - fully details `UC-06` and links its realization and Rust
   design.
