@@ -27,9 +27,9 @@ decision and all rules needed to implement and maintain it.
 ## Motivation
 
 Lens already has a recognizable browser interface, including a warm reading
-surface, document navigation, Markdown typography, metadata tables, diagram
-controls, and responsive behavior. Those decisions currently live primarily in
-the embedded `APP_STYLESHEET` in `src/viewer.rs`. There is no single artifact
+surface, Markdown typography, metadata tables, diagram controls, and responsive
+behavior. Those decisions currently live primarily in the embedded assets
+under `src/viewer/assets/`. There is no single artifact
 that explains why the interface looks and behaves as it does or how a new
 feature should fit into it.
 
@@ -53,8 +53,8 @@ local technical-documentation viewer.
   across supported viewport sizes.
 - Define reusable foundations and component states instead of accumulating
   isolated CSS values.
-- Preserve semantic HTML, keyboard operation, visible focus, and existing
-  no-JavaScript navigation behavior.
+- Preserve semantic HTML, keyboard operation, visible focus, authored links,
+  and ordinary browser history.
 - Make the selected direction implementable without a runtime design framework
   or an external network dependency.
 - Give future interface proposals a stable `DESIGN.md` against which they can
@@ -85,8 +85,8 @@ Create at least three meaningfully different directions. Initial hypotheses are:
 
 1. **Editorial Reader** — evolve the current warm, typographic reading
    experience with clearer hierarchy and more systematic components.
-2. **Technical Workbench** — favor compact information density, strong
-   navigation, and utilitarian controls for frequent repository use.
+2. **Technical Workbench** — favor compact information density, precise
+   metadata, and utilitarian controls for frequent repository use.
 3. **Quiet Documentation** — use a restrained neutral surface that keeps
    authored documents and diagrams visually dominant.
 
@@ -98,10 +98,10 @@ palette.
 
 Each direction should show the same representative states:
 
-- a desktop document with the navigation pane visible;
-- the same document with the navigation pane hidden;
-- a narrow viewport with navigation, document content, and controls;
-- navigation search results, pagination, and the current document;
+- a desktop document in the focused single-column reading layout;
+- the same document at a narrow viewport with content and controls;
+- authored links in normal, keyboard-focused, and visited states;
+- a known-document route with a long repository-relative identifier;
 - headings, paragraphs, links, lists, block quotes, inline code, code blocks,
   and a wide table;
 - YAML frontmatter metadata and a malformed-frontmatter error;
@@ -121,8 +121,8 @@ Review the alternatives using one shared rubric:
 | Criterion | Question |
 |---|---|
 | Reading quality | Can users comfortably scan and read long technical documents? |
-| Information hierarchy | Are document identity, authored content, navigation, metadata, and system status clearly distinguished? |
-| Repository navigation | Are search, pagination, current location, and hide/show controls easy to understand? |
+| Information hierarchy | Are document identity, authored content, metadata, and system status clearly distinguished? |
+| Focused review | Does the document remain primary while authored links and browser history stay understandable? |
 | State clarity | Are normal, focused, selected, disabled, warning, and error states distinguishable without relying only on color? |
 | Responsive behavior | Does the direction remain useful at narrow and wide viewports without hiding essential information? |
 | Accessibility | Can the design support sufficient contrast, visible keyboard focus, meaningful control labels, and reduced-motion preferences? |
@@ -153,13 +153,12 @@ be understandable without access to the Stitch project and should cover:
 3. **Visual foundations** — named reusable values (design tokens) for color,
    typography, spacing, widths, borders, corner treatment, and elevation where
    used.
-4. **Page structure** — document width, navigation relationship, header
-   hierarchy, and narrow-viewport behavior.
+4. **Page structure** — document width, header hierarchy, and narrow-viewport
+   behavior.
 5. **Content styling** — Markdown headings, prose, links, lists, quotations,
    code, tables, metadata, and PlantUML diagrams.
-6. **Components and states** — buttons, inputs, navigation items, pagination,
-   notices, errors, renderer controls, diagram source disclosure, and visible
-   focus.
+6. **Components and states** — buttons, authored links, notices, errors,
+   renderer controls, diagram source disclosure, and visible focus.
 7. **Interaction and accessibility** — keyboard expectations, semantic HTML,
    contrast targets, motion policy, overflow behavior, and behavior when
    JavaScript is unavailable.
@@ -196,7 +195,7 @@ should begin only after the selected direction and `DESIGN.md` are reviewed.
 Implementation should proceed in narrow slices:
 
 1. Introduce the selected foundations and page shell.
-2. Apply the system to document navigation and controls.
+2. Apply the system to the document header, authored links, and controls.
 3. Apply content styles to Markdown, metadata, tables, code, and diagrams.
 4. Complete status, failure, disabled, focus, overflow, and responsive states.
 5. Remove obsolete visual rules only after equivalent states are verified.
@@ -218,9 +217,9 @@ The design-system implementation must preserve:
 
 - the loopback-only viewer and current content security policy;
 - the authorized document set and existing route behavior;
-- server-rendered document navigation, search, and pagination when JavaScript
-  is unavailable;
-- semantic control labels and expanded-state information;
+- authored Markdown links and browser history, including when JavaScript is
+  unavailable;
+- semantic control labels and visible keyboard focus;
 - Markdown meaning and source-safety behavior;
 - diagram source fallback, retry, and session-disable behavior;
 - readable overflow for code, tables, long identifiers, and large diagrams;
@@ -282,14 +281,13 @@ states, focus hooks, or the absence of external runtime resources.
 
 ### Manual end-to-end test
 
-- **Setup:** Build Lens and prepare documents containing long prose, all
+- **Setup:** Build Lens and prepare linked documents containing long prose, all
   heading levels, links, lists, block quotes, inline and block code, a wide
   table, valid and invalid YAML frontmatter, a valid diagram, and a diagram
-  failure. Prepare enough documents to exercise navigation search and
-  pagination.
+  failure.
 - **Actions:** Open the fixture at narrow and wide viewports. Use the keyboard
-  to search, paginate, hide and restore navigation, retry a diagram, disclose
-  source, and disable rendering. Repeat document search and pagination with
+  to follow an authored link, use browser history, retry a diagram, disclose
+  source, and disable rendering. Repeat authored-link navigation with
   JavaScript disabled. Inspect wrapping and overflow with long identifiers and
   large content.
 - **Expected result:** The interface matches the selected direction and

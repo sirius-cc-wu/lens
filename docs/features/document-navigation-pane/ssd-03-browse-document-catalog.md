@@ -5,11 +5,14 @@ description: "Shows bounded catalog search, page selection, and document navigat
 id: "SSD-03"
 use_case: [UC-07, UC-08]
 scenario: "Search the authorized document catalog, move through a result page, and open a known document."
-status: "active"
+status: "retired"
 tags: [analysis, ssd, navigation]
 ---
 
 # SSD-03: Search an Authorized Document Catalog
+
+Status: retired by [ADR-020](../../decisions/adr-020-focused-document-review.md);
+retained as historical analysis for C3 and C5
 
 Use cases: `UC-07` and `UC-08`
 

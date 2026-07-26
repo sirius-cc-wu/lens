@@ -3,14 +3,16 @@ type: "Architecture Decision"
 title: "ADR-008: Search the Session Document Catalog in Bounded Pages"
 description: "Defines bounded, paginated identifier search over the immutable authorized session catalog."
 id: "ADR-008"
-status: "accepted"
+status: "superseded"
+superseded_by: "ADR-020"
 date: "2026-07-19"
 tags: [architecture, decision, navigation]
 ---
 
 # ADR-008: Search the Session Document Catalog in Bounded Pages
 
-Status: accepted
+Status: superseded by
+[ADR-020](adr-020-focused-document-review.md)
 
 Date: 2026-07-19
 
@@ -82,5 +84,6 @@ of any query or page parameters.
 - Implementation: [C5 scalable document navigation search](../iterations/c5-scalable-document-navigation-search.md)
 - Requirements: [`FEAT-02`](../features/document-navigation-pane/use-cases.md)
 - Supersedes: [ADR-006](adr-006-document-navigation-pane.md)
+- Superseded by: [ADR-020](adr-020-focused-document-review.md)
 - Authorization basis: [ADR-003](adr-003-document-root-discovery.md)
 - Performance risk: [`R-09`](../risk-list.md)

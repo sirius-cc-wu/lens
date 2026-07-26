@@ -581,7 +581,6 @@ dependencies = [
  "axum",
  "clap",
  "flate2",
- "form_urlencoded",
  "futures-util",
  "idna_adapter",
  "indexmap",

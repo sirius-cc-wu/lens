@@ -32,6 +32,7 @@ actor "Filesystem" as Filesystem
 actor "System browser" as Browser
 participant "watch_documents\n<<async function>>" as Watcher
 participant "ViewerState\n<<struct>>" as State
+participant "KnownDocuments\n<<struct>>" as KnownDocuments
 participant "ViewerDocument\n<<struct>>" as Document
 participant "document_revision\n<<function>>" as Revision
 participant "document_view\n<<function>>" as View
@@ -41,10 +42,14 @@ State -> Document: read canonical_path
 Document --> State: changed source
 State -> Document: replace rendered document; increment revision
 Browser -> Revision: GET /revisions/{document_id}
-Revision -> State: document_revision(document_id)
+Revision -> KnownDocuments: index(document_id)
+KnownDocuments --> Revision: document index
+Revision -> State: document_revision(document index)
 State --> Revision: current revision
 Revision --> Browser: current revision
 Browser -> View: GET /documents/{document_id}
+View -> KnownDocuments: index(document_id)
+KnownDocuments --> View: document index
 View -> State: read document representation
 State --> View: latest representation
 View --> Browser: document view
@@ -56,9 +61,10 @@ Collaborators:
 - `watch_documents` is the session-level coordinator. It polls only the
   canonical paths that the session already authorized and sends no browser
   response itself.
-- `ViewerState` is the information expert for the immutable identifier map,
-  known-document rendering inputs, and mutable document representations. It
-  coordinates a refresh without exposing a general filesystem API.
+- `ViewerState` owns the fixed `KnownDocuments` route-authorization lookup, the
+  fixed identifier set used when rendering authored links, known-document
+  rendering inputs, and mutable document representations. It coordinates a
+  refresh without exposing a general filesystem API.
 - `ViewerDocument` owns one canonical path, its last successfully read source,
   rendered representation, and revision.
 - The Axum revision and document handlers are thin controllers: they resolve a
@@ -72,7 +78,7 @@ Responsibility Decisions:
 
 | Responsibility | Chosen owner and GRASP basis | Coupling and cohesion check |
 |---|---|---|
-| Decide which files may be observed | `ViewerState`, Information Expert | It already owns the immutable authorized identifier map and document paths; a new root scanner would duplicate and broaden authorization. |
+| Decide which files may be observed | `ViewerState`, Information Expert | It already owns the fixed route lookup, link-authorization set, and document paths; a new root scanner would duplicate and broaden authorization. |
 | Retain readable content during a failed save | `ViewerDocument`, Information Expert | The document already owns its last successful source and rendering, so replacement is atomic at the document representation level. |
 | Schedule periodic observation | `watch_documents`, Pure Fabrication / Controller | A background function coordinates time and I/O without adding timer or filesystem policy to an HTTP handler. |
 | Return an inexpensive change signal | Revision handler, Controller | It delegates lookup to `ViewerState` and returns no source text or filesystem capability. |
@@ -94,12 +100,19 @@ skinparam classAttributeIconSize 0
 
 package "viewer" {
   class "ViewerState" as ViewerState <<struct>> {
-    -documents: RwLock<Vec<ViewerDocument>>
-    -document_ids: BTreeMap<String, usize>
-    -known_documents: BTreeSet<String>
-    -plantuml_server: String
+    ~documents: RwLock<Vec<ViewerDocument>>
+    ~known_documents: KnownDocuments
+    -known_document_ids: BTreeSet<String>
+    ~plantuml_server: String
     -refresh_known_documents(&self)
-    -document_revision(&self, document_index: usize): Option<u64>
+    ~document_revision(&self, document_index: usize): Option<u64>
+  }
+  class "KnownDocuments" as KnownDocuments <<struct>> {
+    -document_indices: BTreeMap<String, usize>
+    ~index(identifier: &str): Option<usize>
+  }
+  class "Fixed authored-link identifiers" as KnownDocumentIds <<collection>> {
+    BTreeSet<String>
   }
   class "ViewerDocument" as ViewerDocument <<struct>> {
     -identifier: String
@@ -120,7 +133,10 @@ package "viewer" {
 
 Watcher --> ViewerState : Arc shared observation
 ViewerState *-- "1..*" ViewerDocument : owns inside RwLock
+ViewerState *-- "1" KnownDocuments : authorizes routes
+ViewerState *-- "1" KnownDocumentIds : authorizes rendered links
 Revision --> ViewerState : reads known revision
+Revision --> KnownDocuments : resolves request identifier
 Script --> Revision : polls current document route
 @enduml
 ```
@@ -128,8 +144,9 @@ Script --> Revision : polls current document route
 Rust adaptation notes:
 
 - `Arc<ViewerState>` remains the Axum and watcher sharing boundary. The
-  immutable identifier map remains outside the lock; a standard `RwLock`
-  protects only the vector of last-successful document representations.
+  fixed `KnownDocuments` map and `known_document_ids` set remain outside the
+  lock; a standard `RwLock` protects only the vector of last-successful
+  document representations.
 - `ViewerState::refresh_known_documents(&self)` is an inherent method because
   it needs the session's document ownership, document kind, and known-link set.
   It never holds the `RwLock` while reading a file or rendering.
@@ -144,10 +161,13 @@ Rust adaptation notes:
 
 ## Construction Result
 
-- `ViewerState` now retains the immutable `document_ids`, `known_documents`,
-  and PlantUML server configuration alongside an `RwLock` holding the mutable
-  document representations. The lock is released before every filesystem read,
-  Markdown render, or diagram request.
+- `ViewerState` retains `known_documents: KnownDocuments` for document and
+  revision route authorization, plus
+  `known_document_ids: BTreeSet<String>` for authored-link authorization during
+  initial and refreshed Markdown rendering. Both are fixed at session
+  creation. The state also retains the PlantUML server configuration alongside
+  an `RwLock` holding the mutable document representations. The lock is
+  released before every filesystem read, Markdown render, or diagram request.
 - Each `ViewerDocument` owns its identifier, canonical path, last successful
   source, rendered representation, and `u64` revision. `replace` updates those
   values together only after a successful changed-source render.

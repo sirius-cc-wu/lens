@@ -14,9 +14,10 @@ cargo install --path . --locked
 lens [TARGET]
 ```
 
-V1 is a documentation-only viewer for Linux. It discovers Markdown documents
-under the selected root, supports safe navigation between those documents, and
-uses one session-fixed PlantUML server for diagrams. See the
+V1 is a documentation-only viewer for Linux. A coding agent or command-line
+tool selects the target; Lens discovers the fixed authorized document set,
+supports safe authored links and browser history, and uses one session-fixed
+PlantUML server for diagrams. See the
 [release readiness checklist](release-readiness.md) for verification and scope.
 
 ## Product Documents
@@ -30,7 +31,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [Vision and business case](vision.md)
 - [Improvement proposals](improvement-proposals.md)
 - [Primary feature and use cases](features/markdown-viewing/use-cases.md) (`FEAT-01`)
-- [Document navigation pane use cases](features/document-navigation-pane/use-cases.md) (`FEAT-02`)
+- [Retired document navigation pane use cases](features/document-navigation-pane/use-cases.md) (`FEAT-02`, retired)
 - [Automatic refresh use cases](features/automatic-refresh/use-cases.md) (`FEAT-03`)
 - [V1 UML design views](features/markdown-viewing/uml-design.md)
 - [Server-only PlantUML rendering design](features/markdown-viewing/server-rendering-design.md)
@@ -42,9 +43,9 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-003: Authorize document-root discovery](decisions/adr-003-document-root-discovery.md)
 - [ADR-004: V1 Linux documentation-viewer scope](decisions/adr-004-v1-release-scope.md)
 - [ADR-005: Use a controlled PlantUML renderer in browser tests](decisions/adr-005-controlled-renderer-browser-tests.md)
-- [ADR-006: Derive the navigation pane from the session document set](decisions/adr-006-document-navigation-pane.md)
+- [ADR-006: Derive the navigation pane from the session document set (superseded)](decisions/adr-006-document-navigation-pane.md)
 - [ADR-007: Poll only known document paths for automatic refresh](decisions/adr-007-poll-known-document-paths.md)
-- [ADR-008: Search the session document catalog in bounded pages](decisions/adr-008-paginated-session-catalog-search.md)
+- [ADR-008: Search the session document catalog in bounded pages (superseded)](decisions/adr-008-paginated-session-catalog-search.md)
 - [ADR-009: Select a PlantUML renderer per viewing session (superseded)](decisions/adr-009-selectable-plantuml-rendering.md)
 - [ADR-010: Package Linux binary release artifacts](decisions/adr-010-linux-binary-release-artifacts.md)
 - [ADR-011: Keep diagram controls inside a viewing session (partially superseded)](decisions/adr-011-diagram-failure-controls.md)
@@ -52,10 +53,11 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-013: Support native browser launch and archives](decisions/adr-013-cross-platform-support.md)
 - [ADR-014: Verify and publish tagged native releases](decisions/adr-014-release-automation.md)
 - [ADR-015: Render leading YAML metadata safely](decisions/adr-015-yaml-frontmatter-rendering.md)
-- [ADR-016: Persist navigation pane visibility in the browser tab](decisions/adr-016-collapsible-document-navigation-pane.md)
+- [ADR-016: Persist navigation pane visibility in the browser tab (superseded)](decisions/adr-016-collapsible-document-navigation-pane.md)
 - [ADR-017: Use one session-fixed PlantUML server](decisions/adr-017-session-plantuml-server.md)
 - [ADR-018: Scope direct-file sessions to the nearest repository](decisions/adr-018-repository-scoped-direct-file-sessions.md)
 - [ADR-019: Scope repository targets to the nearest repository](decisions/adr-019-repository-scoped-target-sessions.md)
+- [ADR-020: Delegate resource selection and focus Lens on document review](decisions/adr-020-focused-document-review.md)
 - [V1 release readiness](release-readiness.md)
 - [Pending release notes](release-notes.md)
 - [Development case](development-case.md)

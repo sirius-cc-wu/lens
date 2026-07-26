@@ -3,15 +3,19 @@ type: "Use Case Model"
 title: "FEAT-02: Browse the Discovered Document Set"
 description: "Defines browsing, searching, and presentation-control goals over the authorized Lens document set."
 id: "FEAT-02"
-status: "active"
+status: "retired"
 scope: "Lens"
 tags: [requirements, use-case, navigation]
 ---
 
 # FEAT-02: Browse the Discovered Document Set
 
-Status: implemented in C3; scalable search implemented in C5; collapsible pane
-implemented in C6
+Status: retired by [ADR-020](../../decisions/adr-020-focused-document-review.md);
+implementation history remains in C3, C5, and C6
+
+This artifact preserves the requirements that governed the former document
+navigation pane. `UC-07`, `UC-08`, and `UC-11` are retired; current document
+selection and authored-link behavior are defined by `FEAT-01` and ADR-020.
 
 ## System Boundary
 
@@ -29,11 +33,11 @@ system boundary except where Lens supplies their content.
 
 ## Use-Case List
 
-| ID | Use case | Priority |
-|---|---|---|
-| `UC-07` | Browse the discovered document set | High |
-| `UC-08` | Search the discovered document set | High |
-| `UC-11` | Toggle the document navigation pane | Medium |
+| ID | Use case | Priority | Status |
+|---|---|---|---|
+| `UC-07` | Browse the discovered document set | High | Retired |
+| `UC-08` | Search the discovered document set | High | Retired |
+| `UC-11` | Toggle the document navigation pane | Medium | Retired |
 
 `UC-07` extends the safe linked-document navigation of `UC-04`. It gives the
 user a session-scoped way to reach documents without requiring a Markdown link
@@ -182,5 +186,6 @@ Special requirements:
 - Design realization and Rust mapping: [`RZ-02` and `DCD-02`](design.md)
 - Decision: [ADR-008](../../decisions/adr-008-paginated-session-catalog-search.md)
 - Presentation decision: [ADR-016](../../decisions/adr-016-collapsible-document-navigation-pane.md)
+- Retirement decision: [ADR-020](../../decisions/adr-020-focused-document-review.md)
 - Verification: `BTE-01`,
   [`tests/browser/lens.spec.mjs`](../../../tests/browser/lens.spec.mjs)

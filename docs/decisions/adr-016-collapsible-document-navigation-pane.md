@@ -3,14 +3,16 @@ type: "Architecture Decision"
 title: "ADR-016: Persist Navigation Pane Visibility in the Browser Tab"
 description: "Keeps navigation-pane visibility as accessible browser-tab presentation state without changing authorization."
 id: "ADR-016"
-status: "accepted"
+status: "superseded"
+superseded_by: "ADR-020"
 date: "2026-07-19"
 tags: [architecture, decision, navigation]
 ---
 
 # ADR-016: Persist Navigation Pane Visibility in the Browser Tab
 
-Status: accepted
+Status: superseded by
+[ADR-020](adr-020-focused-document-review.md)
 
 Date: 2026-07-19
 
@@ -71,4 +73,5 @@ exposing a button that cannot act.
 
 - Implementation: [C6 collapsible document navigation pane](../iterations/c6-collapsible-document-navigation-pane.md)
 - Requirements: [`FEAT-02`](../features/document-navigation-pane/use-cases.md)
+- Superseded by: [ADR-020](adr-020-focused-document-review.md)
 - Authorization basis: [ADR-003](adr-003-document-root-discovery.md)
