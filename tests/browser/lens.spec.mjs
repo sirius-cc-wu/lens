@@ -487,6 +487,18 @@ test("source_link_inside_root_then_renders_accessible_vscode_destination", async
     await expect(sourceLink.locator(".source-link-indicator")).toHaveText(" (opens in VS Code)");
     await expect(sourceLink.locator(".source-link-indicator")).toBeVisible();
     expect(page.url()).toBe(initialUrl);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("changed_source_link_document_then_refreshes_browser_without_navigation", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ sourceLinks: true });
+
+  try {
+    await page.goto(fixture.lens.url);
+    const initialUrl = page.url();
 
     // Act
     await writeFile(
