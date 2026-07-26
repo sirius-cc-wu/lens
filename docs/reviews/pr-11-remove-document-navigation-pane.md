@@ -102,6 +102,11 @@ pull request's reported head commit.
    the configured server, verify local Markdown links, and compare every
    documented `ViewerState` field with `src/viewer/state.rs`.
 
+   Resolution: Resolved after review. FEAT-03 now distinguishes the
+   `KnownDocuments` route lookup from the fixed `known_document_ids` set in its
+   runtime collaboration, design class diagram, responsibility notes, and
+   construction result.
+
 ## Validation
 
 - `git diff --check origin/main...HEAD` passed.
@@ -125,3 +130,13 @@ pull request's reported head commit.
 - Browser checks verify the single-column geometry and absence of removed
   controls at narrow and wide viewports. This review did not repeat the
   proposal author's separate subjective visual walkthrough.
+
+## Resolution Validation
+
+- `git diff --check` passed.
+- Local Markdown targets in the changed design and review record exist.
+- Both FEAT-03 diagrams and both review diagrams returned non-empty
+  `image/svg+xml` responses with HTTP 200 from the configured PlantUML server.
+- The documented `ViewerState`, `KnownDocuments`, route-authorization, and
+  refreshed-link responsibilities match `src/viewer/state.rs` and
+  `src/viewer/routes.rs`.
