@@ -42,8 +42,8 @@ Scope: Lens
   colon and number, received no Lens-generated `vscode:` URL.
 - A zero, malformed, or unsupported source-location fragment received no
   Lens-generated `vscode:` URL.
-- External destinations, authored `vscode:` destinations, and same-document
-  fragments retained their authored destinations.
+- External and email destinations, authored `vscode:` destinations, and
+  same-document fragments retained their authored destinations.
 - The response contained no source-file bytes, no source-file route, and no
   browser-supplied filesystem identifier.
 - No editor process was started and no viewing-session authorization state

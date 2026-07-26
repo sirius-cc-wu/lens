@@ -247,8 +247,9 @@ Extensions:
   absolute, outside the fixed root, or has a path ending in a colon and number
   (an ambiguous VS Code position suffix), Lens preserves its existing
   unavailable-document behavior and generates no editor URL.
-- 2c. External URLs, authored `vscode:` URLs, and same-document fragments keep
-  their authored browser behavior; Lens neither validates nor endorses them.
+- 2c. External URLs, email links, authored `vscode:` URLs, and same-document
+  fragments keep their authored browser behavior; Lens neither validates nor
+  endorses them.
 - 4a. The browser may ask the user to confirm that an external application
   should open.
 - 5a. If no application handles `vscode:`, the browser reports the failure and

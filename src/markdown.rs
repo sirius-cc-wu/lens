@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt::Write as _, path::Path};
 
-use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag};
+use pulldown_cmark::{html, CodeBlockKind, Event, LinkType, Options, Parser, Tag};
 use serde_yaml::{Mapping, Value};
 
 use crate::source_link::{normalize_relative_link, SourceLinkResolver};
@@ -58,13 +58,20 @@ pub fn render(
                 plantuml_source = Some(String::new());
             }
             Event::Start(Tag::Link(link_type, destination, title)) => {
-                let resolved = resolve_link(
-                    &destination,
-                    current_document,
-                    current_document_path,
-                    known_documents,
-                    source_links,
-                );
+                let resolved = if link_type == LinkType::Email {
+                    ResolvedLink {
+                        destination: destination.to_string(),
+                        opens_in_vscode: false,
+                    }
+                } else {
+                    resolve_link(
+                        &destination,
+                        current_document,
+                        current_document_path,
+                        known_documents,
+                        source_links,
+                    )
+                };
                 source_link_stack.push(resolved.opens_in_vscode);
                 events.push(Event::Start(Tag::Link(
                     link_type,
@@ -563,6 +570,41 @@ mod tests {
         // Assert
         assert!(document.html.contains("href=\"../src/lib.rs#L0\""));
         assert!(document.html.contains("href=\"../src/lib.rs#Lx\""));
+        assert!(!document.html.contains("source-link-indicator"));
+        fs::remove_dir_all(root).expect("source-link fixture should be removable");
+    }
+
+    #[test]
+    fn email_autolink_with_colliding_source_file_then_preserves_email_destination() {
+        // Arrange
+        let root = temporary_source_link_root("email");
+        let document_path = root.join("docs/design.md");
+        let colliding_source_path = root.join("docs/team@example.com");
+        fs::create_dir_all(
+            document_path
+                .parent()
+                .expect("document should have a parent"),
+        )
+        .expect("document directory should be created");
+        fs::write(&document_path, "# Design").expect("document should be created");
+        fs::write(colliding_source_path, "source").expect("colliding source should be created");
+        let document_path = fs::canonicalize(document_path).expect("document should canonicalize");
+        let source_links =
+            SourceLinkResolver::new(fs::canonicalize(&root).expect("root should canonicalize"));
+
+        // Act
+        let document = render(
+            "<team@example.com>",
+            0,
+            "docs/design.md",
+            &document_path,
+            &BTreeSet::from(["docs/design.md".to_owned()]),
+            &source_links,
+        );
+
+        // Assert
+        assert!(document.html.contains("href=\"mailto:team@example.com\""));
+        assert!(!document.html.contains("vscode://"));
         assert!(!document.html.contains("source-link-indicator"));
         fs::remove_dir_all(root).expect("source-link fixture should be removable");
     }

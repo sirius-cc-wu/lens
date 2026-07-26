@@ -35,9 +35,9 @@ System operation: `request_document(document_id)`
 1. `viewer::state` asks `markdown::render` to render one known Markdown
    document, supplying its canonical path, the known document identifiers, and
    the session-owned `SourceLinkResolver`.
-2. `markdown::render` preserves an authored destination when it is external,
-   absolute, a same-document fragment, or otherwise not a relative file
-   candidate.
+2. `markdown::render` preserves an authored destination when it is an email
+   link, external, absolute, a same-document fragment, or otherwise not a
+   relative file candidate.
 3. `markdown::render` rewrites a known Markdown or PlantUML identifier to its
    Lens document route before considering an editor handoff.
 4. For another relative candidate, `markdown::render` accepts either no suffix
