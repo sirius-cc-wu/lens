@@ -15,6 +15,9 @@ Review range:
 The base is the pull request's fetched `origin/main`; the head is the pull
 request's reported head commit.
 
+Resolution status: All three findings were resolved after review in separate
+commits and passed the resolution validation recorded below.
+
 ## Findings
 
 1. **[Medium] Numeric colon segments can make VS Code open the wrong file
@@ -77,8 +80,14 @@ request's reported head commit.
    `report:33:4`. Verify that Lens does not generate a misleading `vscode:`
    destination and preserves the authored link.
 
+   Resolution: Resolved after review in `d0406e9`. The
+   [VS Code URL serialization guard](../../src/source_link.rs#L154) now rejects
+   canonical paths ending in a colon and number while retaining ordinary
+   colon-containing filenames. Unix resolver coverage verifies `report:33`,
+   `report:33:4`, and the unambiguous `report:section`.
+
 2. **[Low] Source line fragments are discarded before opening VS Code
-   — [`src/markdown.rs:320`](../../src/markdown.rs#L320)**
+   — [`src/markdown.rs:339`](../../src/markdown.rs#L339)**
 
    Explanation and impact: `resolve_link` separates a source destination such
    as `../../src/markdown.rs#L320` into its path and suffix, but passes only the
@@ -89,10 +98,9 @@ request's reported head commit.
    explicitly requires this loss. Selecting a review finding therefore opens
    the correct file in VS Code but leaves the cursor at its previous or default
    location, forcing the user to search for the reported line manually.
-   The PR's
-   [source-link special requirement](../features/markdown-viewing/use-cases.md#L258)
-   also formalizes the omission, so correcting the behavior requires updating
-   that requirement as well as the implementation.
+   The reviewed version of the source-link special requirement also formalized
+   the omission, so correcting the behavior requires updating that requirement
+   as well as the implementation.
 
    VS Code documents
    [`vscode://file/{full path}:line:column`](https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls)
@@ -152,6 +160,15 @@ request's reported head commit.
    test environment can observe the external destination without launching VS
    Code.
 
+   Resolution: Resolved after review in `b9e0ac5`.
+   [`resolve_link`](../../src/markdown.rs#L332) now accepts a positive
+   `#L<number>` fragment and emits VS Code's `:line:1` suffix; zero, malformed,
+   and unsupported fragments retain their authored destinations. Renderer and
+   browser coverage verify both the generated line destination and the
+   fail-closed cases. The
+   [resolved source-link requirement](../features/markdown-viewing/use-cases.md#L262)
+   now specifies the same translation.
+
 3. **[Low] Email autolinks can become malformed editor destinations
    — [`src/markdown.rs:60`](../../src/markdown.rs#L60)**
 
@@ -206,6 +223,12 @@ request's reported head commit.
    exists. Assert `href="mailto:team@example.com"` and verify that no
    source-link indication appears.
 
+   Resolution: Resolved after review in `e6f4501`. The
+   [Markdown link-event handler](../../src/markdown.rs#L61) now preserves
+   `LinkType::Email` before source-file resolution. The collision regression
+   verifies the `mailto:` destination and absence of a VS Code URL or
+   source-link indication.
+
 ## Validation
 
 - GitHub's `verify` check passed for PR #12 at the reviewed head.
@@ -240,3 +263,16 @@ request's reported head commit.
   without invoking the external scheme. The iteration record supplies a manual
   Linux VS Code walkthrough, while native macOS and Windows URL-handler
   behavior remains release evidence.
+
+## Resolution Validation
+
+- Finding 1 was resolved by `d0406e9`, finding 2 by `b9e0ac5`, and finding 3
+  by `e6f4501`, preserving one commit per finding.
+- `git diff --check origin/main...HEAD` passed.
+- `cargo fmt --check` passed.
+- `cargo test --locked` passed 77 library tests and 5 CLI integration tests.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` passed.
+- `npm run test:browser` passed all 25 browser scenarios, including the
+  generated VS Code line destination.
+- The source locations linked from the findings and their resolution notes
+  exist in the resolved implementation.
