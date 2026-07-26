@@ -77,7 +77,82 @@ request's reported head commit.
    `report:33:4`. Verify that Lens does not generate a misleading `vscode:`
    destination and preserves the authored link.
 
-2. **[Low] Email autolinks can become malformed editor destinations
+2. **[Low] Source line fragments are discarded before opening VS Code
+   — [`src/markdown.rs:320`](../../src/markdown.rs#L320)**
+
+   Explanation and impact: `resolve_link` separates a source destination such
+   as `../../src/markdown.rs#L320` into its path and suffix, but passes only the
+   path to `SourceLinkResolver::resolve`. When resolution succeeds, the
+   generated `vscode:` destination never restores or translates the `#L320`
+   source location. The current
+   `source_link_with_suffix_then_emits_vscode_url_without_suffix` test
+   explicitly requires this loss. Selecting a review finding therefore opens
+   the correct file in VS Code but leaves the cursor at its previous or default
+   location, forcing the user to search for the reported line manually.
+   The PR's
+   [source-link special requirement](../features/markdown-viewing/use-cases.md#L258)
+   also formalizes the omission, so correcting the behavior requires updating
+   that requirement as well as the implementation.
+
+   VS Code documents
+   [`vscode://file/{full path}:line:column`](https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls)
+   as its supported source-location URL format, so Lens can translate a
+   validated Markdown line fragment rather than discarding it.
+
+   Reported behavior and impact:
+
+   ```plantuml
+   @startuml
+   actor User
+   participant Lens
+   participant "Markdown renderer" as Renderer
+   participant "VS Code" as VSCode
+   User -> Lens : select src/markdown.rs#L320
+   Lens -> Renderer : resolve path and #L320
+   Renderer -> Renderer : discard #L320
+   Renderer -> VSCode : vscode://file/.../src/markdown.rs
+   VSCode --> User : opens file without selecting line 320
+   @enduml
+   ```
+
+   Proposed fix: Revise the source-link requirement and design to preserve
+   supported source locations. Recognize fragments such as `#L<line>` after
+   separating them from the filesystem path. Once the source path passes the
+   existing authorization checks, translate the line to VS Code's
+   `:line:column` suffix, using column 1 when the Markdown link supplies no
+   column. Do not create an editor URL for malformed or unsupported location
+   fragments, and combine this change with the numeric-colon filename
+   protection in finding 1 so a filename cannot be mistaken for a location
+   suffix.
+
+   Suggested solution:
+
+   ```plantuml
+   @startuml
+   actor User
+   participant Lens
+   participant "Markdown renderer" as Renderer
+   participant Resolver
+   participant "VS Code" as VSCode
+   User -> Lens : select src/markdown.rs#L320
+   Lens -> Renderer : resolve path and #L320
+   Renderer -> Renderer : validate line 320
+   Renderer -> Resolver : authorize source path
+   Resolver --> Renderer : canonical vscode file URL
+   Renderer -> VSCode : vscode://file/.../src/markdown.rs:320:1
+   VSCode --> User : opens file at line 320
+   @enduml
+   ```
+
+   Test coverage: Replace the suffix-discarding expectation with renderer
+   cases for a valid `#L10` fragment, malformed and zero line numbers, and a
+   source path without a location. Assert that the valid destination ends in
+   `:10:1`, while invalid fragments do not create misleading editor URLs. Add
+   browser coverage that selects a generated source-location link where the
+   test environment can observe the external destination without launching VS
+   Code.
+
+3. **[Low] Email autolinks can become malformed editor destinations
    — [`src/markdown.rs:60`](../../src/markdown.rs#L60)**
 
    Explanation and impact: The renderer passes every `Tag::Link` through
@@ -141,12 +216,16 @@ request's reported head commit.
 - `npm run test:browser` passed all 25 browser scenarios.
 - `cargo test --locked source_link -- --nocapture` passed all 12 focused
   source-link and refresh checks.
+- `cargo test --locked
+  source_link_with_suffix_then_emits_vscode_url_without_suffix -- --nocapture`
+  passed and confirmed that the current renderer deliberately removes a
+  source line fragment from the generated destination.
 - VS Code's official URL documentation, URI decoding, and
-  line-and-column-aware path parser were inspected to confirm the first
-  finding.
+  line-and-column-aware path parser were inspected to confirm the first two
+  findings.
 - Pulldown-Cmark 0.9.3's checked-out HTML renderer was inspected to confirm
   that `LinkType::Email` prefixes its destination with `mailto:`.
-- All four review diagrams returned non-empty `image/svg+xml` responses with
+- All six review diagrams returned non-empty `image/svg+xml` responses with
   HTTP 200 from the configured default PlantUML server.
 - The worktree contained no unrelated tracked changes before this review
   record was added.
