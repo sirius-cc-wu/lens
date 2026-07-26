@@ -79,15 +79,22 @@ Lead with the findings. Number them continuously in severity order. Include all
 of the following for every finding:
 
 - severity;
-- exact file path and line number;
+- exact file path and line number, rendered as a clickable Markdown link;
 - explanation of the defect and its impact;
 - proposed fix;
 - missing or recommended test coverage.
 
+For a durable Markdown review record, follow the repository-relative link style
+used by nearby documentation. Show the repository path and line number in the
+link label, target the source file relative to the review document, and append
+a GitHub-compatible `#L<line>` fragment. Adjust the relative prefix for the
+review document's location, and verify that the target file and referenced line
+exist. Do not leave the location as unlinked inline code.
+
 Use this compact shape:
 
-```text
-1. [High] Short finding title — path/to/file.ext:123
+```markdown
+1. [High] Short finding title — [`path/to/file.ext:123`](../../path/to/file.ext#L123)
    Explanation and impact: ...
    Proposed fix: ...
    Test coverage: ...

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -454,6 +454,157 @@ test("direct_file_link_outside_repository_then_returns_guidance_without_source",
   }
 });
 
+test("source_link_inside_root_then_renders_accessible_vscode_destination", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ sourceLinks: true });
+
+  try {
+    await page.goto(fixture.lens.url);
+    const initialUrl = page.url();
+    const sourceLink = page.getByRole("link", {
+      name: "Source file (opens in VS Code)",
+    });
+    const sourceLineLink = page.getByRole("link", {
+      name: "Source line (opens in VS Code)",
+    });
+    const spacedSourceLink = page.getByRole("link", {
+      name: "Source with space (opens in VS Code)",
+    });
+    const expectedSourceUrl = vscodeUrl(
+      await realpath(join(fixture.repository.directory, "src", "example.rs")),
+    );
+    const expectedSpacedSourceUrl = vscodeUrl(
+      await realpath(join(fixture.repository.directory, "src", "example file.rs")),
+    );
+
+    // Act
+    await sourceLink.hover();
+
+    // Assert
+    await expect(sourceLink).toHaveAttribute("href", expectedSourceUrl);
+    await expect(sourceLineLink).toHaveAttribute("href", `${expectedSourceUrl}:1:1`);
+    await expect(spacedSourceLink).toHaveAttribute("href", expectedSpacedSourceUrl);
+    await expect(sourceLink.locator(".source-link-indicator")).toHaveText(" (opens in VS Code)");
+    await expect(sourceLink.locator(".source-link-indicator")).toBeVisible();
+    expect(page.url()).toBe(initialUrl);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("changed_source_link_document_then_refreshes_browser_without_navigation", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ sourceLinks: true });
+
+  try {
+    await page.goto(fixture.lens.url);
+    const initialUrl = page.url();
+
+    // Act
+    await writeFile(
+      fixture.repository.readmePath,
+      `${fixture.repository.sourceLinksMarkdown}\n\nRefreshed source-link page.\n`,
+    );
+
+    // Assert
+    await expect(page.getByText("Refreshed source-link page.")).toBeVisible();
+    expect(page.url()).toBe(initialUrl);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("disallowed_source_links_then_preserve_authored_destinations", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ sourceLinks: true });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    const authoredDestinations = new Map([
+      ["Hidden source", ".hidden/secret.rs"],
+      ["Symbolic source", "src/linked.rs"],
+      ["Missing source", "src/missing.rs"],
+      ["Source directory", "src/directory"],
+      ["Outside source", `../${basename(fixture.repository.outsideDocument)}`],
+      ["Absolute source", join(fixture.repository.directory, "src", "example.rs")],
+    ]);
+    for (const [name, destination] of authoredDestinations) {
+      const link = page.getByRole("link", { name });
+      await expect(link).toHaveAttribute("href", destination);
+      await expect(link.locator(".source-link-indicator")).toHaveCount(0);
+    }
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("document_external_and_fragment_links_then_preserve_browser_destinations", async ({
+  page,
+}) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ sourceLinks: true });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("link", { name: "Guide document" })).toHaveAttribute(
+      "href",
+      "/documents/guides/guide.md",
+    );
+    await expect(page.getByRole("link", { name: "PlantUML document" })).toHaveAttribute(
+      "href",
+      "/documents/architecture.puml",
+    );
+    await expect(page.getByRole("link", { name: "External site" })).toHaveAttribute(
+      "href",
+      "https://example.com/",
+    );
+    await expect(page.getByRole("link", { name: "Authored VS Code link" })).toHaveAttribute(
+      "href",
+      "vscode://file/tmp/authored.rs",
+    );
+    await expect(page.getByRole("link", { name: "Same-document section" })).toHaveAttribute(
+      "href",
+      "#source-links",
+    );
+    await expect(
+      page.getByRole("link", { name: "Authored VS Code link" }).locator(".source-link-indicator"),
+    ).toHaveCount(0);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("source_link_then_does_not_add_source_content_route", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture({ sourceLinks: true });
+
+  try {
+    await page.goto(fixture.lens.url);
+
+    // Act
+    const sourceRoute = await page.request.get(
+      `${fixture.lens.url}/source?path=src%2Fexample.rs`,
+    );
+    const documentRoute = await page.request.get(
+      `${fixture.lens.url}/documents/src/example.rs`,
+    );
+
+    // Assert
+    expect(sourceRoute.status()).toBe(404);
+    expect(documentRoute.status()).toBe(404);
+    expect(await sourceRoute.text()).not.toContain("Browser source fixture");
+    expect(await documentRoute.text()).not.toContain("Browser source fixture");
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("plantuml server fails before client script loads then reveals the source", async ({ page }) => {
   // Arrange
   const fixture = await startBrowserFixture({ rendererStatus: 503 });
@@ -555,6 +706,7 @@ async function startBrowserFixture({
   targetRelativePath,
   currentDirectoryRelativePath,
   scope,
+  sourceLinks,
 } = {}) {
   let repository;
   let renderer;
@@ -582,7 +734,11 @@ async function startBrowserFixture({
   };
 
   try {
-    repository = await createDocumentationRepository({ hiddenDocument, readme });
+    repository = await createDocumentationRepository({
+      hiddenDocument,
+      readme,
+      sourceLinks,
+    });
     renderer = await startRenderer({ status: rendererStatus, statuses: rendererStatuses });
     lens = await startLens(
       repository,
@@ -602,21 +758,63 @@ async function startBrowserFixture({
   }
 }
 
-async function createDocumentationRepository({ hiddenDocument, readme } = {}) {
+async function createDocumentationRepository({
+  hiddenDocument,
+  readme,
+  sourceLinks = false,
+} = {}) {
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const outsideDocument = `${directory}-outside.md`;
   const binDirectory = join(directory, "bin");
+  const readmePath = join(directory, "README.md");
+  const sourceLinksMarkdown = [
+    "# Source links",
+    "",
+    "[Source file](src/example.rs)",
+    "",
+    "[Source line](src/example.rs#L1)",
+    "",
+    "[Source with space](src/example%20file.rs)",
+    "",
+    "[Guide document](guides/guide.md)",
+    "",
+    "[PlantUML document](architecture.puml)",
+    "",
+    "[Hidden source](.hidden/secret.rs)",
+    "",
+    "[Symbolic source](src/linked.rs)",
+    "",
+    "[Missing source](src/missing.rs)",
+    "",
+    "[Source directory](src/directory)",
+    "",
+    `[Outside source](../${basename(outsideDocument)})`,
+    "",
+    `[Absolute source](${join(directory, "src", "example.rs")})`,
+    "",
+    "[External site](https://example.com/)",
+    "",
+    "[Authored VS Code link](vscode://file/tmp/authored.rs)",
+    "",
+    "[Same-document section](#source-links)",
+  ].join("\n");
   let files = [];
   try {
     await mkdir(join(directory, "guides"), { recursive: true });
     await mkdir(join(directory, "iterations"));
     await mkdir(join(directory, ".git"));
     await mkdir(binDirectory);
+    if (sourceLinks) {
+      await mkdir(join(directory, "src", "directory"), { recursive: true });
+      await mkdir(join(directory, ".hidden"));
+    }
     files = [
       writeFile(
-        join(directory, "README.md"),
+        readmePath,
         readme ??
-          "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n",
+          (sourceLinks
+            ? sourceLinksMarkdown
+            : "# Browser fixture\n\nA **rendered** document.\n\n[Open guide](guides/guide.md)\n\n```plantuml\n@startuml\nAlice -> Bob: browser fixture\n@enduml\n```\n"),
       ),
       writeFile(
         join(directory, "guides", "guide.md"),
@@ -633,12 +831,29 @@ async function createDocumentationRepository({ hiddenDocument, readme } = {}) {
       ),
       writeFile(join(binDirectory, "xdg-open"), "#!/bin/sh\nexit 0\n"),
     ];
+    if (sourceLinks) {
+      files.push(
+        writeFile(join(directory, "src", "example.rs"), "Browser source fixture"),
+        writeFile(join(directory, "src", "example file.rs"), "Spaced browser source fixture"),
+        writeFile(join(directory, ".hidden", "secret.rs"), "Hidden browser source fixture"),
+        symlink(
+          join(directory, "src", "example.rs"),
+          join(directory, "src", "linked.rs"),
+        ),
+      );
+    }
     if (hiddenDocument) {
       files.push(writeFile(join(directory, ".private.md"), hiddenDocument));
     }
     await Promise.all(files);
     await chmod(join(binDirectory, "xdg-open"), 0o755);
-    return { binDirectory, directory, outsideDocument };
+    return {
+      binDirectory,
+      directory,
+      outsideDocument,
+      readmePath,
+      sourceLinksMarkdown,
+    };
   } catch (error) {
     await Promise.allSettled(files);
     try {
@@ -649,6 +864,12 @@ async function createDocumentationRepository({ hiddenDocument, readme } = {}) {
     }
     throw error;
   }
+}
+
+function vscodeUrl(path) {
+  const normalized = path.replaceAll("\\", "/");
+  const rooted = normalized.startsWith("/") ? normalized : `/${normalized}`;
+  return `vscode://file${encodeURI(rooted)}`;
 }
 
 async function startRenderer({ status = 200, statuses } = {}) {

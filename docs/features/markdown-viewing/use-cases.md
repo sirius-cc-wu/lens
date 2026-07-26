@@ -10,15 +10,16 @@ tags: [requirements, use-case]
 
 # FEAT-01: View Markdown with PlantUML
 
-Status: implemented and refined through D4
+Status: implemented and refined through C9
 
 ## Actors
 
 | Actor | Goal |
 |---|---|
-| Developer or technical writer | Read repository Markdown and its diagrams without opening an editor-specific plugin. |
+| Developer or technical writer | Read repository documentation and move from an implementation reference to its source file in VS Code. |
 | PlantUML server | Converts PlantUML source into an image at the server destination fixed when a viewing session starts. |
-| Operating system browser | Displays the local Lens view after the CLI starts it. |
+| Operating system browser | Displays the local Lens view and hands a selected `vscode:` URL to the operating system. |
+| Visual Studio Code | Opens a validated local file after the operating system invokes its registered URL handler. |
 
 ## Use-Case List
 
@@ -29,12 +30,13 @@ Status: implemented and refined through D4
 | `UC-03` | View documentation from a directory argument | High |
 | `UC-04` | Navigate between discovered Markdown documents | Medium |
 | `UC-05` | Receive a target-resolution or rendering failure | High |
-| `UC-06` | View source code associated with documentation | Deferred from V1 |
+| `UC-06` | Open a referenced repository file in VS Code | High |
 | `UC-10` | View a standalone PlantUML file | Medium |
 
 Inception detailed `UC-01` to validate initial scope without prematurely
 specifying the entire product. E2 adds the document-root and navigation detail
-for `UC-02` through `UC-04`; ADR-004 defers `UC-06` from V1.
+for `UC-02` through `UC-04`; ADR-004 deferred `UC-06` from V1, and D5 refines
+it as a post-V1 editor handoff.
 
 ## UC-01: View a Markdown File with PlantUML Blocks
 
@@ -211,10 +213,65 @@ Special requirements:
 - Lens maps links only to the discovered document set. It must not use a link
   URL as a filesystem path or an arbitrary renderer URL.
 
+## UC-06: Open a Referenced Repository File in VS Code
+
+Primary actor: Developer or technical writer
+
+Goal: Move from repository documentation to a referenced implementation file
+in VS Code without making that file available through Lens.
+
+Preconditions:
+
+- Lens has an active viewing session with a fixed canonical document root.
+- The displayed Markdown contains a relative link to an existing visible
+  regular file inside that root.
+- VS Code is installed and registered as the operating system handler for the
+  `vscode:` URL scheme.
+
+Main success scenario:
+
+1. The user reads a Lens document containing a relative source-file link.
+2. Lens verifies the target against the viewing session's fixed root and
+   presents the link with an indication that it opens in VS Code.
+3. The user follows the source-file link.
+4. The browser asks the operating system to open the generated `vscode:` URL.
+5. VS Code opens the referenced file at its canonical absolute path and, when
+   the authored link contains a supported line number, places the cursor at
+   that line.
+
+Extensions:
+
+- 2a. If the target is a discovered Markdown or PlantUML document, Lens keeps
+  its existing in-browser document navigation.
+- 2b. If the target is missing, unreadable, hidden, symbolic, a directory,
+  absolute, outside the fixed root, or has a path ending in a colon and number
+  (an ambiguous VS Code position suffix), Lens preserves its existing
+  unavailable-document behavior and generates no editor URL.
+- 2c. External URLs, email links, authored `vscode:` URLs, and same-document
+  fragments keep their authored browser behavior; Lens neither validates nor
+  endorses them.
+- 4a. The browser may ask the user to confirm that an external application
+  should open.
+- 5a. If no application handles `vscode:`, the browser reports the failure and
+  the Lens page remains usable.
+
+Special requirements:
+
+- Lens derives the target only while rendering an already authorized
+  document. No browser request supplies a filesystem path.
+- The generated URL contains the percent-encoded canonical path. A
+  `#L<positive-line-number>` fragment is translated to VS Code's
+  `:line:column` syntax with column 1. Lens copies no authored query or other
+  fragment into the generated URL.
+- Rendering, automatic refresh, prefetching, and pointer hover do not launch
+  VS Code. Only the user's link selection can trigger the browser handoff.
+- The indication that a source link opens VS Code is both visible and part of
+  the link's accessible name.
+- VS Code remains optional. Its absence cannot prevent Lens from starting,
+  rendering, refreshing, or serving the current document.
+
 ## Open Questions
 
-- Does "codebase code and document" require a code-file navigator in the first
-  release, or only documentation navigation with links to repository files?
 - Which Markdown extensions and filenames are in scope?
 - Must the viewer work in a browser that is already running, headless
   environments, or remote development containers?
@@ -226,3 +283,5 @@ Special requirements:
   `RZ-01`, and `DCD-01`)
 - [Server-only PlantUML rendering design](server-rendering-design.md) (`RZ-05`
   and `DCD-04`)
+- [Validated source-link handoff design](source-link-design.md) (`RZ-06` and
+  `DCD-05`)

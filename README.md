@@ -8,6 +8,8 @@ Obsidian.
 
 - A browser and the platform launcher: `xdg-open` on Linux, `open` on macOS,
   or `cmd /C start` on Windows.
+- Optional: Visual Studio Code with its stable `vscode:` URL handler registered
+  to open source-file links from rendered documents.
 - Rust 1.75 or newer to build from source.
 - Network access to the selected PlantUML server. Lens uses
   `https://www.plantuml.com/plantuml` by default.
@@ -79,10 +81,12 @@ selection.
 
 Lens discovers `.md`, `.markdown`, and `.puml` files under the document root.
 It excludes hidden entries and symbolic links. Relative Markdown links resolve
-only when their target is a discovered Markdown document; all other local paths
-receive a Lens guidance page without filesystem access. Authored links and
-browser history support review of meaningful document relationships. To review
-an unlinked document, start Lens with that document as the target. A standalone
+to discovered Markdown and PlantUML documents inside Lens. A relative link to
+another existing visible regular file inside the same fixed root opens its
+canonical local path in Visual Studio Code. All other local paths retain Lens's
+guidance behavior without exposing file contents. Authored links and browser
+history support review of meaningful document relationships. To review an
+unlinked document, start Lens with that document as the target. A standalone
 `.puml` file renders as one diagram when selected directly or requested through
 its known document URL during the active session.
 
@@ -102,6 +106,32 @@ directory with target scope:
 ```bash
 lens --scope target .hidden/docs
 ```
+
+## VS Code Source Links
+
+A qualifying local-file link includes the visible text **(opens in VS Code)**.
+Selecting it gives the browser a percent-encoded `vscode://file/` URL for the
+file's validated canonical path. The browser may ask for confirmation before
+handing that URL to the operating system.
+
+Lens generates an editor URL only for a relative link whose current target is a
+readable, visible, non-symbolic regular file inside the session's fixed
+document root. It never generates one for a missing file, directory, hidden
+path, symbolic link, absolute path, or target outside that root. Known Markdown
+and PlantUML documents continue to open in Lens.
+
+The root rule follows the selected session scope. For example, `lens docs`
+inside a repository normally uses the repository root, so a link from
+`docs/design.md` to `../src/lib.rs` can open in VS Code. With
+`lens --scope target docs`, the same source file is outside the fixed root and
+does not receive an editor URL.
+
+VS Code is optional: if it is missing or its URL handler is not registered,
+Lens still starts and the document remains usable while the browser reports
+that it cannot open the link. Lens supports the stable `vscode:` scheme only;
+it does not automatically choose the separate `vscode-insiders:` scheme. Lens
+does not serve source-file contents, add a source-file browser route, or start a
+`code` process.
 
 ## PlantUML
 
@@ -129,8 +159,9 @@ Markdown body.
 
 ## V1 Scope
 
-Lens is a documentation viewer. It does not browse source-code files, edit
-documents, or render Mermaid.
+Lens remains a documentation viewer. It does not render source-code files,
+edit documents, or render Mermaid. Qualifying repository file links may hand
+their validated local path to VS Code as described above.
 
 ## License
 
