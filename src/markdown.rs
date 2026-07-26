@@ -293,6 +293,11 @@ struct ResolvedLink {
     opens_in_vscode: bool,
 }
 
+enum SourceLocation {
+    File,
+    Line(u32),
+}
+
 fn resolve_link(
     destination: &str,
     current_document: &str,
@@ -317,9 +322,19 @@ fn resolve_link(
         }
     }
 
+    let Some(source_location) = source_location(suffix) else {
+        return ResolvedLink {
+            destination: destination.to_owned(),
+            opens_in_vscode: false,
+        };
+    };
+
     match source_links.resolve(current_document_path, path) {
         Some(destination) => ResolvedLink {
-            destination,
+            destination: match source_location {
+                SourceLocation::File => destination,
+                SourceLocation::Line(line) => format!("{destination}:{line}:1"),
+            },
             opens_in_vscode: true,
         },
         None => ResolvedLink {
@@ -327,6 +342,19 @@ fn resolve_link(
             opens_in_vscode: false,
         },
     }
+}
+
+fn source_location(suffix: &str) -> Option<SourceLocation> {
+    if suffix.is_empty() {
+        return Some(SourceLocation::File);
+    }
+
+    suffix
+        .strip_prefix("#L")?
+        .parse::<u32>()
+        .ok()
+        .filter(|line| *line > 0)
+        .map(SourceLocation::Line)
 }
 
 fn split_link_suffix(destination: &str) -> (&str, &str) {
@@ -463,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn source_link_with_suffix_then_emits_vscode_url_without_suffix() {
+    fn source_link_with_line_fragment_then_opens_vscode_at_that_line() {
         // Arrange
         let root = temporary_source_link_root("suffix");
         let document_path = root.join("docs/design.md");
@@ -494,11 +522,48 @@ mod tests {
 
         // Assert
         assert!(document.html.contains("href=\"vscode://file/"));
-        assert!(document.html.contains("/src/lib.rs\""));
+        assert!(document.html.contains("/src/lib.rs:10:1\""));
         assert!(document
             .html
             .contains(r#"<span class="source-link-indicator"> (opens in VS Code)</span>"#));
         assert!(!document.html.contains("#L10"));
+        fs::remove_dir_all(root).expect("source-link fixture should be removable");
+    }
+
+    #[test]
+    fn source_link_with_invalid_line_fragment_then_preserves_authored_destination() {
+        // Arrange
+        let root = temporary_source_link_root("invalid-line");
+        let document_path = root.join("docs/design.md");
+        let source_path = root.join("src/lib.rs");
+        fs::create_dir_all(source_path.parent().expect("source should have a parent"))
+            .expect("source directory should be created");
+        fs::create_dir_all(
+            document_path
+                .parent()
+                .expect("document should have a parent"),
+        )
+        .expect("document directory should be created");
+        fs::write(&document_path, "# Design").expect("document should be created");
+        fs::write(&source_path, "source").expect("source should be created");
+        let document_path = fs::canonicalize(document_path).expect("document should canonicalize");
+        let source_links =
+            SourceLinkResolver::new(fs::canonicalize(&root).expect("root should canonicalize"));
+
+        // Act
+        let document = render(
+            "[Zero](../src/lib.rs#L0) [Malformed](../src/lib.rs#Lx)",
+            0,
+            "docs/design.md",
+            &document_path,
+            &BTreeSet::from(["docs/design.md".to_owned()]),
+            &source_links,
+        );
+
+        // Assert
+        assert!(document.html.contains("href=\"../src/lib.rs#L0\""));
+        assert!(document.html.contains("href=\"../src/lib.rs#Lx\""));
+        assert!(!document.html.contains("source-link-indicator"));
         fs::remove_dir_all(root).expect("source-link fixture should be removable");
     }
 

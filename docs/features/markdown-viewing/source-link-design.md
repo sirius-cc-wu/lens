@@ -40,7 +40,8 @@ System operation: `request_document(document_id)`
    candidate.
 3. `markdown::render` rewrites a known Markdown or PlantUML identifier to its
    Lens document route before considering an editor handoff.
-4. For another relative candidate, `markdown::render` asks
+4. For another relative candidate, `markdown::render` accepts either no suffix
+   or a positive line-number fragment in the form `#L<number>`, then asks
    `SourceLinkResolver::resolve(current_document, authored_path)`.
 5. The resolver decodes the authored path, normalizes it without crossing the
    fixed root, rejects hidden and symbolic components using non-following
@@ -49,8 +50,9 @@ System operation: `request_document(document_id)`
 6. The resolver serializes the canonical native path as a `vscode://file/`
    URL, preserving path separators and a Windows drive colon while
    percent-encoding other non-URL path bytes.
-7. `markdown::render` uses that URL as the link destination and appends the
-   visible text `(opens in VS Code)` inside the link.
+7. `markdown::render` uses that URL as the link destination. For a supported
+   line fragment, it appends VS Code's `:line:column` suffix with column 1. It
+   then appends the visible text `(opens in VS Code)` inside the link.
 
 Disallowed candidates return absence from the resolver. The renderer then
 retains the authored destination, which preserves Lens's current guidance
@@ -90,7 +92,7 @@ path rules, construct URLs, or add presentation markup.
 | `target::MarkdownTarget` `<<struct>>` | Own `document_root`, discovered documents, and initial index; consume itself into those parts at viewer startup. |
 | `source_link` `<<module>>` | Keep path decoding, component inspection, and platform URL encoding private and cohesive. |
 | `source_link::SourceLinkResolver` `<<struct>>` | Own one canonical `PathBuf`; expose `new(document_root)` and `resolve(&self, current_document, destination) -> Option<String>`. |
-| `markdown` `<<module>>` | Resolve known document routes, delegate source candidates, and render the accessible indication. |
+| `markdown` `<<module>>` | Resolve known document routes, parse supported source line fragments, delegate source candidates, and render the accessible indication. |
 | `viewer::ViewerState` `<<struct>>` | Own one resolver for startup rendering and every refresh; add no lock because the resolver is immutable. |
 
 `MarkdownTarget` owns the root until `viewer::serve` consumes it.
@@ -102,6 +104,8 @@ polymorphism, or additional synchronization is needed.
 
 - Resolution is intentionally fail-closed: decoding, metadata, readability, or
   canonicalization errors produce no generated editor URL.
+- A zero, malformed, or unsupported source-location fragment produces no
+  generated editor URL.
 - A canonical path ending in a colon and number is ambiguous with VS Code's
   line and column syntax, so serialization produces no generated editor URL.
 - Every path component beneath the root is inspected with symbolic-link

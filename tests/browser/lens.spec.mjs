@@ -464,6 +464,9 @@ test("source_link_inside_root_then_renders_accessible_vscode_destination", async
     const sourceLink = page.getByRole("link", {
       name: "Source file (opens in VS Code)",
     });
+    const sourceLineLink = page.getByRole("link", {
+      name: "Source line (opens in VS Code)",
+    });
     const spacedSourceLink = page.getByRole("link", {
       name: "Source with space (opens in VS Code)",
     });
@@ -479,6 +482,7 @@ test("source_link_inside_root_then_renders_accessible_vscode_destination", async
 
     // Assert
     await expect(sourceLink).toHaveAttribute("href", expectedSourceUrl);
+    await expect(sourceLineLink).toHaveAttribute("href", `${expectedSourceUrl}:1:1`);
     await expect(spacedSourceLink).toHaveAttribute("href", expectedSpacedSourceUrl);
     await expect(sourceLink.locator(".source-link-indicator")).toHaveText(" (opens in VS Code)");
     await expect(sourceLink.locator(".source-link-indicator")).toBeVisible();
@@ -755,6 +759,8 @@ async function createDocumentationRepository({
     "# Source links",
     "",
     "[Source file](src/example.rs)",
+    "",
+    "[Source line](src/example.rs#L1)",
     "",
     "[Source with space](src/example%20file.rs)",
     "",

@@ -33,11 +33,15 @@ Scope: Lens
 - A relative link to an existing, readable, visible, non-symbolic regular file
   inside the canonical root received a `vscode://file/` destination containing
   the target's percent-encoded canonical absolute path.
+- A supported positive line-number fragment received a VS Code line and column
+  suffix that selects that line at column 1.
 - Every Lens-generated `vscode:` link visibly states that it opens in VS Code,
   and that statement is part of the link's accessible name.
 - A missing, unreadable, hidden, symbolic, directory, absolute, invalidly
   encoded, or out-of-root target, or a target whose canonical path ended in a
   colon and number, received no Lens-generated `vscode:` URL.
+- A zero, malformed, or unsupported source-location fragment received no
+  Lens-generated `vscode:` URL.
 - External destinations, authored `vscode:` destinations, and same-document
   fragments retained their authored destinations.
 - The response contained no source-file bytes, no source-file route, and no

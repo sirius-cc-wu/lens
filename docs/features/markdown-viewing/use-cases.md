@@ -235,7 +235,9 @@ Main success scenario:
    presents the link with an indication that it opens in VS Code.
 3. The user follows the source-file link.
 4. The browser asks the operating system to open the generated `vscode:` URL.
-5. VS Code opens the referenced file at its canonical absolute path.
+5. VS Code opens the referenced file at its canonical absolute path and, when
+   the authored link contains a supported line number, places the cursor at
+   that line.
 
 Extensions:
 
@@ -256,8 +258,10 @@ Special requirements:
 
 - Lens derives the target only while rendering an already authorized
   document. No browser request supplies a filesystem path.
-- The generated URL contains the percent-encoded canonical path and no authored
-  query, fragment, line, or column suffix.
+- The generated URL contains the percent-encoded canonical path. A
+  `#L<positive-line-number>` fragment is translated to VS Code's
+  `:line:column` syntax with column 1. Lens copies no authored query or other
+  fragment into the generated URL.
 - Rendering, automatic refresh, prefetching, and pointer hover do not launch
   VS Code. Only the user's link selection can trigger the browser handoff.
 - The indication that a source link opens VS Code is both visible and part of
