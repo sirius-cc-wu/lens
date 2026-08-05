@@ -584,6 +584,7 @@ dependencies = [
  "futures-util",
  "idna_adapter",
  "indexmap",
+ "libc",
  "percent-encoding",
  "pulldown-cmark",
  "reqwest",
@@ -593,6 +594,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tower",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

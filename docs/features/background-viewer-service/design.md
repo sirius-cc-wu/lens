@@ -416,15 +416,15 @@ Construction should keep one commit per thin implementation iteration:
 3. **C12, establish the bounded local protocol:** test version, size, malformed
    frame, lossless native path, and typed response behavior with in-memory
    streams.
-4. **C13, claim the per-user endpoint:** add platform endpoint, peer
-   authorization, stale Unix-socket, detached-candidate, and concurrent-owner
-   tests on native runners.
+4. **C13, claim the per-user endpoint:** add the platform endpoint, peer
+   authorization, stale Unix-socket, access-policy, and concurrent-owner tests.
 5. **C14, coordinate service requests:** test
    `same_request_retried_then_one_viewing_session_is_retained`,
    `different_requests_then_isolated_sessions_keep_their_roots_and_servers`,
    and `target_rejected_then_no_viewing_session_becomes_reachable`; implement
    the controller and session creation behind the tested protocol.
-6. **C15, auto-start and browser handoff:** test
+6. **C15, auto-start and browser handoff:** add native detached-candidate
+   startup and test
    `missing_service_then_command_starts_service_and_returns_after_view_ready`,
    `concurrent_first_commands_then_one_service_accepts_both_requests`,
    `stale_endpoint_then_next_command_recovers_without_manual_cleanup`, and
