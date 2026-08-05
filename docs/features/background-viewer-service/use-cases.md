@@ -127,7 +127,8 @@ Extensions:
 - Cross-cutting constraints: [supplementary specification](../../supplementary-specification.md)
 - Selected risks: `R-06`, `R-11`, and `R-12` in the [risk list](../../risk-list.md)
 - Inception boundary: [S1 background service scope](../../iterations/s1-background-viewer-service-scope.md)
-- Planned system interaction and contract: `SSD-07` and `OC-07` in S2
+- System interaction: [`SSD-07`](ssd-07-request-target-view.md)
+- Operation contract: [`OC-07`](oc-07-request-target-view.md)
 - Planned responsibility and Rust design: `RZ-04` and `DCD-04` in S3
 
 ## Open Questions for Elaboration
