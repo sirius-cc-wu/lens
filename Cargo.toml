@@ -3,7 +3,7 @@ name = "lens"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
-description = "A Linux CLI for viewing repository Markdown and PlantUML diagrams in a browser"
+description = "A cross-platform CLI for viewing repository Markdown and PlantUML diagrams in a browser"
 license = "MIT"
 readme = "README.md"
 homepage = "https://sirius-cc-wu.github.io/lens/"
@@ -16,15 +16,24 @@ axum = "=0.6.20"
 clap = { version = "=4.4.18", features = ["derive"] }
 flate2 = "=1.0.28"
 futures-util = "=0.3.31"
+getrandom = "=0.2.17"
 # Keep transitive URL dependencies compatible with the repository's Cargo 1.75 toolchain.
 idna_adapter = "=1.0.0"
 indexmap = "=2.2.6"
 percent-encoding = "=2.3.2"
 pulldown-cmark = "=0.9.3"
 reqwest = { version = "=0.11.24", default-features = false, features = ["rustls-tls", "stream"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
 serde_yaml = "=0.9.34"
 thiserror = "=1.0.56"
-tokio = { version = "=1.35.1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "=1.35.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.186"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.52.0", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
 
 [dev-dependencies]
 tower = { version = "=0.4.13", features = ["util"] }

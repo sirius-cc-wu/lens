@@ -5,6 +5,7 @@ use std::{
 };
 
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -28,7 +29,8 @@ pub struct MarkdownTarget {
     initial_document: usize,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
 pub enum TargetScope {
     #[default]
     Repository,
@@ -83,6 +85,26 @@ pub fn load_markdown_target_with_scope(
             source,
         })?,
     };
+    load_resolved_target(requested_path, scope)
+}
+
+pub(crate) fn load_markdown_target_from(
+    invocation_directory: &Path,
+    path: Option<&Path>,
+    scope: TargetScope,
+) -> Result<MarkdownTarget, TargetError> {
+    let requested_path = match path {
+        Some(path) if path.is_absolute() => path.to_path_buf(),
+        Some(path) => invocation_directory.join(path),
+        None => invocation_directory.to_path_buf(),
+    };
+    load_resolved_target(requested_path, scope)
+}
+
+fn load_resolved_target(
+    requested_path: PathBuf,
+    scope: TargetScope,
+) -> Result<MarkdownTarget, TargetError> {
     let metadata = target_metadata(&requested_path)?;
     if metadata.file_type().is_symlink() {
         return Err(TargetError::SymbolicLinkTarget {
@@ -369,8 +391,8 @@ mod tests {
     use std::{fs, path::Path};
 
     use super::{
-        is_hidden_target, load_markdown_target, load_markdown_target_with_scope, MarkdownTarget,
-        TargetError, TargetScope,
+        is_hidden_target, load_markdown_target, load_markdown_target_from,
+        load_markdown_target_with_scope, MarkdownTarget, TargetError, TargetScope,
     };
 
     #[test]
@@ -395,6 +417,27 @@ mod tests {
 
         // Assert
         assert!(matches!(result, Err(TargetError::Missing { .. })));
+    }
+
+    #[test]
+    fn relative_target_with_invocation_directory_then_resolves_from_invoking_shell() {
+        // Arrange
+        let directory = temporary_directory("explicit-invocation-directory");
+        fs::create_dir(directory.join("docs")).expect("docs directory should be creatable");
+        fs::write(directory.join("docs/guide.md"), "# Guide\n")
+            .expect("guide fixture should be writable");
+
+        // Act
+        let target = load_markdown_target_from(
+            &directory,
+            Some(Path::new("docs/guide.md")),
+            TargetScope::Target,
+        )
+        .expect("relative target should load from invocation directory");
+
+        // Assert
+        assert_target(&target, 0, &["guide.md"]);
+        remove_directory(directory);
     }
 
     #[test]
