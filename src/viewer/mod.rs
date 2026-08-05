@@ -2,18 +2,17 @@ use std::net::TcpListener;
 
 use anyhow::{Context, Result};
 
-mod browser;
 mod known_documents;
 mod page;
 mod rendering;
 mod routes;
 mod state;
 
-use browser::open_browser;
 use rendering::renderer_client;
 use routes::router;
 use state::{viewer_state, watch_documents};
 
+use crate::browser::open_browser;
 use crate::target::MarkdownTarget;
 
 pub async fn serve(target: MarkdownTarget) -> Result<()> {

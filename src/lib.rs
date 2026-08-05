@@ -1,3 +1,4 @@
+mod browser;
 mod markdown;
 mod plantuml;
 mod source_link;
