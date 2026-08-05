@@ -5,6 +5,7 @@ use std::{
 };
 
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -28,7 +29,8 @@ pub struct MarkdownTarget {
     initial_document: usize,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
 pub enum TargetScope {
     #[default]
     Repository,
