@@ -109,18 +109,21 @@ not merge document authority or PlantUML configuration between commands.
 
 The [glossary](../../glossary.md) owns the shared meanings of Lens client,
 background Lens service, and viewing session. These technical lifecycle
-concepts do not require a standalone domain model; `RZ-04` and `DCD-04` will
-assign their software responsibilities in S3.
+concepts do not require a standalone domain model; `RZ-04` and `DCD-04` assign
+their software responsibilities in the feature design.
 
-## Open Issues for Design
+## Design Outcomes and Construction Parameters
 
-- Select a cross-platform, per-user command channel and discovery record that
-  can establish one background-process owner, authenticate requests, recover
-  stale state, and support bounded startup and acknowledgment.
-- Define the request identity and outcome retention needed to make an internal
-  transport retry idempotent without suppressing a separately invoked command.
-- Assign browser launch to the short-lived client so it retains the invoking
-  desktop environment and can report the manual URL, unless S3 finds contrary
-  platform evidence.
-- Set concrete startup, acknowledgment, and retained-outcome intervals during
-  construction from executable failure and timing evidence.
+- ADR-022 selects per-user Unix-domain sockets on Linux and macOS and an
+  explicitly access-controlled named pipe on Windows. Endpoint ownership elects
+  one background process, and the platform module rejects a different user's
+  peer before decoding an open request.
+- A generated `RequestId` and process-lifetime `RequestLedger` make one
+  command's transport retry idempotent. Every separate invocation generates a
+  new identifier and therefore a new viewing session.
+- The short-lived client owns browser launch so it retains the invoking desktop
+  environment and can report `manual_open_required(view_url)`.
+- Construction must set concrete frame size, startup, acknowledgment, and
+  measurement thresholds from executable evidence.
+
+Design: [`RZ-04` and `DCD-04`](design.md)

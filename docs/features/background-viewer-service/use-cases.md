@@ -58,23 +58,25 @@ Trigger: The developer runs `lens`, `lens <target>`, or the corresponding
 Main success scenario:
 
 1. The developer asks Lens to open a target.
-2. Lens validates and resolves the target under the existing target and scope
-   rules.
+2. Lens captures the optional target, invocation directory, target scope, and
+   session configuration from the invoking command.
 3. Lens makes a background Lens process available without requiring a separate
    server-start command.
-4. Lens establishes or selects an isolated viewing session for the request.
-5. Lens acknowledges the request after the target's browser-facing URL is
+4. Lens validates and resolves the target under the existing target and scope
+   rules.
+5. Lens establishes a new isolated viewing session for the request.
+6. Lens acknowledges the request after the target's browser-facing URL is
    ready to serve.
-6. Lens asks the operating system browser to open that view alongside existing
+7. Lens asks the operating system browser to open that view alongside existing
    Lens documents.
-7. Lens returns control to the invoking terminal without waiting for the
+8. Lens returns control to the invoking terminal without waiting for the
    browser view to close.
-8. The developer continues using the terminal while the requested view remains
+9. The developer continues using the terminal while the requested view remains
    available.
 
 Extensions:
 
-- 2a. If the target is missing, unreadable, hidden, symbolic, unsupported, or
+- 4a. If the target is missing, unreadable, hidden, symbolic, unsupported, or
   has no discoverable documents, Lens reports the existing actionable target
   error and opens no browser view.
 - 3a. If Lens cannot start or reach the background process within a bounded
@@ -83,16 +85,16 @@ Extensions:
 - 3b. If a previous background process stopped or left stale discovery state,
   Lens recovers that state or replaces the process before accepting the
   request; the developer does not run a cleanup or start command.
-- 4a. If the target belongs to another repository, scope, or session
+- 5a. If the target belongs to another repository, scope, or session
   configuration, the same background process creates another isolated viewing
   session rather than merging authorized document sets.
-- 4b. If the target belongs to a compatible existing viewing session, Lens may
-  reuse that session, but the requested target remains the document opened by
-  this command.
-- 6a. If the operating system cannot open the browser automatically, Lens
+- 5b. Even when an existing viewing session has the same root and
+  configuration, Lens creates a fresh session so this command receives the
+  current fixed discovery snapshot and its own browser view.
+- 7a. If the operating system cannot open the browser automatically, Lens
   reports the local URL for manual opening while leaving the accepted viewing
   session available.
-- 8a. If a diagram request or another browser-time operation fails after the
+- 9a. If a diagram request or another browser-time operation fails after the
   command succeeds, the browser view reports that failure under the existing
   viewing-session rules.
 
@@ -129,14 +131,15 @@ Extensions:
 - Inception boundary: [S1 background service scope](../../iterations/s1-background-viewer-service-scope.md)
 - System interaction: [`SSD-07`](ssd-07-request-target-view.md)
 - Operation contract: [`OC-07`](oc-07-request-target-view.md)
-- Planned responsibility and Rust design: `RZ-04` and `DCD-04` in S3
+- Architecture decision: [ADR-022](../../decisions/adr-022-per-user-background-service.md)
+- Responsibility and Rust design: [`RZ-04` and `DCD-04`](design.md)
 
-## Open Questions for Elaboration
+## Elaboration Outcomes
 
-- Which local command-channel mechanism provides cross-platform per-user
-  discovery, single-process startup, stale-state recovery, and request
-  authentication?
-- Which command-side and background-process responsibilities preserve manual
-  browser-launch guidance and session-fixed `LENS_PLANTUML_SERVER` behavior?
-- What measured acknowledgment threshold distinguishes normal reuse from a
-  stalled background process?
+- ADR-022 selects per-user Unix-domain sockets or Windows named pipes with
+  atomic endpoint ownership and platform-native peer authorization.
+- The short-lived client owns service discovery, automatic startup, browser
+  launch, and terminal errors. The background process owns request outcomes and
+  isolated viewing-session handles.
+- Construction owns the concrete startup, acknowledgment, and measurement
+  thresholds because executable evidence is required to set them.
