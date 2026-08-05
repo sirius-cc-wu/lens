@@ -24,6 +24,18 @@ impl EndpointError {
     fn io(context: &'static str, source: std::io::Error) -> Self {
         Self::Io { context, source }
     }
+
+    pub(crate) fn is_unavailable(&self) -> bool {
+        let Self::Io { source, .. } = self else {
+            return false;
+        };
+        matches!(
+            source.kind(),
+            std::io::ErrorKind::NotFound
+                | std::io::ErrorKind::ConnectionRefused
+                | std::io::ErrorKind::WouldBlock
+        ) || matches!(source.raw_os_error(), Some(2 | 3 | 231))
+    }
 }
 
 #[cfg(unix)]

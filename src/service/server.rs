@@ -5,10 +5,69 @@ use tokio::{
     task::JoinHandle,
 };
 
-use super::protocol::{OpenError, OpenErrorCode, OpenRequest, RequestId, ServiceResponse};
+use super::{
+    endpoint::{self, EndpointError, ServerConnection},
+    protocol::{
+        self, OpenError, OpenErrorCode, OpenRequest, ProtocolError, ProtocolVersion, RequestId,
+        ServiceRequest, ServiceResponse,
+    },
+};
 use crate::viewer::ViewerSession;
 
 const CONTROLLER_CAPACITY: usize = 32;
+
+#[derive(Debug, Error)]
+enum ConnectionError {
+    #[error(transparent)]
+    Endpoint(#[from] EndpointError),
+    #[error(transparent)]
+    Protocol(#[from] ProtocolError),
+    #[error(transparent)]
+    Controller(#[from] ControllerError),
+}
+
+pub(crate) async fn run_background_service() -> Result<(), EndpointError> {
+    let mut listener = match endpoint::claim() {
+        Ok(listener) => listener,
+        Err(EndpointError::AlreadyOwned) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let controller = start_controller();
+    println!("Lens background service is ready");
+
+    loop {
+        let connection = listener.accept().await?;
+        let handle = controller.handle();
+        tokio::spawn(async move {
+            if let Err(error) = handle_connection(connection, handle).await {
+                eprintln!("Lens background service rejected a command: {error}");
+            }
+        });
+    }
+}
+
+async fn handle_connection(
+    mut connection: ServerConnection,
+    controller: ServiceControllerHandle,
+) -> Result<(), ConnectionError> {
+    endpoint::authorize(&connection)?;
+    let request: ServiceRequest = protocol::read_frame(&mut connection).await?;
+    if request.validate_version().is_err() {
+        protocol::write_frame(
+            &mut connection,
+            &ServiceResponse::Incompatible {
+                supported_version: ProtocolVersion::CURRENT,
+            },
+        )
+        .await?;
+        return Ok(());
+    }
+
+    let ServiceRequest::Open(request) = request;
+    let response = controller.open(request).await?;
+    protocol::write_frame(&mut connection, &response).await?;
+    Ok(())
+}
 
 #[derive(Clone)]
 pub(crate) struct ServiceControllerHandle {
@@ -32,6 +91,7 @@ impl Drop for ServiceControllerRuntime {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ControllerStats {
     pub(crate) requests: usize,
@@ -57,6 +117,7 @@ impl ServiceControllerHandle {
         response.await.map_err(|_| ControllerError::Unavailable)
     }
 
+    #[cfg(test)]
     pub(crate) async fn stats(&self) -> Result<ControllerStats, ControllerError> {
         let (reply, response) = oneshot::channel();
         self.sender
@@ -89,6 +150,7 @@ enum ControllerMessage {
         request_id: RequestId,
         completion: SessionCompletion,
     },
+    #[cfg(test)]
     Stats {
         reply: oneshot::Sender<ControllerStats>,
     },
@@ -108,6 +170,7 @@ impl ServiceController {
                     request_id,
                     completion,
                 } => self.requests.complete(request_id, completion),
+                #[cfg(test)]
                 ControllerMessage::Stats { reply } => {
                     let _ = reply.send(self.requests.stats());
                 }
@@ -166,6 +229,7 @@ impl RequestLedger {
         );
     }
 
+    #[cfg(test)]
     fn stats(&self) -> ControllerStats {
         ControllerStats {
             requests: self.entries.len(),

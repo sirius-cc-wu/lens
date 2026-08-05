@@ -21,7 +21,7 @@ pub(crate) struct Listener {
 }
 
 impl Listener {
-    pub(crate) async fn accept(&self) -> Result<ServerConnection, EndpointError> {
+    pub(crate) async fn accept(&mut self) -> Result<ServerConnection, EndpointError> {
         self.inner
             .accept()
             .await
@@ -330,7 +330,7 @@ mod tests {
     async fn same_user_connection_then_socket_is_private_and_peer_is_authorized() {
         // Arrange
         let (root, path) = endpoint_fixture("authorization");
-        let listener = claim_at(&path).expect("endpoint should be claimable");
+        let mut listener = claim_at(&path).expect("endpoint should be claimable");
         let mode = fs::symlink_metadata(&path)
             .expect("endpoint metadata should be readable")
             .mode()

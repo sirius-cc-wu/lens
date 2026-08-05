@@ -1,6 +1,5 @@
-#[allow(dead_code)]
+pub(crate) mod client;
 pub(crate) mod endpoint;
-#[allow(dead_code)]
+pub(crate) mod process;
 pub(crate) mod protocol;
-#[allow(dead_code)]
 pub(crate) mod server;

@@ -766,6 +766,7 @@ async function createDocumentationRepository({
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const outsideDocument = `${directory}-outside.md`;
   const binDirectory = join(directory, "bin");
+  const runtimeDirectory = join(directory, "runtime");
   const readmePath = join(directory, "README.md");
   const sourceLinksMarkdown = [
     "# Source links",
@@ -804,6 +805,7 @@ async function createDocumentationRepository({
     await mkdir(join(directory, "iterations"));
     await mkdir(join(directory, ".git"));
     await mkdir(binDirectory);
+    await mkdir(runtimeDirectory);
     if (sourceLinks) {
       await mkdir(join(directory, "src", "directory"), { recursive: true });
       await mkdir(join(directory, ".hidden"));
@@ -847,11 +849,13 @@ async function createDocumentationRepository({
     }
     await Promise.all(files);
     await chmod(join(binDirectory, "xdg-open"), 0o755);
+    await chmod(runtimeDirectory, 0o700);
     return {
       binDirectory,
       directory,
       outsideDocument,
       readmePath,
+      runtimeDirectory,
       sourceLinksMarkdown,
     };
   } catch (error) {
@@ -917,27 +921,32 @@ async function startLens(
   if (scope) {
     commandArguments.push("--scope", scope);
   }
-  const child = spawn(lensBinary, commandArguments, {
-    cwd: currentDirectoryRelativePath
-      ? join(repository.directory, currentDirectoryRelativePath)
-      : undefined,
-    env: {
-      ...process.env,
-      LENS_PLANTUML_SERVER: rendererUrl,
-      PATH: `${repository.binDirectory}:${process.env.PATH}`,
-    },
+  const environment = {
+    ...process.env,
+    LENS_PLANTUML_SERVER: rendererUrl,
+    PATH: `${repository.binDirectory}:${process.env.PATH}`,
+    XDG_RUNTIME_DIR: repository.runtimeDirectory,
+  };
+  const service = spawn(lensBinary, ["--lens-background-service"], {
+    env: environment,
     stdio: ["ignore", "pipe", "pipe"],
   });
   const stop = async () => {
-    if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) {
+    if (service.exitCode !== null || service.signalCode !== null || service.pid === undefined) {
       return;
     }
-    const closed = once(child, "close");
-    child.kill("SIGKILL");
+    const closed = once(service, "close");
+    service.kill("SIGKILL");
     await closed;
   };
   try {
-    const url = await waitForLoopbackUrl(child);
+    await waitForServiceReady(service);
+    const url = await runLensClient(lensBinary, commandArguments, {
+      cwd: currentDirectoryRelativePath
+        ? join(repository.directory, currentDirectoryRelativePath)
+        : undefined,
+      env: environment,
+    });
     return { url, stop };
   } catch (error) {
     await stop();
@@ -945,26 +954,77 @@ async function startLens(
   }
 }
 
-function waitForLoopbackUrl(child) {
+function runLensClient(lensBinary, commandArguments, options) {
+  const child = spawn(lensBinary, commandArguments, {
+    ...options,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   return new Promise((resolveUrl, reject) => {
-    let output = "";
-    const timeout = setTimeout(() => reject(new Error(`Lens did not print a loopback URL: ${output}`)), 10_000);
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(
+      () => reject(new Error(`Lens client did not exit after its ready acknowledgment: ${stdout}${stderr}`)),
+      10_000,
+    );
     child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
-      output += chunk;
-      const match = output.match(/at (http:\/\/127\.0\.0\.1:\d+)/);
-      if (match) {
-        clearTimeout(timeout);
-        resolveUrl(match[1]);
-      }
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
     });
     child.once("error", (error) => {
       clearTimeout(timeout);
       reject(error);
     });
-    child.once("exit", (code) => {
+    child.once("close", (status, signal) => {
       clearTimeout(timeout);
-      reject(new Error(`Lens exited before serving the fixture (status ${code}): ${output}`));
+      if (status !== 0) {
+        reject(new Error(`Lens client failed (status ${status}, signal ${signal}): ${stdout}${stderr}`));
+        return;
+      }
+      const match = stdout.match(/at (http:\/\/127\.0\.0\.1:\d+)/);
+      if (!match) {
+        reject(new Error(`Lens client did not print a loopback URL: ${stdout}${stderr}`));
+        return;
+      }
+      resolveUrl(match[1]);
+    });
+  });
+}
+
+function waitForServiceReady(child) {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(
+      () => reject(new Error(`Lens background service did not become ready: ${stdout}${stderr}`)),
+      10_000,
+    );
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      if (stdout.includes("Lens background service is ready")) {
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("exit", (status, signal) => {
+      clearTimeout(timeout);
+      reject(
+        new Error(
+          `Lens background service exited before readiness (status ${status}, signal ${signal}): ${stdout}${stderr}`,
+        ),
+      );
     });
   });
 }

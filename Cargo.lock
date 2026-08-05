@@ -582,6 +582,7 @@ dependencies = [
  "clap",
  "flate2",
  "futures-util",
+ "getrandom",
  "idna_adapter",
  "indexmap",
  "libc",
