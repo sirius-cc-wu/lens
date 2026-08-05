@@ -33,6 +33,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [Primary feature and use cases](features/markdown-viewing/use-cases.md) (`FEAT-01`)
 - [Retired document navigation pane use cases](features/document-navigation-pane/use-cases.md) (`FEAT-02`, retired)
 - [Automatic refresh use cases](features/automatic-refresh/use-cases.md) (`FEAT-03`)
+- [Background viewer service use cases](features/background-viewer-service/use-cases.md) (`FEAT-04`)
 - [V1 UML design views](features/markdown-viewing/uml-design.md)
 - [Server-only PlantUML rendering design](features/markdown-viewing/server-rendering-design.md)
 - [Validated VS Code source-link design](features/markdown-viewing/source-link-design.md)

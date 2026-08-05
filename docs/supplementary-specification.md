@@ -18,6 +18,13 @@ does not prescribe the implementation architecture.
 - The supported source-install command is `cargo install --path . --locked`.
 - Release artifacts use a target-specific archive name and contain the native
   binary name for the selected platform.
+- An ordinary `lens` invocation is a short-lived client. It automatically
+  starts or reuses one background Lens process for the current operating-system
+  user and does not require a separate server-start command.
+- The client returns after Lens acknowledges that the target's browser view is
+  available and the browser handoff has been attempted. It must not wait for
+  the browser view to close. A startup, delivery, or acknowledgment failure
+  must not be reported as success.
 - The CLI starts a local-only browser session and should not expose the viewer
   to the local network by default.
 - Failure to launch a browser must leave the local URL visible in the CLI.
@@ -86,6 +93,13 @@ does not prescribe the implementation architecture.
   hidden files and directories found during discovery are excluded. Document
   and revision routes resolve only identifiers from that fixed set, even though
   Lens does not expose the set as a searchable catalog.
+- Reusing one background Lens process must not merge viewing-session authority.
+  Each session retains its own canonical root, fixed document set, target
+  scope, source-link resolver, and normalized PlantUML server selection.
+- The command channel used to reach the background Lens process must be local
+  to the current operating-system user. Loopback reachability alone must not
+  authorize a process running as another operating-system user to submit a
+  target.
 - Lens-generated editor links reuse the canonical session root and require a
   readable, visible, non-symbolic regular file. No browser route accepts a
   source path or serves source contents, and Lens does not launch an editor
@@ -103,3 +117,7 @@ measurements rather than guessed in inception.
 - Discovery and automatic refresh work should remain practical for ordinary
   repositories. Quantitative document-count, startup, memory, and idle-refresh
   limits require the repeatable measurements proposed in improvement 14.
+- Reusing an available background Lens process should add no perceptible delay
+  between invoking `lens` and returning control after acknowledgment. A
+  construction iteration must establish a measurable threshold and a bounded
+  failure timeout before treating this as verified behavior.
