@@ -116,9 +116,10 @@ Extensions:
   operating-system user. This feature does not add remote serving, shared
   hosting, or a non-loopback browser listener.
 - The first command may take longer because it starts the background process.
-  Later command acknowledgment should add no perceptible delay; construction
-  must establish a measurable threshold rather than treating this phrase as a
-  timing guarantee.
+  Later command acknowledgment should add no perceptible delay. On the
+  optimized Linux reference fixture, 95% of cold-start and reuse samples should
+  remain within 250 ms; this is an investigation threshold rather than a
+  cross-platform timing guarantee.
 - The background process may remain idle or stop after its last viewing session
   is no longer needed. No specific idle shutdown policy is required for this
   feature.
@@ -134,12 +135,20 @@ Extensions:
 - Architecture decision: [ADR-022](../../decisions/adr-022-per-user-background-service.md)
 - Responsibility and Rust design: [`RZ-04` and `DCD-04`](design.md)
 
-## Elaboration Outcomes
+## Implementation and Transition Outcomes
 
 - ADR-022 selects per-user Unix-domain sockets or Windows named pipes with
   atomic endpoint ownership and platform-native peer authorization.
 - The short-lived client owns service discovery, automatic startup, browser
   launch, and terminal errors. The background process owns request outcomes and
   isolated viewing-session handles.
-- Construction owns the concrete startup, acknowledgment, and measurement
-  thresholds because executable evidence is required to set them.
+- C10 through C15 implement the browser boundary, independently retained
+  sessions, bounded protocol, per-user endpoint, state-owning controller,
+  automatic startup, and client-side browser handoff.
+- Startup is bounded at three seconds, acknowledgment at ten seconds, and
+  command frames at 64 KiB. C16 recorded optimized Linux timing and retained
+  session resource baselines in the
+  [release-readiness checklist](../../release-readiness.md#background-service-checks).
+- Native Linux, macOS, and Windows Rust checks are pull-request gates. The
+  compiled-browser suite waits for the ordinary client to exit before it
+  verifies continued viewing and automatic refresh.

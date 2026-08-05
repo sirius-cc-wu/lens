@@ -8,10 +8,10 @@ tags: [release, verification]
 
 # V1 Release Readiness
 
-Lens V1 is ready for a Linux source release when every check below has current
-evidence. This document is the release checklist; its commands are executable
-acceptance checks, meaning they verify observable user behavior rather than only
-internal implementation details.
+Lens V1 is ready for a supported-platform release when every check below has
+current evidence. This document is the release checklist; its commands are
+executable acceptance checks, meaning they verify observable user behavior
+rather than only internal implementation details.
 
 ## Automated Checks
 
@@ -21,6 +21,10 @@ cargo test --locked
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo package --allow-dirty
 ```
+
+Pull requests and pushes to `main` run the locked Rust test, Clippy, and package
+checks on native x86-64 Linux, macOS, and Windows runners. Formatting and the
+compiled-browser suite run on Linux.
 
 ## Browser End-to-End Checks
 
@@ -32,13 +36,14 @@ npm ci
 npm run test:browser
 ```
 
-Expected result: the suite builds Lens with Cargo, starts Cargo's reported
-executable against a temporary documentation repository, uses the installed
-Google Chrome channel in headless mode, and completes without contacting the
-public PlantUML service. It verifies rendered Markdown, navigation to a
-discovered document through an authored link, browser Back history,
-repository-scoped navigation from file, directory, and current-directory
-targets, explicit target-scoped guidance without source disclosure,
+Expected result: the suite builds Lens with Cargo, starts an explicit
+background service and Cargo's reported ordinary executable against a
+temporary documentation repository, waits for the ordinary command to exit,
+then uses the installed Google Chrome channel in headless mode without
+contacting the public PlantUML service. It verifies rendered Markdown,
+navigation to a discovered document through an authored link, browser Back
+history, repository-scoped navigation from file, directory, and
+current-directory targets, explicit target-scoped guidance without source disclosure,
 outside-repository guidance without source disclosure, narrow and wide
 single-column layout without navigation controls or storage, inert former
 `query` and `page` parameters, automatic refresh after a saved change, 404
@@ -46,6 +51,52 @@ guidance for an undiscovered document, accessible VS Code destinations only
 for qualifying source links, preserved document and rejected-link
 destinations, absent source routes, and visible direct-target,
 known-document-route, success, and failure behavior for PlantUML.
+
+## Background Service Checks
+
+Use a disposable repository and a browser launcher that can be observed or
+controlled. Run two ordinary commands from one terminal:
+
+```bash
+lens README.md
+lens docs/release-readiness.md
+```
+
+Expected results:
+
+- The first command starts the per-user service automatically, prints a ready
+  loopback URL, attempts one browser handoff, and exits without waiting for the
+  page to close.
+- The second command reuses the process, creates a different loopback URL, and
+  exits while both pages remain available.
+- Saving a displayed document refreshes its page after the client has exited.
+- A missing or unsupported target returns an actionable CLI error and performs
+  no browser handoff. A missing browser launcher reports the manual ready URL
+  and leaves that URL available.
+- Concurrent first commands reach one endpoint owner and both receive isolated
+  views. After forcibly stopping the service, its old URLs fail and the next
+  command removes the verified stale endpoint and starts a replacement.
+- A peer that does not satisfy the native per-user policy is rejected before a
+  request frame is decoded.
+
+The optimized C16 Linux reference fixture uses one Markdown document. Ten cold
+starts measured 31-32 ms, and 95% of 30 reuse acknowledgments completed within
+5 ms (the 95th percentile). A service that accepted a frame without responding
+returned the configured acknowledgment error after 10,005 ms. These numbers
+are comparison baselines, not cross-platform timing guarantees. Investigate a
+reference-host regression when 95% of either cold-start or reuse samples no
+longer complete within 250 ms; the hard portable bounds remain three seconds
+for service startup and ten seconds for acknowledgment.
+
+The same fixture measured 5,264 KiB resident memory (RSS) before a session and
+12,804 KiB after 50 retained sessions. The complete increase was about
+151 KiB per session; after first-use initialization it was about 117 KiB per
+additional session. Fifty polling sessions consumed about 70 ms CPU time
+(7 Linux process-accounting ticks) over five idle seconds versus no measurable
+baseline work. Investigate growth above 256 KiB per additional one-document
+session after the first or polling above 2% of one CPU at 50 such sessions.
+Large-document-set measurements remain tracked separately by `R-09` and
+improvement 14.
 
 ## Installation Check
 
@@ -84,11 +135,11 @@ or checksum.
 
 ## Tagged Release Automation
 
-GitHub Actions runs the same formatting, Rust test, Clippy, package, and
-browser checks for pull requests and pushes to `main`. A pushed tag named
-`v<package-version>` starts the release workflow. It rejects a tag whose
-version does not match `Cargo.toml`, builds native archives on Linux, Intel
-macOS, and Windows runners, and uploads all archives and checksums to the
+GitHub Actions runs native Rust test, Clippy, and package checks plus Linux
+formatting and browser checks for pull requests and pushes to `main`. A pushed
+tag named `v<package-version>` starts the release workflow. It rejects a tag
+whose version does not match `Cargo.toml`, builds native archives on Linux,
+Intel macOS, and Windows runners, and uploads all archives and checksums to the
 GitHub Release only after every build succeeds.
 
 The release workflow is not a substitute for this checklist: a release manager
@@ -110,7 +161,8 @@ lens --scope target docs/features
 Expected results:
 
 - Lens prints a loopback URL and opens it with `xdg-open`, or prints the URL for
-  manual opening if browser launch fails.
+  manual opening if browser launch fails. The command then exits while its view
+  remains available through the background service.
 - File, directory, and current-directory targets recognize the nearest
   non-symbolic-link `.git` directory or regular `.git` file as their default
   root.
@@ -207,6 +259,11 @@ Expected results:
 - Linux, macOS, and Windows launch their default browser through `xdg-open`,
   `open`, and `cmd /C start` respectively. A launch failure still prints the
   loopback URL for manual opening.
+- Linux and macOS use a private per-user Unix-domain socket and verify the peer
+  user before decoding commands. Windows uses a user-SID-specific named pipe
+  whose access policy permits only that user and LocalSystem and rejects remote
+  clients. Native pull-request checks compile and execute each platform's
+  implementation.
 - Documentation-only HTTP surface: Lens does not serve source-code contents;
   qualifying local links may hand a validated path to the optional stable VS
   Code URL handler.

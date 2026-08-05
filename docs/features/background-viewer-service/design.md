@@ -4,7 +4,7 @@ title: "FEAT-04 Background Viewer Service Design"
 description: "Realizes non-blocking Lens commands through per-user local IPC, a state-owning service controller, and isolated loopback viewing sessions."
 id: "BACKGROUND-VIEWER-DESIGN"
 feature: "FEAT-04"
-status: "proposed"
+status: "implemented"
 language: "Rust"
 tags: [design, use-case-realization, uml, process-lifecycle]
 ---
@@ -352,8 +352,8 @@ Session *-- State : Arc ownership
   through the controller channel so no lock is held across I/O or `.await`.
 - The request ledger retains completed successes, rejections, and successful
   session handles for the initial service lifetime. This gives retries exact
-  outcomes; C16 measures the resulting growth before any compaction policy is
-  introduced.
+  outcomes. C16 measured the resulting growth and retained this policy while
+  leaving its unbounded lifetime cost explicit.
 - Each connection handler owns its stream and a `oneshot` reply path. It
   validates and bounds one frame before giving a typed request to the
   controller.
@@ -403,9 +403,9 @@ foreground behavior, while the CLI uses a new high-level open operation. The
 internal background-service entry point is hidden from normal help and is not a
 supported manual server command.
 
-## Construction and Verification Handoff
+## Construction and Verification Outcome
 
-Construction should keep one commit per thin implementation iteration:
+Construction kept one commit per thin implementation iteration:
 
 1. **C10, promote browser launch mechanically:** move the existing browser
    module to the crate level with its tests and preserve every program,
@@ -431,10 +431,19 @@ Construction should keep one commit per thin implementation iteration:
    `browser_launch_failure_then_reports_manual_url_and_keeps_session_available`.
    Extend the compiled-browser harness to prove the command exits while its
    page and automatic refresh remain usable.
-7. **C16, transition and measurement:** run native Linux, macOS, and Windows
-   checks; establish startup, reuse acknowledgment, and failure timeout budgets;
-   measure retained-session memory and refresh work; update README, release
-   notes, risks, and lifecycle status from proposed to implemented.
+7. **C16, transition and measurement:** added native Linux, macOS, and Windows
+   pull-request checks; established startup, reuse acknowledgment, and failure
+   timeout budgets; measured retained-session memory and refresh work; and
+   updated user, release, risk, and lifecycle guidance.
+
+The optimized one-document Linux reference measured 31-32 ms across ten cold
+starts and 4-5 ms across 30 reuse acknowledgments. A non-acknowledging local
+service returned the typed timeout after 10,005 ms. Service resident memory
+(RSS) grew from 5,264 KiB before a session to 12,804 KiB after 50 retained
+sessions, while 50 idle pollers used about 70 ms CPU over five seconds. The
+[C16 transition record](../../iterations/c16-background-service-transition.md)
+and [release-readiness checklist](../../release-readiness.md#background-service-checks)
+own the method, comparison thresholds, and residual limits.
 
 Every Rust test follows the repository's behavior-oriented naming and setup,
 one primary action, verification structure. Concurrency tests may alternate
@@ -445,15 +454,19 @@ complete browser suite after each module split.
 
 ## Residual Risks and Deferred Choices
 
-- The concrete frame-size, startup, acknowledgment, and measurement thresholds
-  require executable evidence in construction.
+- The 64 KiB frame limit, three-second startup deadline, ten-second
+  acknowledgment deadline, and C16 measurement thresholds now have executable
+  evidence. They remain reference budgets rather than cross-platform timing
+  guarantees.
 - A process crash breaks all URLs it owns; transparent session transfer is out
   of scope.
 - An incompatible live service is reported rather than replaced. A future
   upgrade protocol may add graceful handoff if real use demonstrates the need.
 - The first implementation retains sessions and request outcomes for the
-  background process lifetime. Browser leases, close detection, idle
-  retirement, request-ledger compaction, or an explicit stop command require
-  separate lifecycle and measurement evidence.
-- Native Windows access-control and detached-process behavior cannot be claimed
-  from Linux-only CI; release transition requires Windows execution evidence.
+  background process lifetime. C16 found ordinary one-document growth within
+  its reference budget, but the total remains unbounded. Browser leases, close
+  detection, idle retirement, request-ledger compaction, or an explicit stop
+  command require separate lifecycle and large-repository evidence.
+- Native pull-request checks execute platform-specific endpoint and detached
+  process code on Linux, macOS, and Windows. Actual desktop browser handoff and
+  downloaded-archive behavior remain release-readiness checks.

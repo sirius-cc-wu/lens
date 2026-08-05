@@ -4,13 +4,13 @@ title: "Iteration: C15 Automatic Service Handoff"
 description: "Makes ordinary Lens commands auto-start or reuse the background service, open the acknowledged URL, and return without ending the view."
 id: "C15"
 phase: "construction"
-status: "complete"
+status: "completed"
 tags: [iteration, cli, process-lifecycle, browser]
 ---
 
 # Iteration: C15 Automatic Service Handoff
 
-Status: complete
+Status: completed
 
 Phase Intent:
 

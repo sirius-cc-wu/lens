@@ -1,7 +1,10 @@
 use std::{path::PathBuf, time::Duration};
 
 use thiserror::Error;
-use tokio::time::{sleep, timeout, Instant};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    time::{sleep, timeout, Instant},
+};
 
 use super::{
     endpoint::{self, ClientConnection, EndpointError},
@@ -190,7 +193,18 @@ async fn exchange(
     connection: &mut ClientConnection,
     request: &ServiceRequest,
 ) -> Result<ServiceResponse, ExchangeError> {
-    timeout(ACKNOWLEDGMENT_TIMEOUT, async {
+    exchange_with_timeout(connection, request, ACKNOWLEDGMENT_TIMEOUT).await
+}
+
+async fn exchange_with_timeout<C>(
+    connection: &mut C,
+    request: &ServiceRequest,
+    acknowledgment_timeout: Duration,
+) -> Result<ServiceResponse, ExchangeError>
+where
+    C: AsyncRead + AsyncWrite + Unpin,
+{
+    timeout(acknowledgment_timeout, async {
         protocol::write_frame(connection, request).await?;
         protocol::read_frame(connection).await
     })
@@ -220,11 +234,23 @@ mod tests {
     };
 
     use tokio::task::JoinHandle;
+    use tokio::{
+        io::duplex,
+        time::{Duration, Instant},
+    };
 
     use super::{
         request_target_view_with, ClientError, ClientOutcome, OpenErrorCode, OpenInvocation,
     };
-    use crate::{service::endpoint::EndpointError, TargetScope};
+    use crate::{
+        service::{
+            endpoint::EndpointError,
+            protocol::{
+                read_frame, OpenRequest, ProtocolVersion, RequestId, ServiceRequest, WirePath,
+            },
+        },
+        TargetScope,
+    };
 
     static TEST_ENVIRONMENT: Mutex<()> = Mutex::new(());
     static FIXTURE_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
@@ -392,6 +418,63 @@ mod tests {
         ));
         assert_eq!(browser_attempts.load(Ordering::SeqCst), 0);
         fixture.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn service_accepts_frame_without_acknowledgment_then_client_times_out() {
+        // Arrange
+        let (mut client, mut service) = duplex(4096);
+        let request = ServiceRequest::Open(OpenRequest {
+            protocol_version: ProtocolVersion::CURRENT,
+            request_id: RequestId::from_bytes([9; 16]),
+            invocation_directory: WirePath::from_path(Path::new(".")),
+            target: None,
+            scope: TargetScope::Target,
+            plantuml_server: None,
+        });
+        let service_task = tokio::spawn(async move {
+            let _: ServiceRequest = read_frame(&mut service)
+                .await
+                .expect("service should receive the complete request");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+
+        // Act
+        let result =
+            super::exchange_with_timeout(&mut client, &request, Duration::from_millis(5)).await;
+
+        // Assert
+        assert!(matches!(
+            result,
+            Err(super::ExchangeError::AcknowledgmentTimeout)
+        ));
+        service_task.abort();
+    }
+
+    #[tokio::test]
+    async fn service_candidate_does_not_claim_endpoint_then_client_times_out() {
+        // Arrange
+        let fixture = TestRuntime::new("startup-timeout");
+        let document_root = fixture.document_root("unclaimed", "# Unclaimed endpoint");
+        let spawn_attempts = Arc::new(AtomicUsize::new(0));
+        let observed_attempts = spawn_attempts.clone();
+        let started_at = Instant::now();
+
+        // Act
+        let outcome = request_target_view_with(
+            invocation(&document_root),
+            move || {
+                observed_attempts.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            |_| panic!("a timed-out request must not attempt browser launch"),
+        )
+        .await;
+
+        // Assert
+        assert!(matches!(outcome, Err(ClientError::StartupTimeout)));
+        assert_eq!(spawn_attempts.load(Ordering::SeqCst), 1);
+        assert!(started_at.elapsed() >= super::STARTUP_TIMEOUT);
     }
 
     struct TestRuntime {

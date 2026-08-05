@@ -123,7 +123,9 @@ their software responsibilities in the feature design.
   new identifier and therefore a new viewing session.
 - The short-lived client owns browser launch so it retains the invoking desktop
   environment and can report `manual_open_required(view_url)`.
-- Construction must set concrete frame size, startup, acknowledgment, and
-  measurement thresholds from executable evidence.
+- Construction sets a 64 KiB frame maximum, a three-second startup deadline,
+  and a ten-second acknowledgment deadline. C16 reference thresholds and
+  retained-session measurements are recorded in the
+  [release-readiness checklist](../../release-readiness.md#background-service-checks).
 
 Design: [`RZ-04` and `DCD-04`](design.md)
