@@ -23,6 +23,6 @@ tags: [risk, planning]
 | `R-12` | A long-lived process hosting several viewing sessions could accept another user's command or leak document roots, target scopes, source-link authority, or PlantUML configuration across repositories. | Technical / security | Low | High | C12 bounds versioned frames at 64 KiB and preserves native paths. C13 restricts Unix sockets and verifies peer user identity before decoding; the Windows named pipe is user-SID-specific, rejects remote clients, and permits only that user and LocalSystem. C14 and C15 verify independent roots and PlantUML servers, a new listener per request, no reachable session on rejection, and no browser attempt for rejected targets. Native Linux, macOS, and Windows Rust checks are pull-request gates. Residual risk is concentrated in future changes to endpoint policy or session authority rather than known cross-session sharing. |
 
 `R-01` through `R-04` drove the first elaboration iteration. `R-11` and `R-12`
-drove S1 through C16 delivery of the background viewer service. `R-09` remains
+drove S1 through C17 delivery of the background viewer service. `R-09` remains
 the primary performance risk for large document sets and unbounded service
 lifetimes.

@@ -43,7 +43,11 @@ fn help_flag_then_describes_optional_target_without_renderer_selection() {
     // Assert
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
-    assert!(stdout.contains("Usage: lens [OPTIONS] [TARGET]"));
+    let executable_name = Path::new(env!("CARGO_BIN_EXE_lens"))
+        .file_name()
+        .expect("Lens executable path should have a file name")
+        .to_string_lossy();
+    assert!(stdout.contains(&format!("Usage: {executable_name} [OPTIONS] [TARGET]")));
     assert!(stdout.contains("--scope <SCOPE>"));
     assert!(stdout.contains("[possible values: repository, target]"));
     assert!(!stdout.contains("--renderer"));

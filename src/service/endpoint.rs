@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::path::PathBuf;
 
 use thiserror::Error;
@@ -6,10 +7,13 @@ use thiserror::Error;
 pub(crate) enum EndpointError {
     #[error("another Lens background service owns the current user's endpoint")]
     AlreadyOwned,
+    #[cfg(unix)]
     #[error("unsafe Lens runtime directory {path}: {reason}")]
     UnsafeRuntimeDirectory { path: PathBuf, reason: String },
+    #[cfg(unix)]
     #[error("unsafe existing Lens endpoint {path}: {reason}")]
     UnsafeEndpoint { path: PathBuf, reason: String },
+    #[cfg(unix)]
     #[error("endpoint peer user {peer} does not match owner user {owner}")]
     UnauthorizedPeer { peer: u32, owner: u32 },
     #[error("{context}: {source}")]
