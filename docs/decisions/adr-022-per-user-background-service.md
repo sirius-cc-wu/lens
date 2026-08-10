@@ -24,9 +24,9 @@ all accepted views available.
 
 The process may be shared, but authority may not be. Existing decisions fix a
 canonical root, discovered document set, source-link resolver, and PlantUML
-server for every viewing session. A control mechanism must also prevent a
-different operating-system user from submitting a filesystem target merely by
-reaching a loopback port.
+server for every viewing session. Merely reaching a loopback port must not
+allow a different operating-system user to make Lens accept a request to open
+a filesystem target.
 
 ## Decision
 
@@ -37,8 +37,9 @@ it captures its invocation directory, optional target, target scope, and
 browser-ready loopback URL; launches the browser from the invoking desktop
 environment; and returns.
 
-The client and service communicate through local interprocess communication
-(local IPC), not a TCP control port:
+The short-lived Lens command process and the background Lens service
+communicate through local interprocess communication (local IPC), not a TCP
+control port:
 
 - Linux and macOS use a Unix-domain socket in a verified user-private runtime
   directory. The socket is user-only, and the service checks the connected
@@ -46,15 +47,19 @@ The client and service communicate through local interprocess communication
 - Windows uses a named pipe whose first instance is the single-owner claim. It
   is created with an explicit access-control list for the current user and
   LocalSystem rather than relying on the default pipe security descriptor.
-- A platform endpoint module presents one internal connect, claim, accept, and
-  peer-authorization surface through compile-time `cfg` implementations. The
-  closed platform set does not justify a runtime trait or trait objects.
+- An internal endpoint module lets the rest of Lens connect to an existing
+  service, claim the per-user endpoint, accept a connection, and authorize the
+  connecting user. Rust selects the Unix-domain-socket or Windows-named-pipe
+  implementation at compile time through `cfg`. Because Lens supports only
+  these known platform implementations, it does not need a runtime abstraction
+  based on traits and trait objects.
 
-When no endpoint is reachable, clients may concurrently spawn detached
-background candidates. Endpoint ownership elects one winner; candidates that
-cannot claim the endpoint exit. A stale Unix socket is removed only after a
-connection fails and the path is verified as an owned socket. Windows removes
-the pipe endpoint when its owning process exits.
+When several Lens commands simultaneously find no reachable service, each may
+start a detached background-service process. Each new process tries to claim
+the per-user endpoint. The process that succeeds becomes the service; the
+others exit. A stale Unix socket is removed only after a connection fails and
+the path is verified as an owned socket. Windows removes the pipe endpoint
+when its owning process exits.
 
 The byte-stream protocol is versioned, length-prefixed, and size-bounded. It
 uses typed request and response variants, a lossless platform-native path
@@ -66,9 +71,11 @@ intentionally opens a new view.
 
 Every accepted command creates one new viewing session with its own ephemeral
 loopback HTTP listener and existing fixed `ViewerState`. The background process
-owns the resulting session handles, but it does not combine their roots,
-documents, source-link rules, or PlantUML server selections. This retains the
-current per-invocation discovery snapshot and preserves ADR-002 and ADR-017.
+owns all session handles, but each session keeps its own document root,
+discovered document set, source-link rules, and PlantUML server selection. One
+session cannot access documents authorized only for another session. This
+retains the current per-invocation discovery snapshot and preserves ADR-002 and
+ADR-017.
 
 Browser launching remains in the short-lived client. This preserves the
 invoking desktop environment, reuses the existing platform launch commands,
@@ -76,8 +83,9 @@ and lets browser-launch failure report the already available manual URL. The
 background service never needs a terminal or browser-launch environment.
 
 The existing public `lens::serve(MarkdownTarget)` entry point remains a
-foreground compatibility path. It can be implemented using the extracted
-viewing-session starter, but ordinary CLI invocations use the new client path.
+foreground compatibility path. It and the background service share an internal
+function that starts an isolated viewing session and returns its owned handle.
+Ordinary CLI invocations use the background-service path.
 
 ## Consequences
 
@@ -97,13 +105,19 @@ viewing-session starter, but ordinary CLI invocations use the new client path.
   invoke the installed `lens` command with filesystem paths available to that
   user. The design prevents cross-user access rather than claiming isolation
   from other processes running as the same user.
-- Session memory, refresh work, and listener tasks still scale with accepted
-  commands. The first implementation retains sessions and request outcomes for
-  the service lifetime; automatic browser-close detection, idle retirement,
-  and request-ledger compaction remain separate measured lifecycle work.
-- Protocol compatibility is independent of the package version. An
-  incompatible client receives an actionable version error rather than
-  replacing a live service and breaking its browser views.
+- Each accepted `lens` command adds an isolated viewing session with its own
+  in-memory state, document-refresh task, and loopback HTTP listener. The first
+  implementation keeps these resources and each request's recorded outcome
+  until the background service exits, even if the browser closes. Detecting
+  closed browser views, retiring inactive sessions, and safely removing old
+  request records are deferred until resource measurements can guide their
+  policies, as tracked by
+  [improvement 20](../improvement-proposals.md#20-measured-and-bounded-background-service-lifecycle).
+- Compatibility between a Lens command and the background service is
+  determined by the command-protocol version, not the Lens package version. If
+  their protocol versions are incompatible, the command reports the
+  incompatibility and leaves the running service unchanged so its existing
+  browser views remain available.
 
 ## Alternatives Considered
 

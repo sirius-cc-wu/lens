@@ -466,7 +466,8 @@ complete browser suite after each module split.
   background process lifetime. C16 found ordinary one-document growth within
   its reference budget, but the total remains unbounded. Browser leases, close
   detection, idle retirement, request-ledger compaction, or an explicit stop
-  command require separate lifecycle and large-repository evidence.
+  command require the separate lifecycle and large-repository evidence tracked
+  by [improvement 20](../../improvement-proposals.md#20-measured-and-bounded-background-service-lifecycle).
 - Native pull-request checks execute platform-specific endpoint and detached
   process code on Linux, macOS, and Windows. Actual desktop browser handoff and
   downloaded-archive behavior remain release-readiness checks.

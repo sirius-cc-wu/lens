@@ -133,4 +133,6 @@ does not prescribe the implementation architecture.
   idle refresh work above 2% of one CPU with 50 retained one-document sessions.
   C16 observed about 117 KiB per additional session after first use and 70 ms
   CPU time over five idle seconds with 50 sessions. Large-document-set limits
-  remain owned by improvement 14.
+  remain owned by improvement 14; long-lived service limits and cleanup policy
+  are tracked by
+  [improvement 20](improvement-proposals.md#20-measured-and-bounded-background-service-lifecycle).
