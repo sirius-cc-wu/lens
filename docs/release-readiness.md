@@ -74,8 +74,14 @@ Expected results:
   no browser handoff. A missing browser launcher reports the manual ready URL
   and leaves that URL available.
 - Concurrent first commands reach one endpoint owner and both receive isolated
-  views. After forcibly stopping the service, its old URLs fail and the next
-  command removes the verified stale endpoint and starts a replacement.
+  views. `lens stop` releases both views and the endpoint before reporting
+  success; a repeated stop reports not running with exit status zero, and the
+  next ordinary command starts a replacement.
+- Stop uses only authenticated local IPC, never starts an absent service,
+  removes a safely verified owned stale endpoint, rejects unverifiable endpoint
+  state, prevents a replacement service from claiming ownership during cleanup,
+  and force-cancels and joins cleanup that reaches five seconds. Browser HTTP
+  GET and POST requests have no shutdown route.
 - A peer that does not satisfy the native per-user policy is rejected before a
   request frame is decoded.
 

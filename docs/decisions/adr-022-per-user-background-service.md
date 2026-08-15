@@ -87,6 +87,25 @@ foreground compatibility path. It and the background service share an internal
 function that starts an isolated viewing session and returns its owned handle.
 Ordinary CLI invocations use the background-service path.
 
+The supported `lens stop` command uses the same authenticated per-user IPC
+endpoint and never starts a missing service. Open and stop operations pass
+through the state-owning service controller. Once it accepts stop, the
+controller rejects unfinished and later opens as `ServiceStopping` and releases
+every retained viewing session before acknowledging concurrent stop callers.
+The service retains unclaimable per-user endpoint ownership throughout cleanup;
+a Unix shutdown renames the verified socket to a private stopping barrier and a
+racing claimant rechecks that barrier after binding, while accepted Windows
+pipe handles retain first-instance ownership. Unix connections validate the
+owned socket identity before and after connecting; Windows pipe-busy remains
+retryable and does not itself mean the service is stopping. The ordinary
+discoverable endpoint is removed before `Stopped`, and the ownership barrier is
+released only after submitted response handlers finish. Graceful cleanup has
+five seconds before remaining tasks are force-cancelled and joined. The existing
+ten-second client acknowledgment bound includes teardown retries. A verified
+owned stale Unix endpoint or stopping barrier is removed and reported as not
+running; foreign or unverifiable endpoint state fails closed. Shutdown is not
+available through browser-facing HTTP.
+
 ## Consequences
 
 - A developer can open multiple repository views from one terminal while one
@@ -94,8 +113,8 @@ Ordinary CLI invocations use the background-service path.
 - A service crash makes all sessions in that process unavailable. A later
   command starts a new service, but already open browser URLs cannot be
   transparently transferred to it.
-- Local IPC avoids fixed-port collisions and removes the control operation from
-  the browser-reachable HTTP surface.
+- Local IPC avoids fixed-port collisions and removes open and stop control
+  operations from the browser-reachable HTTP surface.
 - Platform endpoint creation and background-process detachment require narrow,
   security-sensitive Unix and Windows code plus native platform tests.
 - The protocol must reject incompatible versions, oversized frames, malformed

@@ -11,7 +11,7 @@ use super::{
     process::{self, ProcessError},
     protocol::{
         self, OpenErrorCode, OpenRequest, ProtocolError, ProtocolVersion, RequestId,
-        ServiceRequest, ServiceResponse, WirePath,
+        ServiceRequest, ServiceResponse, StopRequest, WirePath,
     },
 };
 use crate::TargetScope;
@@ -48,6 +48,12 @@ pub(crate) enum ClientOutcome {
     ManualUrl { view_url: String, error: String },
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum StopOutcome {
+    Stopped,
+    NotRunning,
+}
+
 #[derive(Debug, Error)]
 pub(crate) enum ClientError {
     #[error("Could not identify the current directory: {0}")]
@@ -68,9 +74,11 @@ pub(crate) enum ClientError {
     MismatchedResponse,
     #[error("Lens background service uses an incompatible command protocol")]
     IncompatibleService,
+    #[error("Lens background service returned an unexpected command response")]
+    UnexpectedResponse,
     #[error("{message}")]
     Rejected {
-        code: OpenErrorCode,
+        _code: OpenErrorCode,
         message: String,
     },
 }
@@ -133,11 +141,110 @@ where
         } => {
             verify_request_id(request_id, response_id)?;
             Err(ClientError::Rejected {
-                code: error.code,
+                _code: error.code,
                 message: error.message,
             })
         }
         ServiceResponse::Incompatible { .. } => Err(ClientError::IncompatibleService),
+        ServiceResponse::Stopped => Err(ClientError::UnexpectedResponse),
+    }
+}
+
+pub(crate) async fn request_service_stop() -> Result<StopOutcome, ClientError> {
+    timeout(ACKNOWLEDGMENT_TIMEOUT, request_service_stop_with_retries())
+        .await
+        .map_err(|_| ClientError::AcknowledgmentTimeout)?
+}
+
+async fn request_service_stop_with_retries() -> Result<StopOutcome, ClientError> {
+    let request = ServiceRequest::Stop(StopRequest {
+        protocol_version: ProtocolVersion::CURRENT,
+    });
+    let mut reached_service = false;
+    loop {
+        let mut connection = match discover_service_without_starting().await? {
+            StopConnection::Connected(connection) => {
+                reached_service = true;
+                connection
+            }
+            StopConnection::Stopping => {
+                reached_service = true;
+                sleep(CONNECT_RETRY_INTERVAL).await;
+                continue;
+            }
+            StopConnection::Retry => {
+                sleep(CONNECT_RETRY_INTERVAL).await;
+                continue;
+            }
+            StopConnection::NotRunning => {
+                return Ok(if reached_service {
+                    StopOutcome::Stopped
+                } else {
+                    StopOutcome::NotRunning
+                });
+            }
+        };
+
+        let response = match exchange_without_timeout(&mut connection, &request).await {
+            Err(ExchangeError::Protocol(ProtocolError::Io(error))) if is_teardown_error(&error) => {
+                sleep(CONNECT_RETRY_INTERVAL).await;
+                continue;
+            }
+            result => result?,
+        };
+        return match response {
+            ServiceResponse::Stopped => Ok(StopOutcome::Stopped),
+            ServiceResponse::Incompatible { .. } => Err(ClientError::IncompatibleService),
+            ServiceResponse::Ready { .. } | ServiceResponse::Rejected { .. } => {
+                Err(ClientError::UnexpectedResponse)
+            }
+        };
+    }
+}
+
+async fn discover_service_without_starting() -> Result<StopConnection, ClientError> {
+    match endpoint::connect().await {
+        Ok(connection) => return Ok(StopConnection::Connected(connection)),
+        Err(error) if error.is_stopping() => return Ok(StopConnection::Stopping),
+        Err(error) if error.is_busy() => return Ok(StopConnection::Retry),
+        Err(error) if error.is_unavailable() => {}
+        Err(error) => return Err(error.into()),
+    }
+
+    match endpoint::claim() {
+        Ok(listener) => {
+            drop(listener);
+            Ok(StopConnection::NotRunning)
+        }
+        Err(EndpointError::AlreadyOwned | EndpointError::ServiceStopping) => {
+            Ok(StopConnection::Retry)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+enum StopConnection {
+    Connected(ClientConnection),
+    Stopping,
+    Retry,
+    NotRunning,
+}
+
+fn is_teardown_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::UnexpectedEof
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::NotConnected
+    )
+}
+
+fn service_stopping_error() -> ClientError {
+    ClientError::Rejected {
+        _code: OpenErrorCode::ServiceStopping,
+        message: "Lens background service is stopping".to_owned(),
     }
 }
 
@@ -152,17 +259,31 @@ async fn connect_or_start<S>(spawn_service: &mut S) -> Result<ClientConnection, 
 where
     S: FnMut() -> Result<(), ClientError>,
 {
+    let mut spawned_service = false;
     match endpoint::connect().await {
         Ok(connection) => return Ok(connection),
-        Err(error) if error.is_unavailable() => {}
+        Err(error) if error.is_stopping() => return Err(service_stopping_error()),
+        Err(error) if error.is_busy() => {}
+        Err(error) if error.is_unavailable() => {
+            spawn_service()?;
+            spawned_service = true;
+        }
         Err(error) => return Err(error.into()),
     }
-    spawn_service()?;
 
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     loop {
         match endpoint::connect().await {
             Ok(connection) => return Ok(connection),
+            Err(error) if error.is_stopping() => return Err(service_stopping_error()),
+            Err(error) if error.is_busy() && Instant::now() < deadline => {
+                sleep(CONNECT_RETRY_INTERVAL).await;
+            }
+            Err(error) if error.is_busy() => return Err(ClientError::StartupTimeout),
+            Err(error) if error.is_unavailable() && !spawned_service => {
+                spawn_service()?;
+                spawned_service = true;
+            }
             Err(error) if error.is_unavailable() && Instant::now() < deadline => {
                 sleep(CONNECT_RETRY_INTERVAL).await;
             }
@@ -204,13 +325,25 @@ async fn exchange_with_timeout<C>(
 where
     C: AsyncRead + AsyncWrite + Unpin,
 {
-    timeout(acknowledgment_timeout, async {
-        protocol::write_frame(connection, request).await?;
-        protocol::read_frame(connection).await
-    })
+    timeout(
+        acknowledgment_timeout,
+        exchange_without_timeout(connection, request),
+    )
     .await
     .map_err(|_| ExchangeError::AcknowledgmentTimeout)?
-    .map_err(ExchangeError::Protocol)
+}
+
+async fn exchange_without_timeout<C>(
+    connection: &mut C,
+    request: &ServiceRequest,
+) -> Result<ServiceResponse, ExchangeError>
+where
+    C: AsyncRead + AsyncWrite + Unpin,
+{
+    protocol::write_frame(connection, request).await?;
+    protocol::read_frame(connection)
+        .await
+        .map_err(ExchangeError::Protocol)
 }
 
 fn verify_request_id(expected: RequestId, received: RequestId) -> Result<(), ClientError> {
@@ -225,7 +358,9 @@ fn verify_request_id(expected: RequestId, received: RequestId) -> Result<(), Cli
 mod tests {
     use std::{
         ffi::OsString,
-        fs, io,
+        fs,
+        future::pending,
+        io,
         path::{Path, PathBuf},
         sync::{
             atomic::{AtomicUsize, Ordering},
@@ -233,20 +368,24 @@ mod tests {
         },
     };
 
+    use axum::{http::header, routing::get, Router};
     use tokio::task::JoinHandle;
     use tokio::{
-        io::duplex,
+        io::{duplex, AsyncWriteExt},
+        sync::Notify,
         time::{Duration, Instant},
     };
 
     use super::{
-        request_target_view_with, ClientError, ClientOutcome, OpenErrorCode, OpenInvocation,
+        request_service_stop, request_target_view_with, ClientError, ClientOutcome, OpenErrorCode,
+        OpenInvocation, StopOutcome,
     };
     use crate::{
         service::{
-            endpoint::EndpointError,
+            endpoint::{self, EndpointError},
             protocol::{
-                read_frame, OpenRequest, ProtocolVersion, RequestId, ServiceRequest, WirePath,
+                read_frame, OpenRequest, ProtocolError, ProtocolVersion, RequestId, ServiceRequest,
+                WirePath,
             },
         },
         TargetScope,
@@ -254,7 +393,7 @@ mod tests {
 
     static TEST_ENVIRONMENT: Mutex<()> = Mutex::new(());
     static FIXTURE_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
-    type ServiceTask = JoinHandle<Result<(), EndpointError>>;
+    type ServiceTask = JoinHandle<Result<(), crate::service::server::ServerError>>;
 
     #[tokio::test]
     async fn missing_service_then_command_starts_service_and_returns_after_view_ready() {
@@ -357,6 +496,305 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn missing_service_stop_then_reports_not_running_without_startup() {
+        // Arrange
+        let fixture = TestRuntime::new("missing-service-stop");
+
+        // Act
+        let outcome = request_service_stop()
+            .await
+            .expect("stopping an absent service should succeed");
+
+        // Assert
+        assert_eq!(outcome, StopOutcome::NotRunning);
+        assert!(
+            fixture
+                .tasks
+                .lock()
+                .expect("service task list should be available")
+                .is_empty(),
+            "stop must not start a service"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stale_owned_endpoint_stop_then_removes_endpoint_and_reports_not_running() {
+        // Arrange
+        let fixture = TestRuntime::new("stale-stop-endpoint");
+        let endpoint = fixture.directory.join("service-v1.sock");
+        let stale = std::os::unix::net::UnixListener::bind(&endpoint)
+            .expect("stale endpoint should be creatable");
+        drop(stale);
+
+        // Act
+        let outcome = request_service_stop()
+            .await
+            .expect("owned stale endpoint should be recoverable");
+
+        // Assert
+        assert_eq!(outcome, StopOutcome::NotRunning);
+        assert!(!endpoint.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unverifiable_endpoint_stop_then_preserves_endpoint_and_fails_closed() {
+        // Arrange
+        let fixture = TestRuntime::new("unsafe-stop-endpoint");
+        let endpoint = fixture.directory.join("service-v1.sock");
+        fs::write(&endpoint, "not a socket").expect("unsafe endpoint should be writable");
+
+        // Act
+        let outcome = request_service_stop().await;
+
+        // Assert
+        assert!(matches!(
+            outcome,
+            Err(ClientError::Endpoint(EndpointError::UnsafeEndpoint { .. }))
+        ));
+        assert_eq!(
+            fs::read_to_string(endpoint).expect("unsafe endpoint should remain"),
+            "not a socket"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unverifiable_stopping_barrier_then_stop_preserves_barrier_and_fails_closed() {
+        // Arrange
+        let fixture = TestRuntime::new("unsafe-stopping-barrier");
+        let barrier = fixture.directory.join("service-v1.sock.stopping");
+        fs::write(&barrier, "not a socket").expect("unsafe barrier should be writable");
+
+        // Act
+        let outcome = request_service_stop().await;
+
+        // Assert
+        assert!(matches!(
+            outcome,
+            Err(ClientError::Endpoint(EndpointError::UnsafeEndpoint { .. }))
+        ));
+        assert_eq!(
+            fs::read_to_string(barrier).expect("unsafe barrier should remain"),
+            "not a socket"
+        );
+    }
+
+    #[tokio::test]
+    async fn service_with_multiple_views_stop_then_releases_every_view_and_endpoint() {
+        // Arrange
+        let mut fixture = TestRuntime::new("running-service-stop");
+        let first_root = fixture.document_root("first-stopped", "# First stopped session");
+        let second_root = fixture.document_root("second-stopped", "# Second stopped session");
+        let first_opened =
+            request_target_view_with(invocation(&first_root), fixture.service_spawner(), |_| {
+                Ok(())
+            })
+            .await
+            .expect("first view should open before stop");
+        let second_opened =
+            request_target_view_with(invocation(&second_root), fixture.service_spawner(), |_| {
+                Ok(())
+            })
+            .await
+            .expect("second view should open before stop");
+        let first_url = outcome_url(&first_opened);
+        let second_url = outcome_url(&second_opened);
+
+        // Act
+        let first = request_service_stop()
+            .await
+            .expect("running service should stop");
+        fixture.wait_for_services().await;
+        let repeated = request_service_stop()
+            .await
+            .expect("repeated stop should succeed");
+
+        // Assert
+        assert_eq!(first, StopOutcome::Stopped);
+        assert_eq!(repeated, StopOutcome::NotRunning);
+        assert!(reqwest::get(first_url).await.is_err());
+        assert!(reqwest::get(second_url).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn slow_cleanup_then_concurrent_open_is_rejected_without_replacement_startup() {
+        // Arrange
+        let mut fixture = TestRuntime::new("slow-cleanup-barrier");
+        let root = fixture.document_root(
+            "slow-view",
+            "# Slow view\n\n```plantuml\n@startuml\n@enduml\n```",
+        );
+        let renderer_entered = Arc::new(Notify::new());
+        let renderer_release = Arc::new(Notify::new());
+        let (renderer_url, renderer_task) =
+            slow_renderer(renderer_entered.clone(), renderer_release.clone()).await;
+        let opened = request_target_view_with(
+            invocation_with_server(&root, &renderer_url),
+            fixture.service_spawner(),
+            |_| Ok(()),
+        )
+        .await
+        .expect("view should open before slow cleanup");
+        let diagram_task = tokio::spawn(reqwest::get(format!(
+            "{}/diagrams/0/0",
+            outcome_url(&opened)
+        )));
+        renderer_entered.notified().await;
+        let stop_task = tokio::spawn(request_service_stop());
+        let replacement_starts = Arc::new(AtomicUsize::new(0));
+
+        // Act
+        let concurrent_open = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let observed_starts = replacement_starts.clone();
+                let result = request_target_view_with(
+                    invocation(&root),
+                    move || {
+                        observed_starts.fetch_add(1, Ordering::SeqCst);
+                        Err(ClientError::RequestIdentifier(
+                            "replacement startup must not run".to_owned(),
+                        ))
+                    },
+                    |_| Ok(()),
+                )
+                .await;
+                if matches!(
+                    result,
+                    Err(ClientError::Rejected {
+                        _code: OpenErrorCode::ServiceStopping,
+                        ..
+                    })
+                ) {
+                    break result;
+                }
+                if result.is_err() {
+                    break result;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("an open should observe the accepted stop before cleanup finishes");
+        renderer_release.notify_one();
+        diagram_task
+            .await
+            .expect("diagram task should join")
+            .expect("diagram should finish after release");
+        let stop = stop_task
+            .await
+            .expect("stop task should join")
+            .expect("stop should complete");
+
+        // Assert
+        assert!(matches!(
+            concurrent_open,
+            Err(ClientError::Rejected {
+                _code: OpenErrorCode::ServiceStopping,
+                ..
+            })
+        ));
+        assert_eq!(replacement_starts.load(Ordering::SeqCst), 0);
+        assert_eq!(stop, StopOutcome::Stopped);
+        fixture.wait_for_services().await;
+        renderer_task.abort();
+    }
+
+    #[tokio::test]
+    async fn concurrent_native_stop_commands_then_both_complete_without_transport_failure() {
+        // Arrange
+        let mut fixture = TestRuntime::new("concurrent-native-stop");
+        let root = fixture.document_root("concurrent-stop", "# Concurrent stop");
+        request_target_view_with(invocation(&root), fixture.service_spawner(), |_| Ok(()))
+            .await
+            .expect("service should start before concurrent stops");
+
+        // Act
+        let (first, second) = tokio::join!(request_service_stop(), request_service_stop());
+
+        // Assert
+        let first = first.expect("first stop should not fail in transport");
+        let second = second.expect("second stop should not fail in transport");
+        assert!(matches!(
+            first,
+            StopOutcome::Stopped | StopOutcome::NotRunning
+        ));
+        assert!(matches!(
+            second,
+            StopOutcome::Stopped | StopOutcome::NotRunning
+        ));
+        assert!(matches!(first, StopOutcome::Stopped) || matches!(second, StopOutcome::Stopped));
+        fixture.wait_for_services().await;
+    }
+
+    #[tokio::test]
+    async fn native_stop_connection_closes_during_teardown_then_client_confirms_stopped() {
+        // Arrange
+        let _fixture = TestRuntime::new("native-stop-eof");
+        let mut listener = endpoint::claim().expect("native endpoint should be claimable");
+        let service = tokio::spawn(async move {
+            let mut connection = listener
+                .accept()
+                .await
+                .expect("stop connection should be accepted");
+            endpoint::authorize(&connection).expect("test client should be authorized");
+            let request: ServiceRequest = read_frame(&mut connection)
+                .await
+                .expect("stop request should be readable");
+            assert!(matches!(request, ServiceRequest::Stop(_)));
+            drop(connection);
+            drop(listener);
+        });
+
+        // Act
+        let outcome = request_service_stop()
+            .await
+            .expect("teardown EOF should be retried to safe absence");
+        service.await.expect("native service task should join");
+
+        // Assert
+        assert_eq!(outcome, StopOutcome::Stopped);
+    }
+
+    #[tokio::test]
+    async fn native_service_returns_malformed_stop_response_then_client_fails_without_retry() {
+        // Arrange
+        let _fixture = TestRuntime::new("native-stop-malformed");
+        let mut listener = endpoint::claim().expect("native endpoint should be claimable");
+        let service = tokio::spawn(async move {
+            let mut connection = listener
+                .accept()
+                .await
+                .expect("stop connection should be accepted");
+            endpoint::authorize(&connection).expect("test client should be authorized");
+            let _: ServiceRequest = read_frame(&mut connection)
+                .await
+                .expect("stop request should be readable");
+            let malformed = b"{not-json";
+            connection
+                .write_all(&(malformed.len() as u32).to_be_bytes())
+                .await
+                .expect("malformed frame prefix should be writable");
+            connection
+                .write_all(malformed)
+                .await
+                .expect("malformed frame should be writable");
+            drop(listener);
+        });
+
+        // Act
+        let outcome = request_service_stop().await;
+        service.await.expect("native service task should join");
+
+        // Assert
+        assert!(matches!(
+            outcome,
+            Err(ClientError::Protocol(ProtocolError::MalformedJson(_)))
+        ));
+    }
+
+    #[tokio::test]
     async fn browser_launch_failure_then_reports_manual_url_and_keeps_session_available() {
         // Arrange
         let mut fixture = TestRuntime::new("browser-failure");
@@ -412,12 +850,47 @@ mod tests {
         assert!(matches!(
             outcome,
             Err(ClientError::Rejected {
-                code: OpenErrorCode::Target,
+                _code: OpenErrorCode::Target,
                 ..
             })
         ));
         assert_eq!(browser_attempts.load(Ordering::SeqCst), 0);
         fixture.shutdown().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stop_frame_without_response_reaches_ten_seconds_then_acknowledgment_times_out() {
+        // Arrange
+        let _fixture = TestRuntime::new("stop-acknowledgment-timeout");
+        let mut listener = endpoint::claim().expect("native endpoint should be claimable");
+        let frame_received = Arc::new(Notify::new());
+        let observed_frame = frame_received.clone();
+        let service = tokio::spawn(async move {
+            let mut connection = listener
+                .accept()
+                .await
+                .expect("stop connection should be accepted");
+            endpoint::authorize(&connection).expect("test client should be authorized");
+            let request: ServiceRequest = read_frame(&mut connection)
+                .await
+                .expect("stop frame should be readable");
+            assert!(matches!(request, ServiceRequest::Stop(_)));
+            observed_frame.notify_one();
+            pending::<()>().await;
+        });
+        let stop = tokio::spawn(request_service_stop());
+        frame_received.notified().await;
+
+        // Act
+        tokio::time::advance(super::ACKNOWLEDGMENT_TIMEOUT - Duration::from_millis(1)).await;
+        assert!(!stop.is_finished());
+        tokio::time::advance(Duration::from_millis(1)).await;
+        let outcome = stop.await.expect("stop task should join after timeout");
+
+        // Assert
+        assert!(matches!(outcome, Err(ClientError::AcknowledgmentTimeout)));
+        service.abort();
+        let _ = service.await;
     }
 
     #[tokio::test]
@@ -449,6 +922,46 @@ mod tests {
             Err(super::ExchangeError::AcknowledgmentTimeout)
         ));
         service_task.abort();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn busy_pipe_before_next_accept_then_open_retries_without_stopping_rejection() {
+        // Arrange
+        let _fixture = TestRuntime::new("busy-open-retry");
+        let mut listener = endpoint::claim().expect("test pipe should be claimable");
+        let first_client = endpoint::connect()
+            .await
+            .expect("first client should occupy the pipe instance");
+        let spawn_attempts = Arc::new(AtomicUsize::new(0));
+        let observed_attempts = spawn_attempts.clone();
+        let open_connection = tokio::spawn(async move {
+            let mut spawn = || {
+                observed_attempts.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            };
+            super::connect_or_start(&mut spawn).await
+        });
+        tokio::task::yield_now().await;
+        assert!(
+            !open_connection.is_finished(),
+            "a busy pipe should remain retryable rather than ServiceStopping"
+        );
+        assert_eq!(spawn_attempts.load(Ordering::SeqCst), 0);
+
+        // Act
+        let first_server = listener
+            .accept()
+            .await
+            .expect("accept should publish the next pipe instance");
+        let second_client = open_connection
+            .await
+            .expect("open connection task should join")
+            .expect("ordinary open should connect on retry");
+
+        // Assert
+        assert_eq!(spawn_attempts.load(Ordering::SeqCst), 0);
+        drop((first_client, first_server, second_client, listener));
     }
 
     #[tokio::test]
@@ -527,6 +1040,20 @@ mod tests {
             }
         }
 
+        async fn wait_for_services(&mut self) {
+            let tasks = self
+                .tasks
+                .lock()
+                .expect("service task list should be available")
+                .drain(..)
+                .collect::<Vec<_>>();
+            for task in tasks {
+                task.await
+                    .expect("service task should join")
+                    .expect("service should stop successfully");
+            }
+        }
+
         async fn shutdown(&mut self) {
             let tasks = self
                 .tasks
@@ -563,6 +1090,41 @@ mod tests {
             scope: TargetScope::Target,
             plantuml_server: None,
         }
+    }
+
+    fn invocation_with_server(document_root: &Path, plantuml_server: &str) -> OpenInvocation {
+        OpenInvocation {
+            plantuml_server: Some(plantuml_server.to_owned()),
+            ..invocation(document_root)
+        }
+    }
+
+    async fn slow_renderer(entered: Arc<Notify>, release: Arc<Notify>) -> (String, JoinHandle<()>) {
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("slow renderer should bind");
+        let address = listener
+            .local_addr()
+            .expect("slow renderer should have an address");
+        let server = Router::new().route(
+            "/svg/*encoded",
+            get(move || {
+                let entered = entered.clone();
+                let release = release.clone();
+                async move {
+                    entered.notify_one();
+                    release.notified().await;
+                    ([(header::CONTENT_TYPE, "image/svg+xml")], "<svg></svg>")
+                }
+            }),
+        );
+        let task = tokio::spawn(async move {
+            axum::Server::from_tcp(listener)
+                .expect("slow renderer should serve")
+                .serve(server.into_make_service())
+                .await
+                .expect("slow renderer should not fail");
+        });
+        (format!("http://{address}"), task)
     }
 
     fn outcome_url(outcome: &ClientOutcome) -> String {

@@ -4,7 +4,7 @@ use tokio::net::windows::named_pipe::{
     ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, LocalFree, ERROR_ACCESS_DENIED, HANDLE},
+    Foundation::{CloseHandle, LocalFree, ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY, HANDLE},
     Security::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
@@ -36,14 +36,25 @@ impl Listener {
         let next = create_server(&self.pipe_name, &self.user_sid, false)?;
         Ok(mem::replace(&mut self.inner, next))
     }
+
+    pub(crate) fn begin_shutdown(self) -> Result<ShutdownBarrier, EndpointError> {
+        drop(self);
+        Ok(ShutdownBarrier)
+    }
 }
+
+pub(crate) struct ShutdownBarrier;
 
 pub(crate) async fn connect() -> Result<ClientConnection, EndpointError> {
     let sid = current_user_sid()?;
     ClientOptions::new()
         .open(pipe_name(&sid))
         .map_err(|source| {
-            EndpointError::io("Could not connect to the Lens background service", source)
+            if source.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) {
+                EndpointError::Busy
+            } else {
+                EndpointError::io("Could not connect to the Lens background service", source)
+            }
         })
 }
 
@@ -224,6 +235,36 @@ mod tests {
         // Assert
         assert!(name.contains(&sid));
         assert_eq!(policy, format!("D:P(A;;GA;;;SY)(A;;GA;;;{sid})"));
+    }
+
+    #[tokio::test]
+    async fn shutdown_with_accepted_connection_then_replacement_claim_remains_blocked() {
+        // Arrange
+        let sid = current_user_sid().expect("current user SID should be readable");
+        let name = format!(r"\\.\pipe\lens-stop-test-{}-{sid}", std::process::id());
+        let inner = create_server(&name, &sid, true).expect("endpoint should be claimable");
+        let mut listener = super::Listener {
+            pipe_name: name.clone(),
+            user_sid: sid.clone(),
+            inner,
+        };
+        let client = super::ClientOptions::new()
+            .open(&name)
+            .expect("client should connect");
+        let accepted = listener
+            .accept()
+            .await
+            .expect("connection should be accepted");
+
+        // Act
+        let barrier = listener
+            .begin_shutdown()
+            .expect("listener shutdown should succeed");
+        let competing = create_server(&name, &sid, true);
+
+        // Assert
+        assert!(matches!(competing, Err(EndpointError::AlreadyOwned)));
+        drop((client, accepted, barrier));
     }
 
     #[tokio::test]

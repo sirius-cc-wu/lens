@@ -102,8 +102,12 @@ Responses form a closed enum:
 
 - `Ready { request_id, view_url }`: a new listener is ready and its
   `ViewerSession` is retained.
-- `Rejected { request_id, error }`: target or session creation failed and no
-  URL was published.
+- `Rejected { request_id, error }`: target or session creation failed, or an
+  unfinished or later open was rejected as `ServiceStopping`; no new URL is
+  published.
+- `Stopped`: session, watcher, loopback-listener, retained-state, and command
+  endpoint cleanup completed; after five seconds, forced cancellation is joined
+  before this response becomes readable.
 - `Incompatible { supported_version }`: the live service cannot safely decode
   this client protocol.
 
@@ -114,11 +118,11 @@ remain client-side failures because no valid service response exists.
 
 | Responsibility | Owner | GRASP basis and consequence |
 |---|---|---|
-| Capture one invocation and complete the system operation | `service::client::request_target_view` | Facade Controller: coordinates endpoint, protocol, browser, and errors without taking target or session rules. |
+| Capture one invocation and complete an open or stop operation | `service::client` | Facade Controller: coordinates endpoint, protocol, browser, and errors without taking target or session rules; stop never invokes service startup. |
 | Connect, claim, accept, and authorize the per-user endpoint | `service::endpoint` | Protected Variations and Pure Fabrication: isolates the closed Unix/Windows platform difference behind a cohesive module API. |
 | Start a detached service candidate | `service::process` | Information Expert: owns executable, standard-I/O, and native process-creation details without coupling them to request handling. |
 | Encode and bound messages | `service::protocol` | Information Expert: owns protocol version, native path representation, frame limit, and typed errors. |
-| Coordinate request identity and session ownership | `ServiceController` | Use-Case Controller: receives open commands and delegates target/session creation while exclusively owning request and session collections. |
+| Coordinate request identity, stop ordering, and session ownership | `ServiceController` | Use-Case Controller: serializes open and stop commands, rejects opens after stop acceptance, and exclusively owns request and session collections. |
 | Recognize retries and retain completed outcomes | `RequestLedger` | Information Expert: owns `RequestId` lookup, in-flight waiters, completed outcomes, and every successful session association for the process lifetime. |
 | Create a browser-ready viewing session | `create_session` | Creator: receives all initialization data and composes target resolution with the viewer session starter. It remains a function because it has no independent state. |
 | Resolve target and discover authorized documents | `target` module | Information Expert: preserves existing canonicalization, scope, discovery, and error rules. |
@@ -130,6 +134,48 @@ No runtime trait is introduced for supported operating systems because the
 variation is closed at compile time. Protocol read/write helpers can be generic
 over `AsyncRead` and `AsyncWrite` for tests without making the application
 store trait objects.
+
+## Graceful Service Shutdown
+
+`lens stop` connects only to the current user's existing authenticated command
+endpoint. If none is reachable, the client safely claims and immediately drops
+the endpoint to remove an owned stale Unix socket; it reports not running and
+does not spawn a service. A foreign or unverifiable path cannot be claimed and
+is preserved as an error.
+
+A typed `Stop` request enters the same asynchronous controller as `Open`. The
+first serialized stop changes the controller to stopping, rejects all in-flight
+open waiters with `ServiceStopping`, aborts unfinished session creation, and
+starts cleanup. While cleanup is in progress, the service retains endpoint
+ownership and handles authenticated command connections only to reject opens as
+`ServiceStopping` or attach stop callers to the shared outcome. No new viewing
+work is accepted and no replacement service can claim the endpoint.
+
+The controller consumes every retained `ViewerSession`. Each session asks Axum
+to shut down gracefully, awaits its loopback server, aborts and awaits its
+document watcher, and then releases its fixed state. At the five-second
+deadline, the controller requests forced shutdown, aborts unfinished creation,
+and joins creation, loopback-server, watcher, and cleanup tasks before marking
+cleanup complete; `ViewerSession::Drop` remains an emergency process-exit
+fallback rather than proof that shutdown finished.
+
+After cleanup, the endpoint module removes the ordinary discoverable endpoint
+while retaining a temporary ownership marker (shutdown barrier) through
+response delivery. On Unix it atomically renames the verified owned socket to a
+private stopping name. A competing claim checks that barrier both before and
+after binding its exact socket, removing only its own socket if shutdown raced
+the first check. Unix clients reject symbolic links and other unsafe endpoint
+types before connecting, then recheck the same owned device and inode after
+connection. On Windows the service closes the listening pipe while accepted
+pipe handles retain first-instance ownership; a transient busy pipe remains a
+retryable discovery state rather than implying `ServiceStopping`. The
+controller then records endpoint removal and sends `Stopped`. After all
+submitted command handlers finish writing their
+responses, the server releases the barrier. Concurrent stop clients retry only
+teardown-related endpoint and transport outcomes within the ordinary ten-second
+acknowledgment bound; malformed, incompatible, foreign, and unverifiable state
+still fails closed. Browser GET and POST requests for shutdown both return not
+found.
 
 ## RZ-04: Request Target View Realization
 
@@ -378,6 +424,7 @@ src/
   service/
     mod.rs
     client.rs
+    controller.rs
     endpoint.rs
     process.rs
     protocol.rs
@@ -393,8 +440,10 @@ surface, not an implementation dump. `endpoint.rs` and `process.rs` contain
 cohesive `cfg` sections unless their platform implementations independently
 cross the repository's split signals during construction. `protocol.rs` keeps
 message types, lossless native path encoding, frame limits, and framing tests
-together. `server.rs` keeps the controller, request ledger, connection handling,
-and their concurrency tests together until evidence supports another boundary.
+together. `controller.rs` owns serialized open/stop state, request and session
+retention, graceful cleanup, forced fallback, and ordering tests. `server.rs`
+owns endpoint acceptance, authenticated connection tasks, endpoint removal,
+and coordination with the controller shutdown lifecycle.
 
 The existing browser code moves mechanically from `viewer::browser` to the
 crate-level `browser` module because both foreground `serve` and the new client
@@ -462,12 +511,12 @@ complete browser suite after each module split.
   of scope.
 - An incompatible live service is reported rather than replaced. A future
   upgrade protocol may add graceful handoff if real use demonstrates the need.
-- The first implementation retains sessions and request outcomes for the
-  background process lifetime. C16 found ordinary one-document growth within
-  its reference budget, but the total remains unbounded. Browser leases, close
-  detection, idle retirement, request-ledger compaction, or an explicit stop
-  command require the separate lifecycle and large-repository evidence tracked
-  by [improvement 20](../../improvement-proposals.md#20-measured-and-bounded-background-service-lifecycle).
+- The service retains sessions and request outcomes until `lens stop`, a crash,
+  or process exit. C16 found ordinary one-document growth within its reference
+  budget, but growth before shutdown remains unbounded. Browser leases, close
+  detection, idle retirement, and request-ledger compaction still require the
+  separate lifecycle and large-repository evidence tracked by
+  [improvement 20](../../improvement-proposals.md#20-measured-and-bounded-background-service-lifecycle).
 - Native pull-request checks execute platform-specific endpoint and detached
   process code on Linux, macOS, and Windows. Actual desktop browser handoff and
   downloaded-archive behavior remain release-readiness checks.

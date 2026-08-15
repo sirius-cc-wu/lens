@@ -265,6 +265,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn browser_get_and_post_shutdown_requests_then_both_return_not_found() {
+        // Arrange
+        let get_app = test_router();
+        let post_app = get_app.clone();
+        let get_request = Request::builder()
+            .method("GET")
+            .uri("/shutdown")
+            .body(Body::empty())
+            .expect("GET shutdown request should build");
+        let post_request = Request::builder()
+            .method("POST")
+            .uri("/shutdown")
+            .body(Body::empty())
+            .expect("POST shutdown request should build");
+
+        // Act
+        let (get_response, post_response) =
+            tokio::join!(get_app.oneshot(get_request), post_app.oneshot(post_request));
+
+        // Assert
+        assert_eq!(
+            get_response.expect("router should respond").status(),
+            axum::http::StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            post_response.expect("router should respond").status(),
+            axum::http::StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
     async fn document_request_then_sets_restrictive_content_security_policy() {
         // Arrange
         let app = test_router();

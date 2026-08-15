@@ -43,6 +43,7 @@ lens docs
 lens docs/features/markdown-viewing/oc-02-open-document-root.md
 lens diagrams/architecture.puml
 lens --scope target docs/features/markdown-viewing
+lens stop
 LENS_PLANTUML_SERVER=http://127.0.0.1:8080/plantuml lens docs
 ```
 
@@ -81,11 +82,24 @@ Saving a document already in a session continues to refresh that session.
 
 If target validation fails, Lens reports the CLI error and does not ask the
 browser to open a view. If the operating system cannot launch the browser, Lens
-prints the ready URL for manual opening and continues to host it. If the
-background process stops, every URL it owned stops with it; the next Lens
-command automatically starts a replacement and recovers a stale local endpoint
-without a cleanup command. This release has no user-facing stop command or idle
-shutdown policy.
+prints the ready URL for manual opening and continues to host it.
+
+Run `lens stop` to stop the current user's background service and every view it
+hosts. Lens sends this operation only through the authenticated local command
+endpoint; browser HTTP has no shutdown route. The command waits for viewing
+sessions, document watchers, loopback listeners, and the command endpoint to be
+released. Lens retains endpoint ownership during cleanup so another command
+cannot start a replacement service; opens during that interval receive a
+service-stopping error. Graceful cleanup has five seconds before Lens
+force-cancels and joins remaining tasks. If no service is reachable, the command
+prints `Lens is not running`,
+removes only a safely verified owned stale endpoint, and exits successfully
+without starting a service. A foreign or unverifiable endpoint remains in place
+and causes the command to fail.
+
+After the background process stops, every URL it owned is unavailable. The next
+ordinary Lens command automatically starts a replacement. This release has no
+idle shutdown policy.
 
 By default, a current-directory, directory, Markdown, or `.puml` target inside
 a Git repository uses the nearest enclosing repository as its document root. A

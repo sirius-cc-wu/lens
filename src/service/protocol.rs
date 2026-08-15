@@ -41,6 +41,11 @@ impl WirePath {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct StopRequest {
+    pub(crate) protocol_version: ProtocolVersion,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct OpenRequest {
     pub(crate) protocol_version: ProtocolVersion,
@@ -55,12 +60,14 @@ pub(crate) struct OpenRequest {
 #[serde(tag = "type", content = "body", rename_all = "snake_case")]
 pub(crate) enum ServiceRequest {
     Open(OpenRequest),
+    Stop(StopRequest),
 }
 
 impl ServiceRequest {
     pub(crate) fn validate_version(&self) -> Result<(), ProtocolError> {
         let received = match self {
             Self::Open(request) => request.protocol_version,
+            Self::Stop(request) => request.protocol_version,
         };
         if received == ProtocolVersion::CURRENT {
             Ok(())
@@ -78,6 +85,7 @@ impl ServiceRequest {
 pub(crate) enum OpenErrorCode {
     Target,
     Session,
+    ServiceStopping,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -97,6 +105,7 @@ pub(crate) enum ServiceResponse {
         request_id: RequestId,
         error: OpenError,
     },
+    Stopped,
     Incompatible {
         supported_version: ProtocolVersion,
     },
@@ -216,7 +225,8 @@ mod tests {
 
     use super::{
         read_frame, write_frame, OpenError, OpenErrorCode, OpenRequest, ProtocolError,
-        ProtocolVersion, RequestId, ServiceRequest, ServiceResponse, WirePath, MAX_FRAME_BYTES,
+        ProtocolVersion, RequestId, ServiceRequest, ServiceResponse, StopRequest, WirePath,
+        MAX_FRAME_BYTES,
     };
     use crate::TargetScope;
 
@@ -239,7 +249,9 @@ mod tests {
 
         // Assert
         assert_eq!(decoded, request);
-        let ServiceRequest::Open(decoded) = decoded;
+        let ServiceRequest::Open(decoded) = decoded else {
+            panic!("expected framed open request");
+        };
         assert_eq!(
             decoded
                 .invocation_directory
@@ -255,6 +267,21 @@ mod tests {
                 .expect("native target path should decode"),
             target
         );
+    }
+
+    #[tokio::test]
+    async fn framed_stop_request_then_preserves_typed_command_and_version() {
+        // Arrange
+        let request = ServiceRequest::Stop(StopRequest {
+            protocol_version: ProtocolVersion::CURRENT,
+        });
+
+        // Act
+        let decoded: ServiceRequest = framed_round_trip(&request).await;
+
+        // Assert
+        assert_eq!(decoded, request);
+        assert!(decoded.validate_version().is_ok());
     }
 
     #[tokio::test]
@@ -315,6 +342,7 @@ mod tests {
                     message: "Target guide.md does not exist".to_owned(),
                 },
             },
+            ServiceResponse::Stopped,
             ServiceResponse::Incompatible {
                 supported_version: ProtocolVersion::CURRENT,
             },
@@ -340,6 +368,26 @@ mod tests {
             target: None,
             scope: TargetScope::Repository,
             plantuml_server: None,
+        });
+
+        // Act
+        let result = request.validate_version();
+
+        // Assert
+        assert!(matches!(
+            result,
+            Err(ProtocolError::IncompatibleVersion {
+                received: ProtocolVersion(99),
+                supported: ProtocolVersion::CURRENT
+            })
+        ));
+    }
+
+    #[test]
+    fn incompatible_stop_request_version_then_reports_supported_version() {
+        // Arrange
+        let request = ServiceRequest::Stop(StopRequest {
+            protocol_version: ProtocolVersion(99),
         });
 
         // Act

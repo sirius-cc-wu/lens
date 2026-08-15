@@ -26,6 +26,19 @@ pub async fn open(target: Option<std::path::PathBuf>, scope: TargetScope) -> any
     Ok(())
 }
 
+/// Stops the current user's Lens background service without starting one.
+pub async fn stop() -> anyhow::Result<()> {
+    match service::client::request_service_stop().await? {
+        service::client::StopOutcome::Stopped => {
+            println!("Lens background service stopped");
+        }
+        service::client::StopOutcome::NotRunning => {
+            println!("Lens is not running");
+        }
+    }
+    Ok(())
+}
+
 #[doc(hidden)]
 pub async fn run_background_service() -> anyhow::Result<()> {
     service::server::run_background_service().await?;

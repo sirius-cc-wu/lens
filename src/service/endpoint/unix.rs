@@ -9,6 +9,7 @@ use tokio::net::{UnixListener, UnixStream};
 use super::EndpointError;
 
 const SOCKET_NAME: &str = "service-v1.sock";
+const STOPPING_SUFFIX: &str = ".stopping";
 
 pub(crate) type ClientConnection = UnixStream;
 pub(crate) type ServerConnection = UnixStream;
@@ -28,6 +29,21 @@ impl Listener {
             .map(|(connection, _)| connection)
             .map_err(|source| EndpointError::io("Could not accept a Lens command", source))
     }
+
+    pub(crate) fn begin_shutdown(mut self) -> Result<ShutdownBarrier, EndpointError> {
+        let stopping_path = stopping_path(&self.path);
+        remove_verified_stale_socket(&stopping_path)?;
+        verify_owned_socket(&self.path, self.device, self.inode)?;
+        fs::rename(&self.path, &stopping_path).map_err(|source| {
+            EndpointError::io("Could not hide the stopping Lens command endpoint", source)
+        })?;
+        self.path = stopping_path;
+        Ok(ShutdownBarrier { _listener: self })
+    }
+}
+
+pub(crate) struct ShutdownBarrier {
+    _listener: Listener,
 }
 
 impl Drop for Listener {
@@ -47,7 +63,14 @@ impl Drop for Listener {
 
 pub(crate) async fn connect() -> Result<ClientConnection, EndpointError> {
     let path = endpoint_path()?;
-    connect_at(&path).await
+    match connect_verified_at(&path).await {
+        Ok(connection) => Ok(connection),
+        Err(error) if error.is_unavailable() => {
+            inspect_stopping_endpoint(&stopping_path(&path)).await?;
+            Err(error)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub(crate) fn claim() -> Result<Listener, EndpointError> {
@@ -134,7 +157,30 @@ async fn connect_at(path: &Path) -> Result<ClientConnection, EndpointError> {
     })
 }
 
+async fn connect_verified_at(path: &Path) -> Result<ClientConnection, EndpointError> {
+    let metadata = fs::symlink_metadata(path).map_err(|source| {
+        EndpointError::io("Could not inspect the Lens command endpoint", source)
+    })?;
+    validate_owned_socket(path, &metadata)?;
+    let connection = connect_at(path).await?;
+    if let Err(error) = verify_owned_socket(path, metadata.dev(), metadata.ino()) {
+        drop(connection);
+        return Err(error);
+    }
+    Ok(connection)
+}
+
 fn claim_at(path: &Path) -> Result<Listener, EndpointError> {
+    claim_at_with(path, || {})
+}
+
+fn claim_at_with<F>(path: &Path, after_stopping_check: F) -> Result<Listener, EndpointError>
+where
+    F: FnOnce(),
+{
+    let stopping_path = stopping_path(path);
+    remove_verified_stale_socket(&stopping_path)?;
+    after_stopping_check();
     remove_verified_stale_socket(path)?;
     let inner = UnixListener::bind(path).map_err(|source| {
         if source.kind() == std::io::ErrorKind::AddrInUse {
@@ -152,29 +198,65 @@ fn claim_at(path: &Path) -> Result<Listener, EndpointError> {
             source,
         )
     })?;
-    Ok(Listener {
+    let listener = Listener {
         inner,
         path: path.to_path_buf(),
         device: metadata.dev(),
         inode: metadata.ino(),
-    })
+    };
+    if let Err(error) = remove_verified_stale_socket(&stopping_path) {
+        drop(listener);
+        return Err(error);
+    }
+    Ok(listener)
 }
 
-fn remove_verified_stale_socket(path: &Path) -> Result<(), EndpointError> {
+async fn inspect_stopping_endpoint(path: &Path) -> Result<(), EndpointError> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(source) => {
             return Err(EndpointError::io(
-                "Could not inspect an existing Lens command endpoint",
+                "Could not inspect a stopping Lens command endpoint",
                 source,
             ));
         }
     };
-
-    if std::os::unix::net::UnixStream::connect(path).is_ok() {
-        return Err(EndpointError::AlreadyOwned);
+    validate_owned_socket(path, &metadata)?;
+    match connect_verified_at(path).await {
+        Ok(connection) => {
+            drop(connection);
+            Err(EndpointError::ServiceStopping)
+        }
+        Err(error) if error.is_unavailable() => Ok(()),
+        Err(error) => Err(error),
     }
+}
+
+fn stopping_path(path: &Path) -> PathBuf {
+    let mut file_name = path
+        .file_name()
+        .expect("endpoint path should have a file name")
+        .to_os_string();
+    file_name.push(STOPPING_SUFFIX);
+    path.with_file_name(file_name)
+}
+
+fn verify_owned_socket(path: &Path, device: u64, inode: u64) -> Result<(), EndpointError> {
+    let metadata = fs::symlink_metadata(path).map_err(|source| {
+        EndpointError::io("Could not verify the owned Lens command endpoint", source)
+    })?;
+    validate_owned_socket(path, &metadata)?;
+    if metadata.dev() != device || metadata.ino() != inode {
+        return Err(EndpointError::UnsafeEndpoint {
+            path: path.to_path_buf(),
+            reason: "the endpoint changed during identity verification".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_owned_socket(path: &Path, metadata: &fs::Metadata) -> Result<(), EndpointError> {
     if !metadata.file_type().is_socket() {
         return Err(EndpointError::UnsafeEndpoint {
             path: path.to_path_buf(),
@@ -191,6 +273,26 @@ fn remove_verified_stale_socket(path: &Path) -> Result<(), EndpointError> {
             ),
         });
     }
+    Ok(())
+}
+
+fn remove_verified_stale_socket(path: &Path) -> Result<(), EndpointError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(EndpointError::io(
+                "Could not inspect an existing Lens command endpoint",
+                source,
+            ));
+        }
+    };
+
+    validate_owned_socket(path, &metadata)?;
+    if std::os::unix::net::UnixStream::connect(path).is_ok() {
+        return Err(EndpointError::AlreadyOwned);
+    }
+    let owner = effective_user_id();
     let verified = fs::symlink_metadata(path).map_err(|source| {
         EndpointError::io("Could not recheck a stale Lens command endpoint", source)
     })?;
@@ -230,17 +332,18 @@ mod tests {
     use std::{
         fs,
         os::unix::{
-            fs::{DirBuilderExt, MetadataExt, PermissionsExt},
+            fs::{symlink, DirBuilderExt, MetadataExt, PermissionsExt},
             net::UnixListener as StdUnixListener,
         },
-        sync::Arc,
+        sync::{mpsc, Arc},
+        thread,
     };
 
     use tokio::sync::Barrier;
 
     use super::{
-        authorize, authorize_user, claim_at, connect_at, effective_user_id,
-        prepare_runtime_directory, EndpointError,
+        authorize, authorize_user, claim_at, claim_at_with, connect_at, connect_verified_at,
+        effective_user_id, prepare_runtime_directory, EndpointError,
     };
 
     #[tokio::test]
@@ -289,6 +392,113 @@ mod tests {
             1
         );
         drop(results);
+        fs::remove_dir_all(root).expect("test fixture should be removable");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shutdown_rename_between_claim_checks_then_replacement_claim_is_denied() {
+        // Arrange
+        let (root, path) = endpoint_fixture("claim-shutdown-race");
+        let listener = claim_at(&path).expect("original endpoint should be claimable");
+        let (paused_sender, paused_receiver) = mpsc::channel();
+        let (resume_sender, resume_receiver) = mpsc::channel();
+        let claim_path = path.clone();
+        let runtime = tokio::runtime::Handle::current();
+        let competing_claim = thread::spawn(move || {
+            let _runtime = runtime.enter();
+            claim_at_with(&claim_path, move || {
+                paused_sender
+                    .send(())
+                    .expect("claim pause should be observable");
+                resume_receiver
+                    .recv()
+                    .expect("claim should be resumed after shutdown rename");
+            })
+        });
+        paused_receiver
+            .recv()
+            .expect("claim should pause after its first stopping-barrier check");
+
+        // Act
+        let shutdown_barrier = listener
+            .begin_shutdown()
+            .expect("original owner should begin shutdown");
+        resume_sender
+            .send(())
+            .expect("competing claim should resume");
+        let result = competing_claim
+            .join()
+            .expect("competing claim thread should join");
+
+        // Assert
+        assert!(matches!(result, Err(EndpointError::AlreadyOwned)));
+        assert!(
+            !path.exists(),
+            "replacement socket should be removed exactly"
+        );
+        drop(shutdown_barrier);
+        let replacement = claim_at(&path).expect("claim should succeed after barrier release");
+        drop(replacement);
+        fs::remove_dir_all(root).expect("test fixture should be removable");
+    }
+
+    #[tokio::test]
+    async fn live_symlink_endpoint_then_connection_fails_before_foreign_listener_is_reached() {
+        // Arrange
+        let (root, path) = endpoint_fixture("live-symlink");
+        let foreign_path = root.join("foreign.sock");
+        let foreign =
+            StdUnixListener::bind(&foreign_path).expect("foreign endpoint should be bindable");
+        foreign
+            .set_nonblocking(true)
+            .expect("foreign endpoint should be nonblocking");
+        symlink(&foreign_path, &path).expect("endpoint symlink should be creatable");
+
+        // Act
+        let result = connect_verified_at(&path).await;
+        let foreign_connection = foreign.accept();
+
+        // Assert
+        assert!(matches!(result, Err(EndpointError::UnsafeEndpoint { .. })));
+        assert!(matches!(
+            foreign_connection,
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ));
+        assert!(
+            fs::symlink_metadata(&path)
+                .expect("endpoint symlink should remain")
+                .file_type()
+                .is_symlink(),
+            "unsafe endpoint symlink must be preserved"
+        );
+        fs::remove_dir_all(root).expect("test fixture should be removable");
+    }
+
+    #[tokio::test]
+    async fn shutdown_barrier_then_endpoint_is_hidden_and_replacement_claim_is_blocked() {
+        // Arrange
+        let (root, path) = endpoint_fixture("shutdown-barrier");
+        let listener = claim_at(&path).expect("endpoint should be claimable");
+
+        // Act
+        let barrier = listener
+            .begin_shutdown()
+            .expect("shutdown barrier should be retained");
+        let original_connection = connect_at(&path).await;
+        let competing_claim = claim_at(&path);
+
+        // Assert
+        assert!(matches!(
+            original_connection,
+            Err(EndpointError::Io { ref source, .. }) if matches!(
+                source.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+            )
+        ));
+        assert!(matches!(competing_claim, Err(EndpointError::AlreadyOwned)));
+        drop(barrier);
+        let replacement = claim_at(&path).expect("claim should succeed after response barrier");
+        drop(replacement);
         fs::remove_dir_all(root).expect("test fixture should be removable");
     }
 

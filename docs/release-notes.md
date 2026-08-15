@@ -8,6 +8,23 @@ tags: [release]
 
 # Pending Lens Release Notes
 
+## Added: Stop the Background Service Gracefully
+
+Run `lens stop` to stop the current user's background Lens service and every
+view it hosts. The command uses the authenticated per-user local command
+channel, never an HTTP route. It releases viewing sessions, document watchers,
+loopback listeners, retained state, and the command endpoint before reporting
+success. Endpoint ownership remains reserved during cleanup so no replacement
+service can start. Graceful cleanup has five seconds before remaining tasks are
+force-cancelled and joined.
+
+Stopping when no service is reachable reports `Lens is not running` and exits
+successfully without starting one. Lens removes only a safely verified owned
+stale endpoint; foreign or unverifiable endpoint state is preserved and
+reported as an error. Concurrent stop callers receive the same successful
+outcome, and ordinary opens accepted after shutdown begins receive a
+`ServiceStopping` rejection.
+
 ## Changed: Lens Commands Return After Opening a View
 
 An ordinary `lens [TARGET]` command now starts or reuses one background Lens

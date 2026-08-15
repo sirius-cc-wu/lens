@@ -52,7 +52,61 @@ fn help_flag_then_describes_optional_target_without_renderer_selection() {
     assert!(stdout.contains("[possible values: repository, target]"));
     assert!(!stdout.contains("--renderer"));
     assert!(!stdout.contains("lens-background-service"));
+    assert!(stdout.contains("stop  Stop the current user's Lens background service"));
     assert!(stdout.contains("lens --scope target .hidden/docs"));
+}
+
+#[test]
+fn absent_service_stop_then_reports_not_running_and_exits_successfully() {
+    // Arrange
+    let runtime_directory = unique_path("absent-stop-service");
+    if runtime_directory.exists() {
+        std::fs::remove_dir_all(&runtime_directory)
+            .expect("stale runtime directory should be removable");
+    }
+    create_private_directory(&runtime_directory);
+    let mut command = lens_command();
+    command
+        .arg("stop")
+        .env("XDG_RUNTIME_DIR", &runtime_directory);
+
+    // Act
+    let output = command.output().expect("Lens stop command should run");
+
+    // Assert
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout)
+            .expect("stop output should be UTF-8")
+            .trim(),
+        "Lens is not running"
+    );
+    std::fs::remove_dir_all(runtime_directory).expect("runtime directory should be removable");
+}
+
+#[test]
+fn running_service_stop_then_reports_success_and_service_exits() {
+    // Arrange
+    let mut service = BackgroundService::start("running-stop-service");
+    let mut command = service.command();
+    command.arg("stop");
+
+    // Act
+    let output = command.output().expect("Lens stop command should run");
+    let service_status = service
+        .child
+        .wait()
+        .expect("service should exit after stop");
+
+    // Assert
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout)
+            .expect("stop output should be UTF-8")
+            .trim(),
+        "Lens background service stopped"
+    );
+    assert!(service_status.success());
 }
 
 #[test]
