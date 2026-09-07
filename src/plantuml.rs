@@ -9,7 +9,7 @@ pub(crate) fn server() -> String {
     server_from_value(env::var(SERVER_ENVIRONMENT_VARIABLE).ok().as_deref())
 }
 
-fn server_from_value(value: Option<&str>) -> String {
+pub(crate) fn server_from_value(value: Option<&str>) -> String {
     value
         .map(|server| server.trim().trim_end_matches('/').to_owned())
         .filter(|server| !server.is_empty())

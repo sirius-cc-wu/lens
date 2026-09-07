@@ -80,7 +80,7 @@ test("known_plantuml_route_then_displays_authorized_diagram", async ({ page }) =
 
   try {
     // Act
-    const response = await page.goto(`${fixture.lens.url}/documents/architecture.puml`);
+    const response = await page.goto(fixture.lens.urlFor("/documents/architecture.puml"));
 
     // Assert
     expect(response?.status()).toBe(200);
@@ -99,7 +99,7 @@ test("save displayed document then refreshes browser view automatically", async 
   try {
     await page.goto(fixture.lens.url);
     await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
-    const revision = await page.request.get(`${fixture.lens.url}/revisions/README.md`);
+    const revision = await page.request.get(fixture.lens.urlFor("/revisions/README.md"));
     expect(revision.status()).toBe(200);
     expect(await revision.text()).toBe("0");
 
@@ -300,12 +300,12 @@ test("document_page_with_catalog_query_then_ignores_query_and_page", async ({ pa
   const fixture = await startBrowserFixture();
 
   try {
-    const knownDocumentUrl = `${fixture.lens.url}/documents/guides/guide.md`;
+    const knownDocumentUrl = fixture.lens.urlFor("/documents/guides/guide.md");
     const ordinaryResponse = await page.request.get(knownDocumentUrl);
 
     // Act
     const responseWithCatalogQuery = await page.request.get(
-      `${knownDocumentUrl}?query=README&page=99`,
+      `${knownDocumentUrl}&query=README&page=99`,
     );
 
     // Assert
@@ -322,7 +322,7 @@ test("undiscovered_document_path_then_returns_404_guidance_without_its_source", 
 
   try {
     // Act
-    const response = await page.goto(`${fixture.lens.url}/documents/.private.md`);
+    const response = await page.goto(fixture.lens.urlFor("/documents/.private.md"));
 
     // Assert
     expect(response?.status()).toBe(404);
@@ -554,11 +554,11 @@ test("document_external_and_fragment_links_then_preserve_browser_destinations", 
     // Assert
     await expect(page.getByRole("link", { name: "Guide document" })).toHaveAttribute(
       "href",
-      "/documents/guides/guide.md",
+      `/documents/guides/guide.md?token=${fixture.lens.token}`,
     );
     await expect(page.getByRole("link", { name: "PlantUML document" })).toHaveAttribute(
       "href",
-      "/documents/architecture.puml",
+      `/documents/architecture.puml?token=${fixture.lens.token}`,
     );
     await expect(page.getByRole("link", { name: "External site" })).toHaveAttribute(
       "href",
@@ -589,10 +589,10 @@ test("source_link_then_does_not_add_source_content_route", async ({ page }) => {
 
     // Act
     const sourceRoute = await page.request.get(
-      `${fixture.lens.url}/source?path=src%2Fexample.rs`,
+      `${fixture.lens.origin}/source?token=${fixture.lens.token}&path=src%2Fexample.rs`,
     );
     const documentRoute = await page.request.get(
-      `${fixture.lens.url}/documents/src/example.rs`,
+      fixture.lens.urlFor("/documents/src/example.rs"),
     );
 
     // Assert
@@ -688,12 +688,164 @@ test("renderer disable request then returns not found", async ({ page }) => {
     await expect.poll(() => fixture.renderer.requests).toBe(1);
 
     // Act
-    const response = await page.request.post(`${fixture.lens.url}/renderer/disable`);
+    const response = await page.request.post(fixture.lens.urlFor("/renderer/disable"));
 
     // Assert
     expect(response.status()).toBe(404);
     expect(fixture.renderer.requests).toBe(1);
   } finally {
+    await fixture.stop();
+  }
+});
+
+test("unauthenticated_request_without_capability_then_receives_unauthorized", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    // Act
+    const unauthenticatedInitial = await page.request.get(fixture.lens.origin);
+    const unauthenticatedDocument = await page.request.get(
+      `${fixture.lens.origin}/documents/guides/guide.md`,
+    );
+    const unauthenticatedRevision = await page.request.get(
+      `${fixture.lens.origin}/revisions/README.md`,
+    );
+    const unauthenticatedDiagram = await page.request.get(
+      `${fixture.lens.origin}/diagrams/0/0`,
+    );
+    const unauthenticatedAsset = await page.request.get(
+      `${fixture.lens.origin}/app.js`,
+    );
+
+    // Assert
+    expect(unauthenticatedInitial.status()).toBe(401);
+    expect(unauthenticatedDocument.status()).toBe(401);
+    expect(unauthenticatedRevision.status()).toBe(401);
+    expect(unauthenticatedDiagram.status()).toBe(401);
+    expect(unauthenticatedAsset.status()).toBe(401);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("cross_session_request_then_cannot_access_other_session", async ({ page }) => {
+  // Arrange
+  const firstFixture = await startBrowserFixture();
+  const secondFixture = await startBrowserFixture({
+    readme: "# Second isolated fixture",
+  });
+
+  try {
+    // Act
+    const crossInitial = await page.request.get(
+      `${firstFixture.lens.origin}/?token=${secondFixture.lens.token}`,
+    );
+    const crossDiagram = await page.request.get(
+      `${firstFixture.lens.origin}/diagrams/0/0?token=${secondFixture.lens.token}`,
+    );
+
+    // Assert
+    expect(crossInitial.status()).toBe(401);
+    expect(crossDiagram.status()).toBe(401);
+  } finally {
+    await secondFixture.stop();
+    await firstFixture.stop();
+  }
+});
+
+test("shared_browser_context_then_two_sessions_isolate_and_refresh_independently", async ({
+  context,
+}) => {
+  // Arrange
+  const firstFixture = await startBrowserFixture({
+    readme: "# First document\n\nInitial first content.\n\n[Open first guide](guides/guide.md)\n",
+  });
+  const secondFixture = await startBrowserFixture({
+    readme: "# Second document\n\nInitial second content.\n\n[Open second guide](guides/guide.md)\n",
+  });
+
+  const firstPage = await context.newPage();
+  const secondPage = await context.newPage();
+
+  try {
+    // Act
+    await firstPage.goto(firstFixture.lens.url);
+    await expect(firstPage.getByRole("heading", { level: 1, name: "First document" })).toBeVisible();
+    await expect(firstPage.locator("article")).toContainText("Initial first content.");
+    await firstPage.getByRole("link", { name: "Open first guide" }).click();
+    await expect(firstPage.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
+    await firstPage.goBack();
+    await expect(firstPage.getByRole("heading", { level: 1, name: "First document" })).toBeVisible();
+
+    await secondPage.goto(secondFixture.lens.url);
+    await expect(secondPage.getByRole("heading", { level: 1, name: "Second document" })).toBeVisible();
+    await expect(secondPage.locator("article")).toContainText("Initial second content.");
+    await secondPage.getByRole("link", { name: "Open second guide" }).click();
+    await expect(secondPage.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
+    await secondPage.goBack();
+    await expect(secondPage.getByRole("heading", { level: 1, name: "Second document" })).toBeVisible();
+
+    // Update both documents to verify live refresh isolation
+    await writeFile(
+      join(firstFixture.repository.directory, "README.md"),
+      "# First document\n\nUpdated first content.\n",
+    );
+    await writeFile(
+      join(secondFixture.repository.directory, "README.md"),
+      "# Second document\n\nUpdated second content.\n",
+    );
+
+    // Assert
+    await expect(firstPage.locator("article")).toContainText("Updated first content.");
+    await expect(firstPage.locator("article")).not.toContainText("Second");
+
+    await expect(secondPage.locator("article")).toContainText("Updated second content.");
+    await expect(secondPage.locator("article")).not.toContainText("First");
+  } finally {
+    await firstPage.close();
+    await secondPage.close();
+    await secondFixture.stop();
+    await firstFixture.stop();
+  }
+});
+
+test("second_port_navigation_then_no_capability_transmitted_and_unauthenticated_replay_fails", async ({
+  page,
+}) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+  let capturedHeaders = null;
+  const captureServer = createServer((req, res) => {
+    if (req.url === "/capture") {
+      capturedHeaders = req.headers;
+    }
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end("<h1>Captured</h1>");
+  });
+  await new Promise((resolve) => captureServer.listen(0, "127.0.0.1", resolve));
+  const capturePort = captureServer.address().port;
+  const captureUrl = `http://127.0.0.1:${capturePort}/capture`;
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+    await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
+
+    await page.goto(captureUrl);
+    await expect(page.getByRole("heading", { level: 1, name: "Captured" })).toBeVisible();
+
+    // Assert
+    expect(capturedHeaders.cookie).toBeUndefined();
+    expect(capturedHeaders.referer).toBeUndefined();
+    expect(JSON.stringify(capturedHeaders)).not.toContain(fixture.lens.token);
+
+    const replayDocument = await page.request.get(fixture.lens.origin);
+    const replayDiagram = await page.request.get(`${fixture.lens.origin}/diagrams/0/0`);
+    expect(replayDocument.status()).toBe(401);
+    expect(replayDiagram.status()).toBe(401);
+  } finally {
+    await new Promise((resolve) => captureServer.close(resolve));
     await fixture.stop();
   }
 });
@@ -766,6 +918,7 @@ async function createDocumentationRepository({
   const directory = await mkdtemp(join(tmpdir(), "lens-browser-"));
   const outsideDocument = `${directory}-outside.md`;
   const binDirectory = join(directory, "bin");
+  const runtimeDirectory = join(directory, "runtime");
   const readmePath = join(directory, "README.md");
   const sourceLinksMarkdown = [
     "# Source links",
@@ -804,6 +957,7 @@ async function createDocumentationRepository({
     await mkdir(join(directory, "iterations"));
     await mkdir(join(directory, ".git"));
     await mkdir(binDirectory);
+    await mkdir(runtimeDirectory);
     if (sourceLinks) {
       await mkdir(join(directory, "src", "directory"), { recursive: true });
       await mkdir(join(directory, ".hidden"));
@@ -847,11 +1001,13 @@ async function createDocumentationRepository({
     }
     await Promise.all(files);
     await chmod(join(binDirectory, "xdg-open"), 0o755);
+    await chmod(runtimeDirectory, 0o700);
     return {
       binDirectory,
       directory,
       outsideDocument,
       readmePath,
+      runtimeDirectory,
       sourceLinksMarkdown,
     };
   } catch (error) {
@@ -917,54 +1073,118 @@ async function startLens(
   if (scope) {
     commandArguments.push("--scope", scope);
   }
-  const child = spawn(lensBinary, commandArguments, {
-    cwd: currentDirectoryRelativePath
-      ? join(repository.directory, currentDirectoryRelativePath)
-      : undefined,
-    env: {
-      ...process.env,
-      LENS_PLANTUML_SERVER: rendererUrl,
-      PATH: `${repository.binDirectory}:${process.env.PATH}`,
-    },
+  const environment = {
+    ...process.env,
+    LENS_PLANTUML_SERVER: rendererUrl,
+    PATH: `${repository.binDirectory}:${process.env.PATH}`,
+    XDG_RUNTIME_DIR: repository.runtimeDirectory,
+  };
+  const service = spawn(lensBinary, ["--lens-background-service"], {
+    env: environment,
     stdio: ["ignore", "pipe", "pipe"],
   });
   const stop = async () => {
-    if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) {
+    if (service.exitCode !== null || service.signalCode !== null || service.pid === undefined) {
       return;
     }
-    const closed = once(child, "close");
-    child.kill("SIGKILL");
+    const closed = once(service, "close");
+    service.kill("SIGKILL");
     await closed;
   };
   try {
-    const url = await waitForLoopbackUrl(child);
-    return { url, stop };
+    await waitForServiceReady(service);
+    const readyUrl = await runLensClient(lensBinary, commandArguments, {
+      cwd: currentDirectoryRelativePath
+        ? join(repository.directory, currentDirectoryRelativePath)
+        : undefined,
+      env: environment,
+    });
+    const parsed = new URL(readyUrl);
+    const token = parsed.searchParams.get("token") || "";
+    return {
+      url: readyUrl,
+      origin: parsed.origin,
+      token,
+      urlFor: (pathname) => `${parsed.origin}${pathname}?token=${token}`,
+      stop,
+    };
   } catch (error) {
     await stop();
     throw error;
   }
 }
 
-function waitForLoopbackUrl(child) {
+function runLensClient(lensBinary, commandArguments, options) {
+  const child = spawn(lensBinary, commandArguments, {
+    ...options,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   return new Promise((resolveUrl, reject) => {
-    let output = "";
-    const timeout = setTimeout(() => reject(new Error(`Lens did not print a loopback URL: ${output}`)), 10_000);
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(
+      () => reject(new Error(`Lens client did not exit after its ready acknowledgment: ${stdout}${stderr}`)),
+      10_000,
+    );
     child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
-      output += chunk;
-      const match = output.match(/at (http:\/\/127\.0\.0\.1:\d+)/);
-      if (match) {
-        clearTimeout(timeout);
-        resolveUrl(match[1]);
-      }
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
     });
     child.once("error", (error) => {
       clearTimeout(timeout);
       reject(error);
     });
-    child.once("exit", (code) => {
+    child.once("close", (status, signal) => {
       clearTimeout(timeout);
-      reject(new Error(`Lens exited before serving the fixture (status ${code}): ${output}`));
+      if (status !== 0) {
+        reject(new Error(`Lens client failed (status ${status}, signal ${signal}): ${stdout}${stderr}`));
+        return;
+      }
+      const match = stdout.match(/at (http:\/\/127\.0\.0\.1:\d+\S*)/);
+      if (!match) {
+        reject(new Error(`Lens client did not print a loopback URL: ${stdout}${stderr}`));
+        return;
+      }
+      resolveUrl(match[1]);
+    });
+  });
+}
+
+function waitForServiceReady(child) {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(
+      () => reject(new Error(`Lens background service did not become ready: ${stdout}${stderr}`)),
+      10_000,
+    );
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      if (stdout.includes("Lens background service is ready")) {
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("exit", (status, signal) => {
+      clearTimeout(timeout);
+      reject(
+        new Error(
+          `Lens background service exited before readiness (status ${status}, signal ${signal}): ${stdout}${stderr}`,
+        ),
+      );
     });
   });
 }

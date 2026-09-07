@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, State},
-    http::{header, HeaderValue, StatusCode},
+    http::{header, HeaderValue, Request, StatusCode},
+    middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::get,
     Router,
@@ -23,7 +24,40 @@ pub(super) fn router(state: Arc<ViewerState>) -> Router {
         .route("/app.js", get(script))
         .route("/diagrams/:document_id/:diagram_id", get(diagram))
         .fallback(not_found)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            session_auth_middleware,
+        ))
         .with_state(state)
+}
+
+async fn session_auth_middleware<B>(
+    State(state): State<Arc<ViewerState>>,
+    request: Request<B>,
+    next: Next<B>,
+) -> Response {
+    let query_token = request.uri().query().and_then(|query| {
+        query.split('&').find_map(|param| {
+            let mut parts = param.splitn(2, '=');
+            match (parts.next(), parts.next()) {
+                (Some("token"), Some(val)) => Some(val),
+                _ => None,
+            }
+        })
+    });
+
+    if let Some(token) = query_token {
+        if token == state.session_token {
+            let mut response = next.run(request).await;
+            response.headers_mut().insert(
+                header::REFERRER_POLICY,
+                HeaderValue::from_static("no-referrer"),
+            );
+            return response;
+        }
+    }
+
+    StatusCode::UNAUTHORIZED.into_response()
 }
 
 async fn initial_document_view(State(state): State<Arc<ViewerState>>) -> Response {
@@ -37,7 +71,7 @@ async fn document_view(
     let document_id = document_id.trim_start_matches('/');
     match state.known_documents.index(document_id) {
         Some(known_document) => rendered_document_response(&state, known_document),
-        None => not_found().await.into_response(),
+        None => not_found(State(state)).await.into_response(),
     }
 }
 
@@ -55,7 +89,7 @@ async fn document_revision(
                 .to_string(),
         )
             .into_response(),
-        None => not_found().await.into_response(),
+        None => not_found(State(state)).await.into_response(),
     }
 }
 
@@ -71,6 +105,7 @@ fn rendered_document_response(state: &ViewerState, document_id: usize) -> Respon
             &document.identifier,
             document.rendered.html.clone(),
             Some((&document.identifier, document.revision)),
+            &state.session_token,
         )),
     )
         .into_response()
@@ -90,11 +125,11 @@ async fn script() -> impl IntoResponse {
     )
 }
 
-async fn not_found() -> impl IntoResponse {
+async fn not_found(State(state): State<Arc<ViewerState>>) -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
-        Html(document_unavailable_page()),
+        Html(document_unavailable_page(&state.session_token)),
     )
 }
 
@@ -137,7 +172,10 @@ async fn diagram(
 mod tests {
     use std::path::PathBuf;
 
-    use axum::{body::Body, http::Request};
+    use axum::{
+        body::Body,
+        http::{header, Request},
+    };
     use tower::ServiceExt;
 
     use super::router;
@@ -146,6 +184,8 @@ mod tests {
         target::{DocumentKind, MarkdownDocument},
         viewer::{rendering::renderer_client, state::viewer_state},
     };
+
+    const TEST_TOKEN: &str = "test-session-token";
 
     fn test_server() -> String {
         PUBLIC_SERVER.to_owned()
@@ -165,7 +205,20 @@ mod tests {
             initial_document,
             renderer_client().expect("test client should initialize"),
             test_server(),
+            TEST_TOKEN.to_owned(),
         ))
+    }
+
+    fn authed_request(uri: &str) -> Request<Body> {
+        let authed_uri = if uri.contains('?') {
+            format!("{uri}&token={TEST_TOKEN}")
+        } else {
+            format!("{uri}?token={TEST_TOKEN}")
+        };
+        Request::builder()
+            .uri(authed_uri)
+            .body(Body::empty())
+            .expect("test request should build")
     }
 
     fn test_document(identifier: &str, source: &str) -> MarkdownDocument {
@@ -178,13 +231,98 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_document_path_then_returns_not_found() {
+    async fn unauthenticated_request_without_token_then_returns_unauthorized() {
+        // Arrange
+        let app = test_router();
+
+        // Act & Assert
+        for path in [
+            "/",
+            "/documents/README.md",
+            "/revisions/README.md",
+            "/app.css",
+            "/app.js",
+            "/diagrams/0/0",
+        ] {
+            let request = Request::builder()
+                .uri(path)
+                .body(Body::empty())
+                .expect("test request should build");
+            let response = app
+                .clone()
+                .oneshot(request)
+                .await
+                .expect("router should respond");
+            assert_eq!(
+                response.status(),
+                axum::http::StatusCode::UNAUTHORIZED,
+                "unauthenticated request to {path} should be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn request_with_token_query_then_returns_ok_with_no_referrer_and_no_cookie() {
         // Arrange
         let app = test_router();
         let request = Request::builder()
-            .uri("/documents/../../etc/passwd")
+            .uri(format!("/?token={TEST_TOKEN}"))
             .body(Body::empty())
             .expect("test request should build");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert!(response.headers().get(header::SET_COOKIE).is_none());
+        assert_eq!(
+            response
+                .headers()
+                .get(header::REFERRER_POLICY)
+                .expect("referrer policy should be set"),
+            "no-referrer"
+        );
+    }
+
+    #[tokio::test]
+    async fn request_with_mismatched_token_then_returns_unauthorized() {
+        // Arrange
+        let app = test_router();
+        let request = Request::builder()
+            .uri("/?token=wrong-token")
+            .body(Body::empty())
+            .expect("test request should build");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn request_with_cookie_only_then_returns_unauthorized() {
+        // Arrange
+        let app = test_router();
+        let request = Request::builder()
+            .uri("/")
+            .header(header::COOKIE, format!("lens-session={TEST_TOKEN}"))
+            .body(Body::empty())
+            .expect("test request should build");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn unknown_document_path_then_returns_not_found() {
+        // Arrange
+        let app = test_router();
+        let request = authed_request("/documents/../../etc/passwd");
 
         // Act
         let response = app.oneshot(request).await.expect("router should respond");
@@ -197,10 +335,7 @@ mod tests {
     async fn unknown_document_revision_path_then_returns_not_found() {
         // Arrange
         let app = test_router();
-        let request = Request::builder()
-            .uri("/revisions/.private.md")
-            .body(Body::empty())
-            .expect("test request should build");
+        let request = authed_request("/revisions/.private.md");
 
         // Act
         let response = app.oneshot(request).await.expect("router should respond");
@@ -219,10 +354,7 @@ mod tests {
             ],
             0,
         );
-        let request = Request::builder()
-            .uri("/documents/guides/intro.md")
-            .body(Body::empty())
-            .expect("test request should build");
+        let request = authed_request("/documents/guides/intro.md");
 
         // Act
         let response = app.oneshot(request).await.expect("router should respond");
@@ -235,10 +367,7 @@ mod tests {
     async fn unknown_diagram_then_returns_not_found() {
         // Arrange
         let app = test_router();
-        let request = Request::builder()
-            .uri("/diagrams/99/0")
-            .body(Body::empty())
-            .expect("test request should build");
+        let request = authed_request("/diagrams/99/0");
 
         // Act
         let response = app.oneshot(request).await.expect("router should respond");
@@ -253,7 +382,7 @@ mod tests {
         let app = test_router();
         let request = Request::builder()
             .method("POST")
-            .uri("/renderer/disable")
+            .uri(format!("/renderer/disable?token={TEST_TOKEN}"))
             .body(Body::empty())
             .expect("disable request should build");
 
@@ -268,10 +397,7 @@ mod tests {
     async fn document_request_then_sets_restrictive_content_security_policy() {
         // Arrange
         let app = test_router();
-        let request = Request::builder()
-            .uri("/")
-            .body(Body::empty())
-            .expect("test request should build");
+        let request = authed_request("/");
 
         // Act
         let response = app.oneshot(request).await.expect("router should respond");

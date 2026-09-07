@@ -8,6 +8,35 @@ tags: [release]
 
 # Pending Lens Release Notes
 
+## Changed: Lens Commands Return After Opening a View
+
+An ordinary `lens [TARGET]` command now starts or reuses one background Lens
+process for the current operating-system user. The command waits for a new
+loopback viewing session to become ready, attempts the browser handoff, prints
+the ready URL, and returns to the terminal. A later command opens another
+isolated view alongside every existing view instead of requiring a second
+terminal.
+
+Every accepted command still receives a fresh listener, fixed document set,
+scope, source-link boundary, and PlantUML server selection. Target and scope
+errors return through the CLI without opening a browser tab. A browser-launch
+failure prints the manual URL without stopping the accepted session. If the
+background process stops, its URLs stop; the next command starts a replacement
+and recovers a stale endpoint automatically.
+
+This changes the CLI process-lifetime contract: `lens` no longer remains in the
+foreground until Ctrl-C, and stopping the short-lived client does not stop its
+view. Scripts that treated the ordinary command as a foreground server should
+instead use the returned URL and account for the per-user background process.
+The Rust `lens::serve(MarkdownTarget)` entry point retains its foreground,
+browser-launch, and Ctrl-C behavior for library callers.
+
+The command channel is a bounded, versioned per-user Unix-domain socket on
+Linux and macOS or an access-controlled named pipe on Windows; it is not an
+HTTP route. See the [background-view guidance](../README.md#background-views),
+[ADR-022](decisions/adr-022-per-user-background-service.md), and the
+[C16 transition record](iterations/c16-background-service-transition.md).
+
 ## Open Repository File Links in VS Code
 
 Relative links to existing visible regular files inside the viewing session's

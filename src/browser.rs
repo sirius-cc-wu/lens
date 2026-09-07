@@ -14,7 +14,7 @@ struct BrowserCommand {
     arguments: Vec<String>,
 }
 
-pub(super) fn open_browser(url: &str) -> std::io::Result<()> {
+pub(crate) fn open_browser(url: &str) -> std::io::Result<()> {
     let command = browser_command(current_browser_platform()?, url);
     Command::new(command.program)
         .args(command.arguments)

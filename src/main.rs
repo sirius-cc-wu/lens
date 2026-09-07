@@ -13,12 +13,17 @@ struct Arguments {
 
     #[arg(long, value_enum, default_value_t = lens::TargetScope::Repository)]
     scope: lens::TargetScope,
+
+    #[arg(long = "lens-background-service", hide = true)]
+    background_service: bool,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let arguments = Arguments::parse();
-    let target =
-        lens::load_markdown_target_with_scope(arguments.target.as_deref(), arguments.scope)?;
-    lens::serve(target).await
+    if arguments.background_service {
+        lens::run_background_service().await
+    } else {
+        lens::open(arguments.target, arguments.scope).await
+    }
 }

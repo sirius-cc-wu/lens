@@ -4,8 +4,8 @@ title: Lens
 
 # Lens
 
-Lens is a Linux CLI that opens repository Markdown and PlantUML diagrams in a
-browser without requiring Obsidian.
+Lens is a cross-platform CLI that opens repository Markdown and PlantUML
+diagrams in a browser without requiring Obsidian.
 
 ## V1
 
@@ -14,10 +14,11 @@ cargo install --path . --locked
 lens [TARGET]
 ```
 
-V1 is a documentation-only viewer for Linux. A coding agent or command-line
-tool selects the target; Lens discovers the fixed authorized document set,
-supports safe authored links and browser history, and uses one session-fixed
-PlantUML server for diagrams. See the
+V1 is a documentation-only viewer for Linux, macOS, and Windows. A coding agent
+or command-line tool selects the target; a short-lived client opens a view
+through the current user's background Lens service. Each view keeps a fixed
+authorized document set, safe authored links and browser history, and one
+session-fixed PlantUML server. See the
 [release readiness checklist](release-readiness.md) for verification and scope.
 
 ## Product Documents
@@ -33,6 +34,9 @@ small and will be refined as elaboration resolves the listed risks.
 - [Primary feature and use cases](features/markdown-viewing/use-cases.md) (`FEAT-01`)
 - [Retired document navigation pane use cases](features/document-navigation-pane/use-cases.md) (`FEAT-02`, retired)
 - [Automatic refresh use cases](features/automatic-refresh/use-cases.md) (`FEAT-03`)
+- [Background viewer service use cases](features/background-viewer-service/use-cases.md) (`FEAT-04`)
+- [Background viewer service design](features/background-viewer-service/design.md) (`RZ-04`, `DCD-04`)
+- [Background viewer service transition](iterations/c16-background-service-transition.md) (`C16`)
 - [V1 UML design views](features/markdown-viewing/uml-design.md)
 - [Server-only PlantUML rendering design](features/markdown-viewing/server-rendering-design.md)
 - [Validated VS Code source-link design](features/markdown-viewing/source-link-design.md)
@@ -60,6 +64,7 @@ small and will be refined as elaboration resolves the listed risks.
 - [ADR-019: Scope repository targets to the nearest repository](decisions/adr-019-repository-scoped-target-sessions.md)
 - [ADR-020: Delegate resource selection and focus Lens on document review](decisions/adr-020-focused-document-review.md)
 - [ADR-021: Emit validated VS Code source links](decisions/adr-021-validated-vscode-source-links.md)
+- [ADR-022: Coordinate isolated sessions through one per-user background service](decisions/adr-022-per-user-background-service.md)
 - [V1 release readiness](release-readiness.md)
 - [Pending release notes](release-notes.md)
 - [Development case](development-case.md)
@@ -68,6 +73,8 @@ small and will be refined as elaboration resolves the listed risks.
 
 ## Lifecycle Status
 
-Inception completed on 2026-07-18. Subsequent elaboration and construction
-iterations resolved architectural risks and implemented the documented V1
-behavior. The release-readiness checklist records the remaining release work.
+Inception completed on 2026-07-18. Subsequent elaboration, construction, and
+transition iterations resolved architectural risks and implemented the
+documented V1 behavior, including short-lived commands backed by isolated
+per-user service sessions. The release-readiness checklist records the
+remaining native desktop and release work.

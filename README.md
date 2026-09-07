@@ -1,8 +1,8 @@
 # Lens
 
-Lens is a Linux command-line viewer for repository Markdown and PlantUML
-diagrams. It starts a loopback-only browser session and does not depend on
-Obsidian.
+Lens is a cross-platform command-line viewer for repository Markdown and
+PlantUML diagrams. It starts loopback-only browser sessions and does not depend
+on Obsidian.
 
 ## Requirements
 
@@ -65,6 +65,27 @@ The shell replaces the `fd` expression with its output before Lens starts
 Lens accepts one optional positional target. `fd` is only an example; Lens does
 not install, invoke, or require it, and the file finder's root, matching, and
 ignore behavior remain user-managed.
+
+### Background views
+
+An ordinary `lens` command starts or reuses one background Lens process for
+the current operating-system user. It waits only until a new isolated viewing
+session is ready, asks the operating system to open that loopback URL, prints
+the URL, and returns control to the terminal. Run another `lens <target>` from
+the same terminal to open a separate view alongside the existing one.
+
+Each command gets its own loopback listener, fixed document set, target scope,
+source-link boundary, and PlantUML server selection. Reusing the process does
+not merge repositories or admit newly created documents to an older session.
+Saving a document already in a session continues to refresh that session.
+
+If target validation fails, Lens reports the CLI error and does not ask the
+browser to open a view. If the operating system cannot launch the browser, Lens
+prints the ready URL for manual opening and continues to host it. If the
+background process stops, every URL it owned stops with it; the next Lens
+command automatically starts a replacement and recovers a stale local endpoint
+without a cleanup command. This release has no user-facing stop command or idle
+shutdown policy.
 
 By default, a current-directory, directory, Markdown, or `.puml` target inside
 a Git repository uses the nearest enclosing repository as its document root. A

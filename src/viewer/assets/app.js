@@ -22,12 +22,14 @@ for (const image of document.querySelectorAll('[data-diagram]')) {
 const documentView = document.querySelector('[data-document-id][data-document-revision]');
 if (documentView) {
   const documentId = documentView.dataset.documentId;
+  const sessionToken = documentView.dataset.sessionToken;
   let revision = documentView.dataset.documentRevision;
   let reloading = false;
 
   window.setInterval(async () => {
     try {
-      const response = await fetch(`/revisions/${encodeURIComponent(documentId)}`, { cache: 'no-store' });
+      const tokenParam = sessionToken ? `?token=${encodeURIComponent(sessionToken)}` : '';
+      const response = await fetch(`/revisions/${encodeURIComponent(documentId)}${tokenParam}`, { cache: 'no-store' });
       if (!response.ok) return;
       const currentRevision = await response.text();
       if (currentRevision !== revision && !reloading) {
@@ -39,3 +41,25 @@ if (documentView) {
     }
   }, 500);
 }
+
+document.addEventListener('click', (event) => {
+  const link = event.target.closest('a[href]');
+  if (!link) return;
+  const href = link.getAttribute('href');
+  if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('vscode:') || href.startsWith('mailto:')) {
+    return;
+  }
+  const documentView = document.querySelector('[data-session-token]');
+  const token = documentView ? documentView.dataset.sessionToken : null;
+  if (!token) return;
+
+  try {
+    const url = new URL(link.href, window.location.href);
+    if (url.origin === window.location.origin && !url.searchParams.has('token')) {
+      url.searchParams.set('token', token);
+      link.href = url.toString();
+    }
+  } catch {
+    // Retain authored destination on URL parse failure.
+  }
+});

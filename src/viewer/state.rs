@@ -25,6 +25,7 @@ pub(super) struct ViewerState {
     pub(super) initial_document: usize,
     pub(super) client: Client,
     pub(super) plantuml_server: String,
+    pub(super) session_token: String,
 }
 
 impl ViewerState {
@@ -106,6 +107,7 @@ pub(super) fn viewer_state(
     initial_document: usize,
     client: Client,
     plantuml_server: String,
+    session_token: String,
 ) -> Arc<ViewerState> {
     let known_documents = KnownDocuments::new(
         documents
@@ -150,6 +152,7 @@ pub(super) fn viewer_state(
         initial_document,
         client,
         plantuml_server,
+        session_token,
     })
 }
 
@@ -224,6 +227,7 @@ mod tests {
             0,
             renderer_client().expect("test client should initialize"),
             test_server(),
+            "test-session-token".to_owned(),
         );
         fs::write(&path, "# After refresh\n\nChanged content.")
             .expect("test document should update");
@@ -259,6 +263,7 @@ mod tests {
             0,
             renderer_client().expect("test client should initialize"),
             test_server(),
+            "test-session-token".to_owned(),
         );
         fs::remove_file(&path).expect("test document should be removable");
 
@@ -304,6 +309,7 @@ mod tests {
             0,
             renderer_client().expect("test client should initialize"),
             test_server(),
+            "test-session-token".to_owned(),
         );
         fs::write(&document_path, "[Source](../src/lib.rs)").expect("test document should update");
 

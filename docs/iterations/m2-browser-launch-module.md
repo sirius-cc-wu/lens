@@ -26,7 +26,7 @@ Artifacts to Start:
 Artifacts to Refine:
 
 - Browser launch implementation and tests:
-  [`src/viewer/browser.rs`](../../src/viewer/browser.rs)
+  [`src/browser.rs`](../../src/browser.rs)
 - Viewer composition root:
   [`src/viewer/mod.rs`](../../src/viewer/mod.rs) - delegate the existing launch call to the new module.
 

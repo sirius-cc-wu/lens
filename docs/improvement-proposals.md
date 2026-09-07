@@ -227,3 +227,64 @@ This proposal is not implemented.
   violation fails with actionable output. The changelog, `Cargo.toml`, tag, and
   platform documentation agree on the release, and all published archives pass
   the release-readiness walkthrough.
+
+## 20. Measured and Bounded Background-Service Lifecycle
+
+Define measured resource budgets and a user-visible lifecycle policy for the
+per-user background service. The current service retains every successful
+viewing session and every completed request outcome until the process exits, so
+memory, document-refresh work, loopback listeners, and request-ledger entries
+can continue to grow after browser views close. [C16](iterations/c16-background-service-transition.md)
+measured about 117 KiB per additional one-document session after first-use
+initialization and about 1.4% of one CPU for 50 idle refresh tasks on one Linux
+reference host. Those results provide a comparison baseline, not a lifetime
+bound or a cross-platform guarantee.
+
+Measure session and request-ledger growth separately across increasing command
+counts, service lifetimes, and document-set sizes on supported platforms.
+Record resident memory, idle CPU, open listeners, retained sessions, and
+completed request records before selecting limits or cleanup timing. Reuse the
+large-repository fixtures from
+[improvement 14](#14-measured-large-repository-scalability) to expose
+interactions between the number of sessions and the size of each session. Do
+not assume that closing one browser tab means a session is unused because the
+same URL may remain open in another tab or browser.
+
+Use that evidence to choose separate policies for retiring viewing sessions,
+removing completed request records after the transport-retry window, and
+stopping an empty background service. Candidate controls include browser
+leases or close signals, inactivity-based retirement, bounded request-record
+retention, and an explicit stop command. The selected policies must preserve
+active viewing URLs and automatic refresh, prevent one transport retry from
+creating a duplicate session, keep session authorization isolated, and let a
+later `lens` command automatically start a service after shutdown. Transparent
+transfer of existing viewing URLs to another process and remote service
+administration remain out of scope.
+
+Add automated lifecycle checks with controllable time for retirement,
+request-record removal, retry idempotency, and restart behavior. Record the
+accepted budgets and user-visible policy in release and operational guidance;
+do not implement one of the candidate controls before the measurements and
+policy decision are reviewed.
+
+### Manual end-to-end test
+
+This proposal is not implemented.
+
+- **Setup:** Use the proposal's repeatable lifecycle measurement harness with a
+  repository containing one document and the 1,000- and 10,000-document
+  fixtures from improvement 14. Record the Lens build, operating system,
+  processor, memory, selected lifecycle limits, and service process identifier.
+- **Actions:** Open enough distinct views to exercise the selected session and
+  request-record limits. Keep one view active and saving successfully, close
+  the other browser views, and wait through the documented retirement period.
+  Use the harness to record memory, idle CPU, open listeners, retained sessions,
+  and request records before the commands, at peak use, and after cleanup. If
+  the selected policy stops an empty service, retire the final view and then
+  invoke `lens` again.
+- **Expected result:** The active view remains reachable and refreshes saved
+  content. Eligible inactive sessions and old request records are removed
+  within the documented policy, and measured resources return within the
+  accepted budgets. A later command either reuses the live service or starts a
+  replacement automatically, while session isolation and retry idempotency
+  remain verified by the automated lifecycle checks.
