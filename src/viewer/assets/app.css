@@ -22,6 +22,7 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .markdown-table th:first-child, .markdown-table td:first-child { white-space: nowrap; }
 .diagram { margin: 1.5rem 0; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; }
 .diagram img { display: block; width: 100%; height: auto; }
+.mermaid-target svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .diagram-error { color: #9c2f19; font-family: system-ui, sans-serif; font-weight: 700; }
 .diagram button { margin-top: .75rem; }
 .diagram-source { margin-top: .75rem; }

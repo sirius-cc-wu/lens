@@ -1,8 +1,8 @@
 # Lens
 
-Lens is a cross-platform command-line viewer for repository Markdown and
-PlantUML diagrams. It starts loopback-only browser sessions and does not depend
-on Obsidian.
+Lens is a cross-platform command-line viewer for repository Markdown,
+PlantUML, and Mermaid diagrams. It starts loopback-only browser sessions and
+does not depend on Obsidian.
 
 ## Requirements
 
@@ -178,11 +178,11 @@ the opening and closing `---` or `...` delimiters from the body. If the YAML is
 invalid, the page explains how to correct the header and still renders the
 Markdown body.
 
-## V1 Scope
+## Scope
 
-Lens remains a documentation viewer. It does not render source-code files,
-edit documents, or render Mermaid. Qualifying repository file links may hand
-their validated local path to VS Code as described above.
+Lens remains a documentation viewer. It does not render source-code files
+or edit documents. Qualifying repository file links may hand their validated
+local path to VS Code as described above.
 
 ## License
 

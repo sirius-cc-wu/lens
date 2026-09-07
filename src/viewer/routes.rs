@@ -10,7 +10,10 @@ use axum::{
 };
 
 use super::{
-    page::{app_script, app_stylesheet, content_security_policy, document_unavailable_page, page},
+    page::{
+        app_script, app_stylesheet, content_security_policy, document_unavailable_page,
+        mermaid_script, page,
+    },
     rendering::request_diagram,
     state::ViewerState,
 };
@@ -22,6 +25,7 @@ pub(super) fn router(state: Arc<ViewerState>) -> Router {
         .route("/revisions/*document_id", get(document_revision))
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
+        .route("/mermaid.js", get(mermaid_script_route))
         .route("/diagrams/:document_id/:diagram_id", get(diagram))
         .fallback(not_found)
         .layer(middleware::from_fn_with_state(
@@ -122,6 +126,13 @@ async fn script() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         app_script(),
+    )
+}
+
+async fn mermaid_script_route() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        mermaid_script(),
     )
 }
 
@@ -242,6 +253,7 @@ mod tests {
             "/revisions/README.md",
             "/app.css",
             "/app.js",
+            "/mermaid.js",
             "/diagrams/0/0",
         ] {
             let request = Request::builder()
@@ -409,7 +421,27 @@ mod tests {
                 .headers()
                 .get("content-security-policy")
                 .expect("CSP should be set"),
-            "default-src 'self'; base-uri 'none'; img-src 'self'; object-src 'none'; script-src 'self'; style-src 'self'"
+            "default-src 'self'; base-uri 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+        );
+    }
+
+    #[tokio::test]
+    async fn authed_mermaid_script_request_then_returns_javascript_content() {
+        // Arrange
+        let app = test_router();
+        let request = authed_request("/mermaid.js");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .expect("content type should be set"),
+            "text/javascript; charset=utf-8"
         );
     }
 }
