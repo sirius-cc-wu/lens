@@ -29,6 +29,7 @@ pub fn render(
     let mut events = Vec::new();
     let mut diagrams = Vec::new();
     let mut plantuml_source: Option<String> = None;
+    let mut mermaid_source: Option<String> = None;
     let mut source_link_stack = Vec::new();
 
     for event in parser {
@@ -51,11 +52,29 @@ pub fn render(
             continue;
         }
 
+        if let Some(source) = mermaid_source.as_mut() {
+            match event {
+                Event::End(Tag::CodeBlock(_)) => {
+                    let source = mermaid_source.take().expect("Mermaid source is active");
+                    events.push(Event::Html(mermaid_placeholder(&source).into()));
+                }
+                Event::Text(text) | Event::Code(text) => source.push_str(&text),
+                Event::SoftBreak | Event::HardBreak => source.push('\n'),
+                _ => {}
+            }
+            continue;
+        }
+
         match event {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(language)))
                 if language.trim().eq_ignore_ascii_case("plantuml") =>
             {
                 plantuml_source = Some(String::new());
+            }
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(language)))
+                if language.trim().eq_ignore_ascii_case("mermaid") =>
+            {
+                mermaid_source = Some(String::new());
             }
             Event::Start(Tag::Link(link_type, destination, title)) => {
                 let resolved = if link_type == LinkType::Email {
@@ -291,6 +310,13 @@ pub fn render_standalone_plantuml(document_id: usize, source: &str) -> RenderedD
 fn diagram_placeholder(document_id: usize, diagram_id: usize, source: &str) -> String {
     format!(
         r#"<figure class="diagram" data-diagram-container><img src="/diagrams/{document_id}/{diagram_id}" alt="Rendered PlantUML diagram" data-diagram><p class="diagram-error" hidden>PlantUML rendering failed. The source is shown below.</p><button type="button" data-diagram-retry hidden>Retry diagram rendering</button><details class="diagram-source"><summary>PlantUML source</summary><pre><code>{}</code></pre></details></figure>"#,
+        escape_html(source),
+    )
+}
+
+fn mermaid_placeholder(source: &str) -> String {
+    format!(
+        r#"<figure class="diagram mermaid-diagram" data-mermaid-container><div class="mermaid-target"></div><p class="diagram-error" hidden>Mermaid rendering failed. The source is shown below.</p><details class="diagram-source"><summary>Mermaid source</summary><pre><code>{}</code></pre></details></figure>"#,
         escape_html(source),
     )
 }
@@ -749,6 +775,71 @@ mod tests {
 
         // Assert
         assert!(document.html.contains("&lt;unsafe&gt;"));
+    }
+
+    #[test]
+    fn mermaid_block_then_emits_mermaid_placeholder_and_no_server_diagram() {
+        // Arrange
+        let markdown = "```mermaid\ngraph TD;\nA-->B;\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert_eq!(document.diagrams.len(), 0);
+        assert!(document.html.contains(r#"class="diagram mermaid-diagram""#));
+        assert!(document.html.contains(r#"data-mermaid-container"#));
+        assert!(document
+            .html
+            .contains(r#"<div class="mermaid-target"></div>"#));
+        assert!(document
+            .html
+            .contains(r#"<p class="diagram-error" hidden>Mermaid rendering failed. The source is shown below.</p>"#));
+        assert!(document
+            .html
+            .contains(r#"<details class="diagram-source"><summary>Mermaid source</summary><pre><code>graph TD;"#));
+        assert!(document.html.contains("A--&gt;B;"));
+    }
+
+    #[test]
+    fn mermaid_block_with_mixed_case_language_then_emits_mermaid_placeholder() {
+        // Arrange
+        let markdown = "```MeRmAiD\nflowchart LR\nStart --> Stop\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(r#"class="diagram mermaid-diagram""#));
+        assert!(document.html.contains("flowchart LR"));
+    }
+
+    #[test]
+    fn mermaid_source_with_html_then_escapes_source_in_details() {
+        // Arrange
+        let markdown = "```mermaid\ngraph TD;\nA[<div id=\"danger\">] --> B;\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains("&lt;div id=&quot;danger&quot;&gt;"));
+        assert!(!document.html.contains("<div id=\"danger\">"));
+    }
+
+    #[test]
+    fn mixed_plantuml_and_mermaid_document_then_emits_both_diagram_types() {
+        // Arrange
+        let markdown = "# System\n\n```plantuml\n@startuml\nnode Server\n@enduml\n```\n\n```mermaid\nsequenceDiagram\nClient->>Server: ping\n```";
+
+        // Act
+        let document = render_test(markdown, 1, "doc.md", &BTreeSet::new());
+
+        // Assert
+        assert_eq!(document.diagrams.len(), 1);
+        assert!(document.html.contains(r#"src="/diagrams/1/0""#));
+        assert!(document.html.contains(r#"class="diagram mermaid-diagram""#));
+        assert!(document.html.contains("Client-&gt;&gt;Server: ping"));
     }
 
     fn temporary_source_link_root(name: &str) -> PathBuf {

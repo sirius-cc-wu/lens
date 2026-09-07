@@ -19,6 +19,55 @@ for (const image of document.querySelectorAll('[data-diagram]')) {
   }
 }
 
+if (typeof mermaid !== 'undefined') {
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme: 'neutral',
+    suppressErrorRendering: true,
+    secure: [
+      'secure',
+      'securityLevel',
+      'startOnLoad',
+      'maxTextSize',
+      'suppressErrorRendering',
+      'maxEdges',
+      'fontFamily',
+      'themeCSS',
+      'altFontFamily',
+      'themeVariables',
+    ],
+  });
+
+  let mermaidCounter = 0;
+  for (const container of document.querySelectorAll('[data-mermaid-container]')) {
+    const target = container.querySelector('.mermaid-target');
+    const errorMsg = container.querySelector('.diagram-error');
+    const details = container.querySelector('.diagram-source');
+    const source = details ? details.querySelector('code').textContent : '';
+    const id = `mermaid-svg-${++mermaidCounter}`;
+
+    try {
+      const renderPromise = mermaid.render(id, source);
+      if (renderPromise && typeof renderPromise.then === 'function') {
+        renderPromise
+          .then(({ svg }) => {
+            target.innerHTML = svg;
+          })
+          .catch((_error) => {
+            target.hidden = true;
+            errorMsg.hidden = false;
+            details.open = true;
+          });
+      }
+    } catch (_error) {
+      target.hidden = true;
+      errorMsg.hidden = false;
+      details.open = true;
+    }
+  }
+}
+
 const documentView = document.querySelector('[data-document-id][data-document-revision]');
 if (documentView) {
   const documentId = documentView.dataset.documentId;

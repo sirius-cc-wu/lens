@@ -145,6 +145,7 @@ fn acquire_lock(path: &Path) -> Result<fs::File, EndpointError> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .mode(0o600)
         .open(lock_path)
         .map_err(|source| EndpointError::io("Could not open the Lens command lock file", source))?;

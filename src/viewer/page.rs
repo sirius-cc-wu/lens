@@ -2,6 +2,8 @@ use crate::markdown::escape_html;
 
 const APP_SCRIPT: &str = include_str!("assets/app.js");
 const APP_STYLESHEET: &str = include_str!("assets/app.css");
+// Bundled Mermaid 11.17.2 from https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js
+const MERMAID_SCRIPT: &str = include_str!("assets/mermaid.min.js");
 
 pub(super) fn app_script() -> &'static str {
     embedded_asset(APP_SCRIPT)
@@ -9,6 +11,10 @@ pub(super) fn app_script() -> &'static str {
 
 pub(super) fn app_stylesheet() -> &'static str {
     embedded_asset(APP_STYLESHEET)
+}
+
+pub(super) fn mermaid_script() -> &'static str {
+    embedded_asset(MERMAID_SCRIPT)
 }
 
 fn embedded_asset(asset: &'static str) -> &'static str {
@@ -50,6 +56,7 @@ pub(super) fn page(
       <article>{document_html}</article>
     </section>
   </main>
+  <script src="/mermaid.js?token={}"></script>
   <script src="/app.js?token={}"></script>
 </body>
 </html>"#,
@@ -57,6 +64,7 @@ pub(super) fn page(
         session_token,
         session_token,
         escape_html(title),
+        session_token,
         session_token,
     )
 }
@@ -130,7 +138,7 @@ pub(super) fn inject_capability(html: &str, token: &str) -> String {
 }
 
 pub(super) fn content_security_policy() -> &'static str {
-    "default-src 'self'; base-uri 'none'; img-src 'self'; object-src 'none'; script-src 'self'; style-src 'self'"
+    "default-src 'self'; base-uri 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
 }
 
 #[cfg(test)]
@@ -195,6 +203,7 @@ mod tests {
         // Assert
         assert!(rendered.contains(r#"<meta name="referrer" content="no-referrer">"#));
         assert!(rendered.contains(r#"<link rel="stylesheet" href="/app.css?token=test-token">"#));
+        assert!(rendered.contains(r#"<script src="/mermaid.js?token=test-token"></script>"#));
         assert!(rendered.contains(r#"<script src="/app.js?token=test-token"></script>"#));
         assert!(rendered.contains(r#"data-session-token="test-token""#));
     }

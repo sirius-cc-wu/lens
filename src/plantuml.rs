@@ -29,7 +29,7 @@ fn encode(source: &str) -> String {
         .finish()
         .expect("finishing an in-memory buffer cannot fail");
 
-    let mut encoded = String::with_capacity((compressed.len() + 2) / 3 * 4);
+    let mut encoded = String::with_capacity(compressed.len().div_ceil(3) * 4);
     for chunk in compressed.chunks(3) {
         let first = chunk[0];
         let second = chunk.get(1).copied().unwrap_or_default();
