@@ -11,7 +11,7 @@ Mermaid is widely used across GitHub-flavored Markdown documentation. Lens curre
 - **Language / Runtime:** Rust 1.75+ (2021 edition)
 - **Markdown Parsing:** `pulldown-cmark` (v0.9.3)
 - **HTTP / Loopback Server:** `axum` (v0.6.20)
-- **Diagram Rendering:** Client-side [Mermaid](https://mermaid.js.org/) JavaScript library (vendored and embedded into the binary via `include_str!`)
+- **Diagram Rendering:** Client-side [Mermaid](https://mermaid.js.org/) JavaScript library (vendored version 11.17.2 from `https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js`, embedded into the binary via `include_str!`)
 - **Browser Runtime:** Modern browser (Chromium, Firefox, Safari)
 
 ## Commands

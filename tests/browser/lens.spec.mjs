@@ -850,6 +850,94 @@ test("second_port_navigation_then_no_capability_transmitted_and_unauthenticated_
   }
 });
 
+test("mermaid_diagram_with_font_family_override_then_does_not_alter_document_body_styles", async ({
+  page,
+}) => {
+  // Arrange
+  const readme = [
+    "# Mermaid Security Fixture",
+    "",
+    "Text before diagram.",
+    "",
+    "```mermaid",
+    '%%{init: {"fontFamily": "x;a{b} :not(&){display:none !important} c{d}"}}%%',
+    "flowchart LR",
+    "A-->B",
+    "```",
+    "",
+    "Text after diagram.",
+    "",
+    "```mermaid",
+    "flowchart LR",
+    "C-->D",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Mermaid Security Fixture" })).toBeVisible();
+    await expect(page.locator("article")).toContainText("Text before diagram.");
+    await expect(page.locator("article")).toContainText("Text after diagram.");
+
+    const bodyDisplay = await page.evaluate(() => getComputedStyle(document.body).display);
+    expect(bodyDisplay).toBe("block");
+
+    const diagrams = page.locator("[data-mermaid-container]");
+    await expect(diagrams).toHaveCount(2);
+    await expect(diagrams.nth(0).locator(".mermaid-target svg")).toBeVisible();
+    await expect(diagrams.nth(1).locator(".mermaid-target svg")).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("mermaid_gantt_with_all_weekdays_excluded_then_does_not_hang_and_reveals_source", async ({
+  page,
+}) => {
+  // Arrange
+  const readme = [
+    "# Mermaid Gantt Fixture",
+    "",
+    "```mermaid",
+    "gantt",
+    "  excludes monday,tuesday,wednesday,thursday,friday,saturday,sunday",
+    "  Task :2025-01-01, 1d",
+    "```",
+    "",
+    "```mermaid",
+    "flowchart LR",
+    "A-->B",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Mermaid Gantt Fixture" })).toBeVisible();
+
+    const diagrams = page.locator("[data-mermaid-container]");
+    await expect(diagrams).toHaveCount(2);
+
+    const invalidGantt = diagrams.nth(0);
+    await expect(invalidGantt.locator(".diagram-error")).toBeVisible();
+    await expect(invalidGantt.locator(".diagram-source")).toHaveAttribute("open", "");
+    await expect(invalidGantt.locator(".diagram-source code")).toContainText("excludes monday,tuesday");
+
+    const validFlowchart = diagrams.nth(1);
+    await expect(validFlowchart.locator(".mermaid-target svg")).toBeVisible();
+    await expect(validFlowchart.locator(".diagram-error")).toBeHidden();
+  } finally {
+    await fixture.stop();
+  }
+});
+
 async function startBrowserFixture({
   hiddenDocument,
   readme,

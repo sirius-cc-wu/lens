@@ -4,6 +4,9 @@ Reviewed `723937f6f32085ecc648248dec5dcb7504608dc2` (merge base with
 `main`) through `a630ad36ad879ae1fd24341570693f8b3fe1ff8a` on
 `feat/mermaid-diagram-rendering`. Recommendation: address both findings before merging.
 
+Resolution status: Both findings were resolved after review and passed the
+resolution validation recorded below.
+
 1. **[Medium] Prevent diagram configuration from styling the entire document** — [src/viewer/assets/app.js:23](../../src/viewer/assets/app.js#L23)
 
    Explanation and impact: The new initialization accepts diagram-level CSS configuration from the bundled Mermaid renderer. Its CSS scoping can be escaped, and the page now allows inline styles under its Content Security Policy (CSP). A repository Mermaid fence can therefore hide or alter unrelated document content without running a script. In Chromium, the following input made `getComputedStyle(document.body).display` equal `none`; both diagrams still reported successful rendering, so the error fallback never appeared. Before this change the fence was escaped code. This matches [Mermaid advisory GHSA-87f9-hvmw-gh4p](https://github.com/mermaid-js/mermaid/security/advisories/GHSA-87f9-hvmw-gh4p). External data theft was not demonstrated and is not claimed under Lens's CSP.
@@ -45,6 +48,8 @@ Reviewed `723937f6f32085ecc648248dec5dcb7504608dc2` (merge base with
    note right of Page: Surrounding content remains visible
    @enduml
    ```
+
+   Resolution: Resolved after review. Vendored maintained Mermaid 11.17.2 release covering GHSA-87f9-hvmw-gh4p, recorded version and origin in `src/viewer/page.rs` and specification, and enforced `secure` configuration in `src/viewer/assets/app.js` prohibiting diagram overrides of `fontFamily`, `themeCSS`, `altFontFamily`, and `themeVariables` while maintaining `securityLevel: 'strict'`. Added real-browser regression test `mermaid_diagram_with_font_family_override_then_does_not_alter_document_body_styles` in `tests/browser/lens.spec.mjs`.
 
 2. **[Medium] Replace the Gantt renderer that loops forever on excluded dates** — [src/viewer/assets/app.js:39](../../src/viewer/assets/app.js#L39)
 
@@ -92,6 +97,8 @@ Reviewed `723937f6f32085ecc648248dec5dcb7504608dc2` (merge base with
    @enduml
    ```
 
+   Resolution: Resolved after review. Replaced vendored bundle with Mermaid 11.17.2 containing the Gantt loop termination fix. Added isolated browser regression test `mermaid_gantt_with_all_weekdays_excluded_then_does_not_hang_and_reveals_source` in `tests/browser/lens.spec.mjs` verifying that an impossible schedule chart does not hang the browser thread, reveals source and error banner, and allows subsequent diagrams to complete rendering.
+
 ## Validation and scope
 
 - Inspected all changed files, Markdown escaping and diagram extraction, page asset embedding, route authentication, live-refresh polling, viewer state refresh, and the incidental Rust changes.
@@ -102,3 +109,12 @@ Reviewed `723937f6f32085ecc648248dec5dcb7504608dc2` (merge base with
 - Real-browser tests used Playwright with an isolated installed Chrome browser, a temporary loopback HTTP fixture, the exact committed JavaScript assets, UTF-8 responses, and the exact committed CSP. Flowchart, sequence, and class diagrams rendered; malformed syntax revealed source and did not prevent a later valid diagram from rendering. The two findings above were reproduced with these same assets and CSP.
 - Browser fixture tests did not exercise the full running Rust server or file watcher. Rust route and state tests cover those layers; end-to-end file editing, Firefox, and Safari were not exercised. The bundled third-party code was examined around relevant rendering and configuration paths, not audited line by line in its entirety.
 - All four PlantUML blocks validated against the configured default server, `https://www.plantuml.com/plantuml`: successful SVG responses with no `X-PlantUML-Diagram-Error` headers.
+
+## Resolution Validation
+
+- Both findings were resolved and verified across the codebase.
+- `cargo fmt --check`: passed cleanly.
+- `cargo test --locked`: passed all 128 library tests and 6 CLI integration tests.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`: passed with 0 warnings.
+- `node --check src/viewer/assets/mermaid.min.js`: passed.
+- `npm run test:browser`: passed all 32 compiled-browser scenarios, including browser regressions for both findings.

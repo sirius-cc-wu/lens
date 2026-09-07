@@ -22,9 +22,21 @@ for (const image of document.querySelectorAll('[data-diagram]')) {
 if (typeof mermaid !== 'undefined') {
   mermaid.initialize({
     startOnLoad: false,
-    securityLevel: 'antiscript',
+    securityLevel: 'strict',
     theme: 'neutral',
     suppressErrorRendering: true,
+    secure: [
+      'secure',
+      'securityLevel',
+      'startOnLoad',
+      'maxTextSize',
+      'suppressErrorRendering',
+      'maxEdges',
+      'fontFamily',
+      'themeCSS',
+      'altFontFamily',
+      'themeVariables',
+    ],
   });
 
   let mermaidCounter = 0;

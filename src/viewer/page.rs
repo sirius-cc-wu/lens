@@ -2,6 +2,7 @@ use crate::markdown::escape_html;
 
 const APP_SCRIPT: &str = include_str!("assets/app.js");
 const APP_STYLESHEET: &str = include_str!("assets/app.css");
+// Bundled Mermaid 11.17.2 from https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js
 const MERMAID_SCRIPT: &str = include_str!("assets/mermaid.min.js");
 
 pub(super) fn app_script() -> &'static str {
