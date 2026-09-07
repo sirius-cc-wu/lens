@@ -16,6 +16,7 @@ pub(crate) type ServerConnection = UnixStream;
 pub(crate) struct Listener {
     inner: UnixListener,
     path: PathBuf,
+    _lock: fs::File,
     device: u64,
     inode: u64,
 }
@@ -83,22 +84,12 @@ fn runtime_directory_for(xdg: Option<&Path>, fallback_parent: &Path, uid: u32) -
 }
 
 fn prepare_runtime_directory(path: &Path) -> Result<(), EndpointError> {
-    match fs::symlink_metadata(path) {
+    match fs::DirBuilder::new().mode(0o700).create(path) {
         Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::DirBuilder::new()
-                .mode(0o700)
-                .create(path)
-                .map_err(|source| {
-                    EndpointError::io(
-                        "Could not create the private Lens runtime directory",
-                        source,
-                    )
-                })?;
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(source) => {
             return Err(EndpointError::io(
-                "Could not inspect the Lens runtime directory",
+                "Could not create the private Lens runtime directory",
                 source,
             ));
         }
@@ -141,7 +132,42 @@ async fn connect_at(path: &Path) -> Result<ClientConnection, EndpointError> {
     })
 }
 
+fn lock_path_for(path: &Path) -> PathBuf {
+    path.with_extension("lock")
+}
+
+fn acquire_lock(path: &Path) -> Result<fs::File, EndpointError> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::io::AsRawFd;
+
+    let lock_path = lock_path_for(path);
+    let lock_file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .open(lock_path)
+        .map_err(|source| EndpointError::io("Could not open the Lens command lock file", source))?;
+
+    // SAFETY: flock is called on a valid open file descriptor with standard non-blocking exclusive lock flags.
+    let rc = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if rc != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.raw_os_error() == Some(libc::EWOULDBLOCK) || err.raw_os_error() == Some(libc::EAGAIN)
+        {
+            return Err(EndpointError::AlreadyOwned);
+        }
+        return Err(EndpointError::io(
+            "Could not lock the Lens command lock file",
+            err,
+        ));
+    }
+
+    Ok(lock_file)
+}
+
 fn claim_at(path: &Path) -> Result<Listener, EndpointError> {
+    let lock_file = acquire_lock(path)?;
     remove_verified_stale_socket(path)?;
     let inner = UnixListener::bind(path).map_err(|source| {
         if source.kind() == std::io::ErrorKind::AddrInUse {
@@ -162,6 +188,7 @@ fn claim_at(path: &Path) -> Result<Listener, EndpointError> {
     Ok(Listener {
         inner,
         path: path.to_path_buf(),
+        _lock: lock_file,
         device: metadata.dev(),
         inode: metadata.ino(),
     })
@@ -246,7 +273,7 @@ mod tests {
     use tokio::sync::Barrier;
 
     use super::{
-        authorize, authorize_user, claim_at, connect_at, effective_user_id,
+        acquire_lock, authorize, authorize_user, claim_at, connect_at, effective_user_id,
         prepare_runtime_directory, EndpointError,
     };
 
@@ -427,6 +454,96 @@ mod tests {
             "unrelated application socket"
         );
         assert!(socket_path.exists());
+        drop(listener);
+        fs::remove_dir_all(root).expect("test fixture should be removable");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_runtime_directory_creations_then_all_contenders_succeed_safely() {
+        // Arrange
+        let root = std::env::temp_dir().join(format!(
+            "lens-runtime-race-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should advance")
+                .as_nanos()
+        ));
+        if root.exists() {
+            let _ = fs::remove_dir_all(&root);
+        }
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&root)
+            .expect("root directory should be created");
+        let target_dir = root.join("lens");
+        let contenders = 16;
+        let barrier = Arc::new(Barrier::new(contenders));
+        let mut handles = Vec::with_capacity(contenders);
+
+        // Act
+        for _ in 0..contenders {
+            let b = barrier.clone();
+            let d = target_dir.clone();
+            handles.push(tokio::spawn(async move {
+                b.wait().await;
+                prepare_runtime_directory(&d)
+            }));
+        }
+
+        let mut results = Vec::with_capacity(contenders);
+        for handle in handles {
+            results.push(handle.await.expect("task should complete"));
+        }
+
+        // Assert
+        for result in results {
+            assert!(
+                result.is_ok(),
+                "every contender should safely prepare the directory: {result:?}"
+            );
+        }
+        let metadata = fs::symlink_metadata(&target_dir).expect("created directory should exist");
+        assert!(metadata.file_type().is_dir());
+        assert_eq!(metadata.uid(), effective_user_id());
+        assert_eq!(metadata.mode() & 0o077, 0);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn contender_holding_lock_before_listen_then_second_claim_reports_already_owned() {
+        // Arrange
+        let (root, path) = endpoint_fixture("lock-exclusion");
+        let initial_lock = acquire_lock(&path).expect("first contender should acquire lock");
+
+        // Act
+        let claim_attempt = claim_at(&path);
+
+        // Assert
+        assert!(matches!(claim_attempt, Err(EndpointError::AlreadyOwned)));
+        drop(initial_lock);
+
+        let subsequent_claim = claim_at(&path);
+        assert!(subsequent_claim.is_ok());
+        drop(subsequent_claim);
+        fs::remove_dir_all(root).expect("test fixture should be removable");
+    }
+
+    #[tokio::test]
+    async fn stale_socket_with_released_lock_then_next_claim_cleans_and_succeeds() {
+        // Arrange
+        let (root, path) = endpoint_fixture("stale-lock-released");
+        let lock = acquire_lock(&path).expect("lock should be acquired");
+        let stale = StdUnixListener::bind(&path).expect("stale socket should bind");
+        drop(lock);
+        drop(stale);
+
+        // Act
+        let listener = claim_at(&path);
+
+        // Assert
+        assert!(listener.is_ok());
         drop(listener);
         fs::remove_dir_all(root).expect("test fixture should be removable");
     }

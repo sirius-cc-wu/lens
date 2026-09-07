@@ -99,7 +99,7 @@ test("save displayed document then refreshes browser view automatically", async 
   try {
     await page.goto(fixture.lens.url);
     await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
-    const revision = await page.request.get(`${fixture.lens.origin}/revisions/README.md`);
+    const revision = await page.request.get(fixture.lens.urlFor("/revisions/README.md"));
     expect(revision.status()).toBe(200);
     expect(await revision.text()).toBe("0");
 
@@ -554,11 +554,11 @@ test("document_external_and_fragment_links_then_preserve_browser_destinations", 
     // Assert
     await expect(page.getByRole("link", { name: "Guide document" })).toHaveAttribute(
       "href",
-      "/documents/guides/guide.md",
+      `/documents/guides/guide.md?token=${fixture.lens.token}`,
     );
     await expect(page.getByRole("link", { name: "PlantUML document" })).toHaveAttribute(
       "href",
-      "/documents/architecture.puml",
+      `/documents/architecture.puml?token=${fixture.lens.token}`,
     );
     await expect(page.getByRole("link", { name: "External site" })).toHaveAttribute(
       "href",
@@ -589,10 +589,10 @@ test("source_link_then_does_not_add_source_content_route", async ({ page }) => {
 
     // Act
     const sourceRoute = await page.request.get(
-      `${fixture.lens.origin}/source?path=src%2Fexample.rs`,
+      `${fixture.lens.origin}/source?token=${fixture.lens.token}&path=src%2Fexample.rs`,
     );
     const documentRoute = await page.request.get(
-      `${fixture.lens.origin}/documents/src/example.rs`,
+      fixture.lens.urlFor("/documents/src/example.rs"),
     );
 
     // Assert
@@ -688,7 +688,7 @@ test("renderer disable request then returns not found", async ({ page }) => {
     await expect.poll(() => fixture.renderer.requests).toBe(1);
 
     // Act
-    const response = await page.request.post(`${fixture.lens.origin}/renderer/disable`);
+    const response = await page.request.post(fixture.lens.urlFor("/renderer/disable"));
 
     // Assert
     expect(response.status()).toBe(404);
@@ -751,6 +751,102 @@ test("cross_session_request_then_cannot_access_other_session", async ({ page }) 
   } finally {
     await secondFixture.stop();
     await firstFixture.stop();
+  }
+});
+
+test("shared_browser_context_then_two_sessions_isolate_and_refresh_independently", async ({
+  context,
+}) => {
+  // Arrange
+  const firstFixture = await startBrowserFixture({
+    readme: "# First document\n\nInitial first content.\n\n[Open first guide](guides/guide.md)\n",
+  });
+  const secondFixture = await startBrowserFixture({
+    readme: "# Second document\n\nInitial second content.\n\n[Open second guide](guides/guide.md)\n",
+  });
+
+  const firstPage = await context.newPage();
+  const secondPage = await context.newPage();
+
+  try {
+    // Act
+    await firstPage.goto(firstFixture.lens.url);
+    await expect(firstPage.getByRole("heading", { level: 1, name: "First document" })).toBeVisible();
+    await expect(firstPage.locator("article")).toContainText("Initial first content.");
+    await firstPage.getByRole("link", { name: "Open first guide" }).click();
+    await expect(firstPage.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
+    await firstPage.goBack();
+    await expect(firstPage.getByRole("heading", { level: 1, name: "First document" })).toBeVisible();
+
+    await secondPage.goto(secondFixture.lens.url);
+    await expect(secondPage.getByRole("heading", { level: 1, name: "Second document" })).toBeVisible();
+    await expect(secondPage.locator("article")).toContainText("Initial second content.");
+    await secondPage.getByRole("link", { name: "Open second guide" }).click();
+    await expect(secondPage.getByRole("heading", { level: 1, name: "Guide page" })).toBeVisible();
+    await secondPage.goBack();
+    await expect(secondPage.getByRole("heading", { level: 1, name: "Second document" })).toBeVisible();
+
+    // Update both documents to verify live refresh isolation
+    await writeFile(
+      join(firstFixture.repository.directory, "README.md"),
+      "# First document\n\nUpdated first content.\n",
+    );
+    await writeFile(
+      join(secondFixture.repository.directory, "README.md"),
+      "# Second document\n\nUpdated second content.\n",
+    );
+
+    // Assert
+    await expect(firstPage.locator("article")).toContainText("Updated first content.");
+    await expect(firstPage.locator("article")).not.toContainText("Second");
+
+    await expect(secondPage.locator("article")).toContainText("Updated second content.");
+    await expect(secondPage.locator("article")).not.toContainText("First");
+  } finally {
+    await firstPage.close();
+    await secondPage.close();
+    await secondFixture.stop();
+    await firstFixture.stop();
+  }
+});
+
+test("second_port_navigation_then_no_capability_transmitted_and_unauthenticated_replay_fails", async ({
+  page,
+}) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+  let capturedHeaders = null;
+  const captureServer = createServer((req, res) => {
+    if (req.url === "/capture") {
+      capturedHeaders = req.headers;
+    }
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end("<h1>Captured</h1>");
+  });
+  await new Promise((resolve) => captureServer.listen(0, "127.0.0.1", resolve));
+  const capturePort = captureServer.address().port;
+  const captureUrl = `http://127.0.0.1:${capturePort}/capture`;
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+    await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
+
+    await page.goto(captureUrl);
+    await expect(page.getByRole("heading", { level: 1, name: "Captured" })).toBeVisible();
+
+    // Assert
+    expect(capturedHeaders.cookie).toBeUndefined();
+    expect(capturedHeaders.referer).toBeUndefined();
+    expect(JSON.stringify(capturedHeaders)).not.toContain(fixture.lens.token);
+
+    const replayDocument = await page.request.get(fixture.lens.origin);
+    const replayDiagram = await page.request.get(`${fixture.lens.origin}/diagrams/0/0`);
+    expect(replayDocument.status()).toBe(401);
+    expect(replayDiagram.status()).toBe(401);
+  } finally {
+    await new Promise((resolve) => captureServer.close(resolve));
+    await fixture.stop();
   }
 });
 

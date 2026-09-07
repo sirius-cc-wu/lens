@@ -418,7 +418,9 @@ mod tests {
         // Arrange
         let mut fixture = TestRuntime::new("stale-endpoint");
         let document_root = fixture.document_root("recovered", "# Recovered command");
-        let endpoint = fixture.directory.join("service-v1.sock");
+        let lens_dir = fixture.directory.join("lens");
+        create_private_directory(&lens_dir);
+        let endpoint = lens_dir.join("service-v1.sock");
         let stale = std::os::unix::net::UnixListener::bind(&endpoint)
             .expect("stale endpoint should be creatable");
         drop(stale);
@@ -566,18 +568,26 @@ mod tests {
 
     impl TestRuntime {
         fn new(name: &str) -> Self {
+            let _ = name;
             let environment_guard = TEST_ENVIRONMENT
                 .lock()
                 .expect("test environment lock should be available");
             let sequence = FIXTURE_SEQUENCE.fetch_add(1, Ordering::SeqCst);
-            let directory = std::env::temp_dir().join(format!(
-                "lens-client-{}-{sequence}-{name}",
-                std::process::id()
-            ));
+            let directory =
+                std::env::temp_dir().join(format!("lc-{}-{sequence}", std::process::id()));
             if directory.exists() {
                 fs::remove_dir_all(&directory).expect("stale fixture should be removable");
             }
             create_private_directory(&directory);
+            #[cfg(unix)]
+            {
+                let socket_path = directory.join("lens").join("service-v1.sock");
+                assert!(
+                    socket_path.as_os_str().len() < 104,
+                    "fixture socket path exceeds Unix sockaddr_un.sun_path capacity: {}",
+                    socket_path.display()
+                );
+            }
             let previous_runtime_directory = std::env::var_os("XDG_RUNTIME_DIR");
             std::env::set_var("XDG_RUNTIME_DIR", &directory);
             Self {
@@ -818,6 +828,25 @@ mod tests {
             // Assert
             assert!(result.is_ok(), "expected ok for {destination}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fixture_socket_path_then_fits_within_unix_sun_path_limit() {
+        // Arrange
+        let deep_temp = PathBuf::from("/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T");
+        let sequence = 999;
+        let pid = 99999;
+
+        // Act
+        let directory = deep_temp.join(format!("lc-{pid}-{sequence}"));
+        let socket_path = directory.join("lens").join("service-v1.sock");
+
+        // Assert
+        assert!(
+            socket_path.as_os_str().len() < 104,
+            "simulated macOS socket path must fit within 104 bytes capacity"
+        );
     }
 
     #[cfg(unix)]

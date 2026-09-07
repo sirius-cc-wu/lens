@@ -36,25 +36,6 @@ async fn session_auth_middleware<B>(
     request: Request<B>,
     next: Next<B>,
 ) -> Response {
-    let has_valid_cookie = request
-        .headers()
-        .get(header::COOKIE)
-        .and_then(|value| value.to_str().ok())
-        .map(|cookie_header| {
-            cookie_header.split(';').any(|cookie| {
-                let mut parts = cookie.trim().splitn(2, '=');
-                match (parts.next(), parts.next()) {
-                    (Some("lens-session"), Some(val)) => val == state.session_token,
-                    _ => false,
-                }
-            })
-        })
-        .unwrap_or(false);
-
-    if has_valid_cookie {
-        return next.run(request).await;
-    }
-
     let query_token = request.uri().query().and_then(|query| {
         query.split('&').find_map(|param| {
             let mut parts = param.splitn(2, '=');
@@ -68,15 +49,10 @@ async fn session_auth_middleware<B>(
     if let Some(token) = query_token {
         if token == state.session_token {
             let mut response = next.run(request).await;
-            let cookie = format!(
-                "lens-session={}; HttpOnly; SameSite=Strict; Path=/",
-                state.session_token
+            response.headers_mut().insert(
+                header::REFERRER_POLICY,
+                HeaderValue::from_static("no-referrer"),
             );
-            if let Ok(header_value) = HeaderValue::from_str(&cookie) {
-                response
-                    .headers_mut()
-                    .append(header::SET_COOKIE, header_value);
-            }
             return response;
         }
     }
@@ -95,7 +71,7 @@ async fn document_view(
     let document_id = document_id.trim_start_matches('/');
     match state.known_documents.index(document_id) {
         Some(known_document) => rendered_document_response(&state, known_document),
-        None => not_found().await.into_response(),
+        None => not_found(State(state)).await.into_response(),
     }
 }
 
@@ -113,7 +89,7 @@ async fn document_revision(
                 .to_string(),
         )
             .into_response(),
-        None => not_found().await.into_response(),
+        None => not_found(State(state)).await.into_response(),
     }
 }
 
@@ -129,6 +105,7 @@ fn rendered_document_response(state: &ViewerState, document_id: usize) -> Respon
             &document.identifier,
             document.rendered.html.clone(),
             Some((&document.identifier, document.revision)),
+            &state.session_token,
         )),
     )
         .into_response()
@@ -148,11 +125,11 @@ async fn script() -> impl IntoResponse {
     )
 }
 
-async fn not_found() -> impl IntoResponse {
+async fn not_found(State(state): State<Arc<ViewerState>>) -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
         [(header::CONTENT_SECURITY_POLICY, content_security_policy())],
-        Html(document_unavailable_page()),
+        Html(document_unavailable_page(&state.session_token)),
     )
 }
 
@@ -233,9 +210,13 @@ mod tests {
     }
 
     fn authed_request(uri: &str) -> Request<Body> {
+        let authed_uri = if uri.contains('?') {
+            format!("{uri}&token={TEST_TOKEN}")
+        } else {
+            format!("{uri}?token={TEST_TOKEN}")
+        };
         Request::builder()
-            .uri(uri)
-            .header(header::COOKIE, format!("lens-session={TEST_TOKEN}"))
+            .uri(authed_uri)
             .body(Body::empty())
             .expect("test request should build")
     }
@@ -250,7 +231,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unauthenticated_request_without_token_or_cookie_then_returns_unauthorized() {
+    async fn unauthenticated_request_without_token_then_returns_unauthorized() {
         // Arrange
         let app = test_router();
 
@@ -281,7 +262,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn request_with_token_query_then_sets_cookie_and_returns_ok() {
+    async fn request_with_token_query_then_returns_ok_with_no_referrer_and_no_cookie() {
         // Arrange
         let app = test_router();
         let request = Request::builder()
@@ -294,15 +275,14 @@ mod tests {
 
         // Assert
         assert_eq!(response.status(), axum::http::StatusCode::OK);
-        let set_cookie = response
-            .headers()
-            .get(header::SET_COOKIE)
-            .expect("cookie should be set")
-            .to_str()
-            .expect("cookie should be UTF-8");
-        assert!(set_cookie.contains(&format!("lens-session={TEST_TOKEN}")));
-        assert!(set_cookie.contains("HttpOnly"));
-        assert!(set_cookie.contains("SameSite=Strict"));
+        assert!(response.headers().get(header::SET_COOKIE).is_none());
+        assert_eq!(
+            response
+                .headers()
+                .get(header::REFERRER_POLICY)
+                .expect("referrer policy should be set"),
+            "no-referrer"
+        );
     }
 
     #[tokio::test]
@@ -322,12 +302,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn request_with_mismatched_cookie_then_returns_unauthorized() {
+    async fn request_with_cookie_only_then_returns_unauthorized() {
         // Arrange
         let app = test_router();
         let request = Request::builder()
             .uri("/")
-            .header(header::COOKIE, "lens-session=wrong-token")
+            .header(header::COOKIE, format!("lens-session={TEST_TOKEN}"))
             .body(Body::empty())
             .expect("test request should build");
 
@@ -402,8 +382,7 @@ mod tests {
         let app = test_router();
         let request = Request::builder()
             .method("POST")
-            .uri("/renderer/disable")
-            .header(header::COOKIE, format!("lens-session={TEST_TOKEN}"))
+            .uri(format!("/renderer/disable?token={TEST_TOKEN}"))
             .body(Body::empty())
             .expect("disable request should build");
 

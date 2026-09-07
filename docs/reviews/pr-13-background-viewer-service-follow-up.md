@@ -16,6 +16,9 @@ This review covers the full PR and the fixes recorded in the
 [earlier review](pr-13-background-viewer-service.md). That historical record's
 resolution status does not establish approval of this revised head.
 
+Resolution status: All four findings were resolved after review and passed the
+resolution validation recorded below.
+
 ## Findings
 
 1. [High] Host-wide cookies break session isolation and disclose the browser credential — [`src/viewer/routes.rs:72`](../../src/viewer/routes.rs#L72)
@@ -98,6 +101,13 @@ resolution status does not establish approval of this revised head.
    test sends a mismatched query token without bootstrapping either session,
    so it cannot detect cookie replacement or disclosure.
 
+   Resolution: Resolved after review. Replaced host-wide cookies with URL
+   capability parameterization (`?token=<token>`). Injected `?token` into
+   generated local document, diagram, stylesheet, script, and revision request
+   URLs, and added `Referrer-Policy: no-referrer` to all responses and HTML
+   metadata. Added shared-browser-context multi-session tests and cross-port
+   request capture tests proving isolation and preventing credential disclosure.
+
 2. [Medium] The expanded endpoint path breaks the native macOS test suite — [`src/service/client.rs:573`](../../src/service/client.rs#L573)
 
    Explanation and impact: `TestRuntime::new` combines the platform temporary
@@ -153,6 +163,13 @@ resolution status does not establish approval of this revised head.
    fixture construction with a normal long macOS temporary-directory prefix
    and the longest scenario label, asserting the final pathname fits before
    starting any service.
+
+   Resolution: Resolved after review. Updated `TestRuntime::new` in
+   [`src/service/client.rs`](../../src/service/client.rs) to use a compact
+   `lc-{pid}-{seq}` naming convention, keeping verbose scenario labels out of
+   the runtime directory path. Added native sockaddr length assertions and a
+   simulated deep macOS temporary path unit test verifying socket paths fit
+   under the 104-byte limit.
 
 3. [Medium] Concurrent first commands can fail while creating the runtime directory — [`src/service/endpoint/unix.rs:91`](../../src/service/endpoint/unix.rs#L91)
 
@@ -218,6 +235,12 @@ resolution status does not establish approval of this revised head.
    unsafe competing entries. The existing concurrent client test uses a
    single-thread runtime and does not interleave the synchronous directory
    inspection and creation operations.
+
+   Resolution: Resolved after review. Updated `prepare_runtime_directory` in
+   [`src/service/endpoint/unix.rs`](../../src/service/endpoint/unix.rs) to accept
+   `std::io::ErrorKind::AlreadyExists` on directory creation and continue
+   safely through the existing directory type, UID ownership, and `0700`
+   permission validation. Added a concurrent 16-contender directory creation test.
 
 4. [Medium] A starting Unix listener can be mistaken for a stale socket — [`src/service/endpoint/unix.rs:182`](../../src/service/endpoint/unix.rs#L182)
 
@@ -295,6 +318,15 @@ resolution status does not establish approval of this revised head.
    connects below `lens/`, so that test currently exercises ordinary startup
    rather than stale recovery.
 
+   Resolution: Resolved after review. Implemented user-private advisory file locking
+   (`libc::flock` with `LOCK_EX | LOCK_NB` on a companion `.lock` file) in
+   [`src/service/endpoint/unix.rs`](../../src/service/endpoint/unix.rs) to serialize
+   stale-socket recovery and socket binding. The listener retains the lock file
+   for its process lifetime, safely unlinking the socket file before releasing
+   ownership on shutdown, and releasing lock ownership upon process crash.
+   Contenders receive `EndpointError::AlreadyOwned` before touching socket paths.
+   Corrected the stale test fixture path in `src/service/client.rs`.
+
 ## Verification and Limits
 
 - `cargo fmt --check` passed.
@@ -324,3 +356,12 @@ resolution status does not establish approval of this revised head.
   configured default server, `https://www.plantuml.com/plantuml`, with no
   `x-plantuml-diagram-error` response header. All six local review links resolve,
   including their referenced source lines.
+
+## Resolution Validation
+
+- All four findings were resolved and verified across the codebase.
+- `cargo fmt --check` passed cleanly.
+- `cargo test --locked` passed all 123 library tests and 5 CLI integration tests.
+- `cargo +1.76.0 clippy --locked --all-targets --all-features -- -D warnings` passed with 0 warnings.
+- `cargo package --locked --allow-dirty` built and verified the package cleanly.
+- `npm run test:browser -- --reporter=line` passed all 30 browser scenarios.
