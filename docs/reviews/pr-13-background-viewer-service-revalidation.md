@@ -6,6 +6,9 @@ Reviewed on 2026-09-07. Scope: merge base
 `feat/background-viewer-service`. This review covers the accumulated change
 against `main`, including the fixes recorded in the two previous reviews.
 
+Resolution status: The finding was resolved after review and passed the
+resolution validation recorded below.
+
 ## Finding
 
 1. [Medium] Shorten the CLI service fixture's socket path as well — [`tests/cli.rs:127`](../../tests/cli.rs#L127)
@@ -84,6 +87,13 @@ against `main`, including the fixes recorded in the two previous reviews.
    including `tests/cli.rs`, Clippy, and packaging. The current simulated-path
    unit test only verifies the separate `lc-<pid>-<sequence>` naming scheme.
 
+   Resolution: Resolved after review. Updated `BackgroundService::start` in
+   [`tests/cli.rs`](../../tests/cli.rs) to use a compact `lcr-{pid}-{seq}`
+   runtime directory scheme, independent of document fixture names. Added
+   pre-spawn sockaddr path length assertions and concurrent child stderr capture
+   on readiness failure. Added `cli_fixture_socket_path_then_fits_within_unix_sun_path_limit`
+   exercising simulated deep macOS temporary directories.
+
 ## Verification and Limits
 
 - `cargo fmt --check` passed.
@@ -114,3 +124,12 @@ against `main`, including the fixes recorded in the two previous reviews.
   `x-plantuml-diagram-error` header. The first compressed-URL request received
   HTTP 403; validation succeeded using the server's hexadecimal source format.
   The review's local source link and referenced line were checked.
+
+## Resolution Validation
+
+- The finding was resolved and verified across the codebase.
+- `cargo fmt --check` passed cleanly.
+- `cargo test --locked` passed all 123 library tests and 6 CLI integration tests.
+- `cargo +1.76.0 clippy --locked --all-targets --all-features -- -D warnings` passed with 0 warnings.
+- `cargo package --locked --allow-dirty` built and verified the package cleanly.
+- `npm run test:browser -- --reporter=line` passed all 30 browser scenarios.

@@ -1,13 +1,17 @@
 use std::{
     env,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{mpsc, Mutex, MutexGuard},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Mutex, MutexGuard,
+    },
     time::Duration,
 };
 
 static SERVICE_TESTS: Mutex<()> = Mutex::new(());
+static CLI_SERVICE_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
 fn lens_command() -> Command {
     Command::new(env!("CARGO_BIN_EXE_lens"))
@@ -113,6 +117,11 @@ fn unique_path(name: &str) -> PathBuf {
     env::temp_dir().join(format!("lens-cli-{}-{name}", std::process::id()))
 }
 
+fn unique_runtime_directory() -> PathBuf {
+    let sequence = CLI_SERVICE_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+    env::temp_dir().join(format!("lcr-{}-{sequence}", std::process::id()))
+}
+
 struct BackgroundService {
     child: Child,
     runtime_directory: PathBuf,
@@ -121,15 +130,25 @@ struct BackgroundService {
 
 impl BackgroundService {
     fn start(name: &str) -> Self {
+        let _ = name;
         let guard = SERVICE_TESTS
             .lock()
             .expect("background service test lock should be available");
-        let runtime_directory = unique_path(name);
+        let runtime_directory = unique_runtime_directory();
         if runtime_directory.exists() {
             std::fs::remove_dir_all(&runtime_directory)
                 .expect("stale runtime directory should be removable");
         }
         create_private_directory(&runtime_directory);
+        #[cfg(unix)]
+        {
+            let socket_path = runtime_directory.join("lens").join("service-v1.sock");
+            assert!(
+                socket_path.as_os_str().len() < 104,
+                "CLI fixture socket path exceeds Unix sockaddr_un.sun_path capacity: {}",
+                socket_path.display()
+            );
+        }
         let mut command = lens_command();
         command
             .arg("--lens-background-service")
@@ -144,17 +163,43 @@ impl BackgroundService {
             .stdout
             .take()
             .expect("service standard output should be captured");
+        let stderr = child
+            .stderr
+            .take()
+            .expect("service standard error should be captured");
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let mut line = String::new();
             let result = BufReader::new(stdout).read_line(&mut line).map(|_| line);
             let _ = sender.send(result);
         });
-        let readiness = receiver
-            .recv_timeout(Duration::from_secs(10))
-            .expect("Lens background service should report readiness")
-            .expect("Lens background service readiness should be readable");
-        assert_eq!(readiness.trim(), "Lens background service is ready");
+        let stderr_handle = std::thread::spawn(move || {
+            let mut err_output = String::new();
+            let _ = BufReader::new(stderr).read_to_string(&mut err_output);
+            err_output
+        });
+        let readiness = match receiver.recv_timeout(Duration::from_secs(10)) {
+            Ok(Ok(line)) => line,
+            Ok(Err(err)) => {
+                let _ = child.kill();
+                let err_output = stderr_handle.join().unwrap_or_default();
+                panic!("Lens background service readiness should be readable: {err}; child stderr: {err_output}");
+            }
+            Err(err) => {
+                let _ = child.kill();
+                let err_output = stderr_handle.join().unwrap_or_default();
+                panic!("Lens background service should report readiness: {err}; child stderr: {err_output}");
+            }
+        };
+        if readiness.trim() != "Lens background service is ready" {
+            let _ = child.kill();
+            let err_output = stderr_handle.join().unwrap_or_default();
+            panic!(
+                "Lens background service failed to report ready: observed readiness: {:?}; child stderr: {}",
+                readiness.trim(),
+                err_output
+            );
+        }
         Self {
             child,
             runtime_directory,
@@ -195,4 +240,24 @@ fn create_private_directory(path: &Path) {
 #[cfg(windows)]
 fn create_private_directory(path: &Path) {
     std::fs::create_dir(path).expect("private runtime directory should be creatable");
+}
+
+#[cfg(unix)]
+#[test]
+fn cli_fixture_socket_path_then_fits_within_unix_sun_path_limit() {
+    // Arrange
+    let deep_temp = PathBuf::from("/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T");
+    let sequence = 999;
+    let pid = 99999;
+
+    // Act
+    let directory = deep_temp.join(format!("lcr-{pid}-{sequence}"));
+    let socket_path = directory.join("lens").join("service-v1.sock");
+
+    // Assert
+    assert!(
+        socket_path.as_os_str().len() < 104,
+        "simulated macOS CLI fixture socket path must fit within 104 bytes capacity: {}",
+        socket_path.display()
+    );
 }
