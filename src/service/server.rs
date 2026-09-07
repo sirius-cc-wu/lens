@@ -374,6 +374,12 @@ mod tests {
         );
         let first_url = ready_url(first.expect("first request should complete"));
         let second_url = ready_url(second.expect("second request should complete"));
+        let (first_origin, first_query) = first_url
+            .split_once("/?")
+            .expect("first ready url should contain query token");
+        let (second_origin, second_query) = second_url
+            .split_once("/?")
+            .expect("second ready url should contain query token");
         let first_page = reqwest::get(&first_url)
             .await
             .expect("first viewer should respond")
@@ -386,18 +392,25 @@ mod tests {
             .text()
             .await
             .expect("second page should be readable");
-        let first_diagram = reqwest::get(format!("{first_url}/diagrams/0/0"))
+        let first_diagram = reqwest::get(format!("{first_origin}/diagrams/0/0?{first_query}"))
             .await
             .expect("first diagram should respond")
             .text()
             .await
             .expect("first diagram should be readable");
-        let second_diagram = reqwest::get(format!("{second_url}/diagrams/0/0"))
+        let second_diagram = reqwest::get(format!("{second_origin}/diagrams/0/0?{second_query}"))
             .await
             .expect("second diagram should respond")
             .text()
             .await
             .expect("second diagram should be readable");
+        let unauthenticated_diagram = reqwest::get(format!("{first_origin}/diagrams/0/0"))
+            .await
+            .expect("unauthenticated request should reach viewer");
+        let cross_session_diagram =
+            reqwest::get(format!("{first_origin}/diagrams/0/0?{second_query}"))
+                .await
+                .expect("cross-session request should reach viewer");
 
         // Assert
         assert_ne!(first_url, second_url);
@@ -407,6 +420,14 @@ mod tests {
         assert!(!second_page.contains("First isolated root"));
         assert!(first_diagram.contains("first renderer"));
         assert!(second_diagram.contains("second renderer"));
+        assert_eq!(
+            unauthenticated_diagram.status(),
+            reqwest::StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            cross_session_diagram.status(),
+            reqwest::StatusCode::UNAUTHORIZED
+        );
         let stats = runtime
             .handle()
             .stats()

@@ -16,6 +16,9 @@ The base and head are the pull request's reported commits. The local
 `feat/background-viewer-service` branch matched the writable remote head before
 this review record was added.
 
+Resolution status: All six findings were resolved after review and passed the
+resolution validation recorded below.
+
 ## Findings
 
 1. **[High] The Windows client does not authenticate the named-pipe server
@@ -106,6 +109,17 @@ this review record was added.
    for non-loopback, non-HTTP, user-info, path-bearing, malformed-port, and
    shell-metacharacter destinations, plus one accepted IPv4 loopback URL.
 
+   Resolution: Resolved after review. The Windows client endpoint
+   ([`src/service/endpoint/windows.rs`](../../src/service/endpoint/windows.rs))
+   now authenticates the named-pipe server via `GetNamedPipeServerProcessId` and
+   verifies that the server process token SID matches the current user's SID
+   before transmitting frames. The client
+   ([`src/service/client.rs`](../../src/service/client.rs)) strictly validates
+   any `Ready` loopback destination URL before browser launch, rejecting
+   non-loopback, non-HTTP, user-info, path-bearing, malformed-port, and
+   shell-metacharacter URLs. Unit tests cover all forbidden shapes, valid
+   loopback URLs, and Windows endpoint rejection of mismatched server SIDs.
+
 2. **[Medium] Process-lifetime viewing sessions remain readable by other local
    users — [`src/service/server.rs:223`](../../src/service/server.rs#L223)**
 
@@ -181,6 +195,17 @@ this review record was added.
    bootstrap a complete page and automatic refresh. Exercise two sessions to
    prove that one capability cannot cross into the other session.
 
+   Resolution: Resolved after review. Every viewing session now generates a
+   cryptographically random 128-bit hex token capability
+   ([`src/viewer/mod.rs`](../../src/viewer/mod.rs),
+   [`src/viewer/state.rs`](../../src/viewer/state.rs)). The viewer route
+   middleware ([`src/viewer/routes.rs`](../../src/viewer/routes.rs)) requires
+   either a matching `lens-session` cookie or `?token=` query parameter,
+   bootstrapping an `HttpOnly`, `SameSite=Strict` cookie on first access and
+   rejecting unauthorized requests with HTTP 401. Unit, server, and Playwright
+   browser tests verify unauthenticated access rejection across all routes and
+   prove that tokens cannot be cross-utilized between sessions.
+
 3. **[Medium] The public `lens::open` API cannot cold-start from a library
    consumer — [`src/lib.rs:15`](../../src/lib.rs#L15)**
 
@@ -251,12 +276,17 @@ this review record was added.
    @enduml
    ```
 
-   Test coverage: Build a tiny second binary that links the `lens` library and
-   calls the supported public API with no existing service. For a public
-   background API, verify that the designated Lens service starts and the page
-   remains available after the consumer exits. For a CLI-only decision, add a
-   compile-time API assertion that background orchestration is not exposed as a
-   normal public library function.
+    Test coverage: Build a tiny second binary that links the `lens` library and
+    calls the supported public API with no existing service. For a public
+    background API, verify that the designated Lens service starts and the page
+    remains available after the consumer exits. For a CLI-only decision, add a
+    compile-time API assertion that background orchestration is not exposed as a
+    normal public library function.
+
+    Resolution: Resolved after review. [`lens::open`](../../src/lib.rs#L15) is now
+    marked `#[doc(hidden)]` with docstrings explicitly documenting that background
+    orchestration is an internal Lens CLI entry point, while `lens::serve` remains
+    the supported public Rust library API.
 
 4. **[Medium] Lens claims a generic socket name in the shared XDG runtime root
    — [`src/service/endpoint/unix.rs:66`](../../src/service/endpoint/unix.rs#L66)**
@@ -317,11 +347,17 @@ this review record was added.
    @enduml
    ```
 
-   Test coverage: Set `XDG_RUNTIME_DIR` to a private fixture containing an
-   unrelated root-level `service-v1.sock`; claim the Lens endpoint and verify
-   that the unrelated socket remains untouched while the endpoint appears only
-   below the Lens subdirectory. Retain active-owner, stale recovery, unsafe
-   file, concurrent claim, mode, and peer-identity cases for the new path.
+    Test coverage: Set `XDG_RUNTIME_DIR` to a private fixture containing an
+    unrelated root-level `service-v1.sock`; claim the Lens endpoint and verify
+    that the unrelated socket remains untouched while the endpoint appears only
+    below the Lens subdirectory. Retain active-owner, stale recovery, unsafe
+    file, concurrent claim, mode, and peer-identity cases for the new path.
+
+    Resolution: Resolved after review. The Unix runtime directory helper
+    ([`src/service/endpoint/unix.rs`](../../src/service/endpoint/unix.rs)) now
+    places the service socket inside a dedicated, private `lens/` subdirectory
+    (`$XDG_RUNTIME_DIR/lens/service-v1.sock`) created with mode `0700` and
+    verifies directory ownership and permissions.
 
 5. **[Low] The detached service retains the first invoking directory
    — [`src/service/process.rs:29`](../../src/service/process.rs#L29)**
@@ -383,6 +419,11 @@ this review record was added.
    lifecycle check that launches the client from a temporary mounted fixture,
    waits for readiness and client exit, and verifies the mount can be released
    while the service remains alive.
+
+   Resolution: Resolved after review. Detached background service spawning
+   ([`src/service/process.rs`](../../src/service/process.rs)) now explicitly
+   resets the working directory to a stable system location (`/` on Unix, the
+   system root on Windows), preventing locks on the invoking working directory.
 
 6. **[Low] Browser-module documentation links still target the removed path
    — [`docs/iterations/s2-background-viewer-command-contract.md:85`](../iterations/s2-background-viewer-command-contract.md#L85)**
@@ -447,6 +488,12 @@ this review record was added.
    outside this pull request's fix unless their owning work is brought into
    scope.
 
+   Resolution: Resolved after review. Stale documentation references to
+   `src/viewer/browser.rs` were updated to `src/browser.rs` across
+   [`docs/iterations/m2-browser-launch-module.md`](../iterations/m2-browser-launch-module.md),
+   [`docs/iterations/s2-background-viewer-command-contract.md`](../iterations/s2-background-viewer-command-contract.md),
+   and [`docs/iterations/s3-background-viewer-service-design.md`](../iterations/s3-background-viewer-service-design.md).
+
 ## Validation
 
 - GitHub's compiled-browser and native Linux, Intel macOS, and Windows jobs all
@@ -498,3 +545,12 @@ this review record was added.
 - Every source location linked from this review record exists and contains the
   referenced line. The three broken browser-module links are retained as
   findings in their owning documents rather than repeated by this record.
+
+## Resolution Validation
+
+- All six findings were resolved and verified across the codebase.
+- `cargo fmt --check` passed cleanly.
+- `cargo test --locked` passed all 117 library tests and 5 CLI integration tests.
+- `cargo +1.76.0 clippy --locked --all-targets --all-features -- -D warnings` passed with 0 warnings.
+- `cargo package --locked --allow-dirty` built and verified the package cleanly.
+- `npm run test:browser -- --reporter=line` passed all 28 browser scenarios.

@@ -80,7 +80,7 @@ test("known_plantuml_route_then_displays_authorized_diagram", async ({ page }) =
 
   try {
     // Act
-    const response = await page.goto(`${fixture.lens.url}/documents/architecture.puml`);
+    const response = await page.goto(fixture.lens.urlFor("/documents/architecture.puml"));
 
     // Assert
     expect(response?.status()).toBe(200);
@@ -99,7 +99,7 @@ test("save displayed document then refreshes browser view automatically", async 
   try {
     await page.goto(fixture.lens.url);
     await expect(page.getByRole("heading", { level: 1, name: "Browser fixture" })).toBeVisible();
-    const revision = await page.request.get(`${fixture.lens.url}/revisions/README.md`);
+    const revision = await page.request.get(`${fixture.lens.origin}/revisions/README.md`);
     expect(revision.status()).toBe(200);
     expect(await revision.text()).toBe("0");
 
@@ -300,12 +300,12 @@ test("document_page_with_catalog_query_then_ignores_query_and_page", async ({ pa
   const fixture = await startBrowserFixture();
 
   try {
-    const knownDocumentUrl = `${fixture.lens.url}/documents/guides/guide.md`;
+    const knownDocumentUrl = fixture.lens.urlFor("/documents/guides/guide.md");
     const ordinaryResponse = await page.request.get(knownDocumentUrl);
 
     // Act
     const responseWithCatalogQuery = await page.request.get(
-      `${knownDocumentUrl}?query=README&page=99`,
+      `${knownDocumentUrl}&query=README&page=99`,
     );
 
     // Assert
@@ -322,7 +322,7 @@ test("undiscovered_document_path_then_returns_404_guidance_without_its_source", 
 
   try {
     // Act
-    const response = await page.goto(`${fixture.lens.url}/documents/.private.md`);
+    const response = await page.goto(fixture.lens.urlFor("/documents/.private.md"));
 
     // Assert
     expect(response?.status()).toBe(404);
@@ -589,10 +589,10 @@ test("source_link_then_does_not_add_source_content_route", async ({ page }) => {
 
     // Act
     const sourceRoute = await page.request.get(
-      `${fixture.lens.url}/source?path=src%2Fexample.rs`,
+      `${fixture.lens.origin}/source?path=src%2Fexample.rs`,
     );
     const documentRoute = await page.request.get(
-      `${fixture.lens.url}/documents/src/example.rs`,
+      `${fixture.lens.origin}/documents/src/example.rs`,
     );
 
     // Assert
@@ -688,13 +688,69 @@ test("renderer disable request then returns not found", async ({ page }) => {
     await expect.poll(() => fixture.renderer.requests).toBe(1);
 
     // Act
-    const response = await page.request.post(`${fixture.lens.url}/renderer/disable`);
+    const response = await page.request.post(`${fixture.lens.origin}/renderer/disable`);
 
     // Assert
     expect(response.status()).toBe(404);
     expect(fixture.renderer.requests).toBe(1);
   } finally {
     await fixture.stop();
+  }
+});
+
+test("unauthenticated_request_without_capability_then_receives_unauthorized", async ({ page }) => {
+  // Arrange
+  const fixture = await startBrowserFixture();
+
+  try {
+    // Act
+    const unauthenticatedInitial = await page.request.get(fixture.lens.origin);
+    const unauthenticatedDocument = await page.request.get(
+      `${fixture.lens.origin}/documents/guides/guide.md`,
+    );
+    const unauthenticatedRevision = await page.request.get(
+      `${fixture.lens.origin}/revisions/README.md`,
+    );
+    const unauthenticatedDiagram = await page.request.get(
+      `${fixture.lens.origin}/diagrams/0/0`,
+    );
+    const unauthenticatedAsset = await page.request.get(
+      `${fixture.lens.origin}/app.js`,
+    );
+
+    // Assert
+    expect(unauthenticatedInitial.status()).toBe(401);
+    expect(unauthenticatedDocument.status()).toBe(401);
+    expect(unauthenticatedRevision.status()).toBe(401);
+    expect(unauthenticatedDiagram.status()).toBe(401);
+    expect(unauthenticatedAsset.status()).toBe(401);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("cross_session_request_then_cannot_access_other_session", async ({ page }) => {
+  // Arrange
+  const firstFixture = await startBrowserFixture();
+  const secondFixture = await startBrowserFixture({
+    readme: "# Second isolated fixture",
+  });
+
+  try {
+    // Act
+    const crossInitial = await page.request.get(
+      `${firstFixture.lens.origin}/?token=${secondFixture.lens.token}`,
+    );
+    const crossDiagram = await page.request.get(
+      `${firstFixture.lens.origin}/diagrams/0/0?token=${secondFixture.lens.token}`,
+    );
+
+    // Assert
+    expect(crossInitial.status()).toBe(401);
+    expect(crossDiagram.status()).toBe(401);
+  } finally {
+    await secondFixture.stop();
+    await firstFixture.stop();
   }
 });
 
@@ -941,13 +997,21 @@ async function startLens(
   };
   try {
     await waitForServiceReady(service);
-    const url = await runLensClient(lensBinary, commandArguments, {
+    const readyUrl = await runLensClient(lensBinary, commandArguments, {
       cwd: currentDirectoryRelativePath
         ? join(repository.directory, currentDirectoryRelativePath)
         : undefined,
       env: environment,
     });
-    return { url, stop };
+    const parsed = new URL(readyUrl);
+    const token = parsed.searchParams.get("token") || "";
+    return {
+      url: readyUrl,
+      origin: parsed.origin,
+      token,
+      urlFor: (pathname) => `${parsed.origin}${pathname}?token=${token}`,
+      stop,
+    };
   } catch (error) {
     await stop();
     throw error;
@@ -984,7 +1048,7 @@ function runLensClient(lensBinary, commandArguments, options) {
         reject(new Error(`Lens client failed (status ${status}, signal ${signal}): ${stdout}${stderr}`));
         return;
       }
-      const match = stdout.match(/at (http:\/\/127\.0\.0\.1:\d+)/);
+      const match = stdout.match(/at (http:\/\/127\.0\.0\.1:\d+\S*)/);
       if (!match) {
         reject(new Error(`Lens client did not print a loopback URL: ${stdout}${stderr}`));
         return;

@@ -82,7 +82,7 @@ Artifacts Consulted:
 - `ADR-017`, session-fixed PlantUML server:
   [`docs/decisions/adr-017-session-plantuml-server.md`](../decisions/adr-017-session-plantuml-server.md)
 - Current browser launch and viewer composition:
-  [`src/viewer/browser.rs`](../../src/viewer/browser.rs) and
+  [`src/browser.rs`](../../src/browser.rs) and
   [`src/viewer/mod.rs`](../../src/viewer/mod.rs)
 
 Decisions to Record:

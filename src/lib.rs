@@ -11,7 +11,9 @@ pub use target::{
 };
 pub use viewer::serve;
 
-/// Opens one target through the reusable background Lens service.
+#[doc(hidden)]
+/// Internal CLI entry point for opening a target through the reusable background service.
+/// Library consumers should use [`serve`] for supported foreground document viewing.
 pub async fn open(target: Option<std::path::PathBuf>, scope: TargetScope) -> anyhow::Result<()> {
     let invocation = service::client::OpenInvocation::capture(target, scope)?;
     match service::client::request_target_view(invocation).await? {

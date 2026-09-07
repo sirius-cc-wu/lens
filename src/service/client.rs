@@ -68,6 +68,8 @@ pub(crate) enum ClientError {
     MismatchedResponse,
     #[error("Lens background service uses an incompatible command protocol")]
     IncompatibleService,
+    #[error("Lens background service returned an invalid loopback URL: {0}")]
+    InvalidLoopbackUrl(String),
     #[error("{message}")]
     Rejected {
         code: OpenErrorCode,
@@ -119,6 +121,7 @@ where
             view_url,
         } => {
             verify_request_id(request_id, response_id)?;
+            validate_loopback_url(&view_url)?;
             match open_browser(&view_url) {
                 Ok(()) => Ok(ClientOutcome::Opened { view_url }),
                 Err(error) => Ok(ClientOutcome::ManualUrl {
@@ -219,6 +222,83 @@ fn verify_request_id(expected: RequestId, received: RequestId) -> Result<(), Cli
     } else {
         Err(ClientError::MismatchedResponse)
     }
+}
+
+fn validate_loopback_url(view_url: &str) -> Result<(), ClientError> {
+    if view_url.chars().any(|c| {
+        matches!(
+            c,
+            '&' | '|'
+                | ';'
+                | '<'
+                | '>'
+                | '^'
+                | '"'
+                | '\''
+                | '\\'
+                | '`'
+                | '$'
+                | ' '
+                | '\t'
+                | '\r'
+                | '\n'
+                | '\0'
+                | '#'
+        )
+    }) {
+        return Err(ClientError::InvalidLoopbackUrl(view_url.to_owned()));
+    }
+
+    let rest = view_url
+        .strip_prefix("http://")
+        .ok_or_else(|| ClientError::InvalidLoopbackUrl(view_url.to_owned()))?;
+
+    if rest.contains('@') {
+        return Err(ClientError::InvalidLoopbackUrl(view_url.to_owned()));
+    }
+
+    let (authority_and_path, query) = match rest.split_once('?') {
+        Some((prefix, q)) => (prefix, Some(q)),
+        None => (rest, None),
+    };
+
+    let (authority, path) = match authority_and_path.split_once('/') {
+        Some((auth, p)) => (auth, p),
+        None => (authority_and_path, ""),
+    };
+
+    if !path.is_empty() {
+        return Err(ClientError::InvalidLoopbackUrl(view_url.to_owned()));
+    }
+
+    let (host, port_str) = authority
+        .split_once(':')
+        .ok_or_else(|| ClientError::InvalidLoopbackUrl(view_url.to_owned()))?;
+
+    if host != "127.0.0.1" {
+        return Err(ClientError::InvalidLoopbackUrl(view_url.to_owned()));
+    }
+
+    let port: u16 = port_str
+        .parse()
+        .map_err(|_| ClientError::InvalidLoopbackUrl(view_url.to_owned()))?;
+
+    if port == 0 {
+        return Err(ClientError::InvalidLoopbackUrl(view_url.to_owned()));
+    }
+
+    if let Some(query) = query {
+        if !query.is_empty() {
+            let token = query
+                .strip_prefix("token=")
+                .ok_or_else(|| ClientError::InvalidLoopbackUrl(view_url.to_owned()))?;
+            if token.is_empty() || !token.chars().all(|c| c.is_ascii_alphanumeric()) {
+                return Err(ClientError::InvalidLoopbackUrl(view_url.to_owned()));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -580,6 +660,164 @@ mod tests {
             .text()
             .await
             .expect("acknowledged view should be readable")
+    }
+
+    #[test]
+    fn non_loopback_destination_then_rejected_as_invalid_loopback_url() {
+        // Arrange
+        let destinations = [
+            "http://192.168.1.1:8080/",
+            "http://localhost:8080/",
+            "http://example.com:8080/",
+            "http://10.0.0.1:8080/",
+        ];
+
+        for destination in destinations {
+            // Act
+            let result = super::validate_loopback_url(destination);
+
+            // Assert
+            assert!(
+                matches!(result, Err(ClientError::InvalidLoopbackUrl(ref url)) if url == destination),
+                "expected rejection for {destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_http_destination_then_rejected_as_invalid_loopback_url() {
+        // Arrange
+        let destinations = [
+            "https://127.0.0.1:8080/",
+            "ftp://127.0.0.1:8080/",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+        ];
+
+        for destination in destinations {
+            // Act
+            let result = super::validate_loopback_url(destination);
+
+            // Assert
+            assert!(
+                matches!(result, Err(ClientError::InvalidLoopbackUrl(ref url)) if url == destination),
+                "expected rejection for {destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn user_info_destination_then_rejected_as_invalid_loopback_url() {
+        // Arrange
+        let destinations = [
+            "http://user@127.0.0.1:8080/",
+            "http://user:password@127.0.0.1:8080/",
+        ];
+
+        for destination in destinations {
+            // Act
+            let result = super::validate_loopback_url(destination);
+
+            // Assert
+            assert!(
+                matches!(result, Err(ClientError::InvalidLoopbackUrl(ref url)) if url == destination),
+                "expected rejection for {destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn path_bearing_destination_then_rejected_as_invalid_loopback_url() {
+        // Arrange
+        let destinations = [
+            "http://127.0.0.1:8080/documents/readme.md",
+            "http://127.0.0.1:8080/evil",
+            "http://127.0.0.1:8080/index.html",
+        ];
+
+        for destination in destinations {
+            // Act
+            let result = super::validate_loopback_url(destination);
+
+            // Assert
+            assert!(
+                matches!(result, Err(ClientError::InvalidLoopbackUrl(ref url)) if url == destination),
+                "expected rejection for {destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_port_destination_then_rejected_as_invalid_loopback_url() {
+        // Arrange
+        let destinations = [
+            "http://127.0.0.1:abc/",
+            "http://127.0.0.1:70000/",
+            "http://127.0.0.1:0/",
+            "http://127.0.0.1:/",
+            "http://127.0.0.1",
+        ];
+
+        for destination in destinations {
+            // Act
+            let result = super::validate_loopback_url(destination);
+
+            // Assert
+            assert!(
+                matches!(result, Err(ClientError::InvalidLoopbackUrl(ref url)) if url == destination),
+                "expected rejection for {destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn shell_metacharacter_destination_then_rejected_as_invalid_loopback_url() {
+        // Arrange
+        let destinations = [
+            "http://127.0.0.1:8080/ & calc.exe",
+            "http://127.0.0.1:8080/ | dir",
+            "http://127.0.0.1:8080/;whoami",
+            "http://127.0.0.1:8080/<script>",
+            "http://127.0.0.1:8080/>out",
+            "http://127.0.0.1:8080/^",
+            "http://127.0.0.1:8080/\"token",
+            "http://127.0.0.1:8080/'token",
+            "http://127.0.0.1:8080/\\token",
+            "http://127.0.0.1:8080/`token`",
+            "http://127.0.0.1:8080/$HOME",
+            "http://127.0.0.1:8080/?token=abc#fragment",
+            "http://127.0.0.1:8080/?token=abc&other=1",
+        ];
+
+        for destination in destinations {
+            // Act
+            let result = super::validate_loopback_url(destination);
+
+            // Assert
+            assert!(
+                matches!(result, Err(ClientError::InvalidLoopbackUrl(ref url)) if url == destination),
+                "expected rejection for {destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepted_ipv4_loopback_url_then_validation_succeeds() {
+        // Arrange
+        let destinations = [
+            "http://127.0.0.1:8080",
+            "http://127.0.0.1:8080/",
+            "http://127.0.0.1:8080/?token=0123456789abcdef",
+            "http://127.0.0.1:65535/?token=testtoken123",
+        ];
+
+        for destination in destinations {
+            // Act
+            let result = super::validate_loopback_url(destination);
+
+            // Assert
+            assert!(result.is_ok(), "expected ok for {destination}");
+        }
     }
 
     #[cfg(unix)]

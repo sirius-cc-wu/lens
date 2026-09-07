@@ -67,12 +67,19 @@ fn endpoint_path() -> Result<PathBuf, EndpointError> {
 }
 
 fn runtime_directory() -> Result<PathBuf, EndpointError> {
-    let directory = env::var_os("XDG_RUNTIME_DIR")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::temp_dir().join(format!("lens-runtime-{}", effective_user_id())));
+    let xdg = env::var_os("XDG_RUNTIME_DIR").filter(|value| !value.is_empty());
+    let xdg_path = xdg.as_ref().map(Path::new);
+    let temp_dir = env::temp_dir();
+    let directory = runtime_directory_for(xdg_path, &temp_dir, effective_user_id());
     prepare_runtime_directory(&directory)?;
     Ok(directory)
+}
+
+fn runtime_directory_for(xdg: Option<&Path>, fallback_parent: &Path, uid: u32) -> PathBuf {
+    match xdg {
+        Some(base) => base.join("lens"),
+        None => fallback_parent.join(format!("lens-runtime-{uid}")),
+    }
 }
 
 fn prepare_runtime_directory(path: &Path) -> Result<(), EndpointError> {
@@ -383,6 +390,44 @@ mod tests {
             result,
             Err(EndpointError::UnsafeRuntimeDirectory { .. })
         ));
+        fs::remove_dir_all(root).expect("test fixture should be removable");
+    }
+
+    #[tokio::test]
+    async fn xdg_runtime_directory_then_endpoint_is_isolated_in_lens_subdirectory() {
+        // Arrange
+        let root = std::env::temp_dir().join(format!("lens-xdg-fixture-{}", std::process::id()));
+        if root.exists() {
+            fs::remove_dir_all(&root).expect("stale test fixture should be removable");
+        }
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&root)
+            .expect("fixture root should be creatable");
+        let unrelated_socket = root.join("service-v1.sock");
+        fs::write(&unrelated_socket, "unrelated application socket")
+            .expect("unrelated file should be writable");
+
+        let lens_dir = super::runtime_directory_for(
+            Some(&root),
+            std::path::Path::new("/tmp"),
+            effective_user_id(),
+        );
+        assert_eq!(lens_dir, root.join("lens"));
+        prepare_runtime_directory(&lens_dir).expect("lens runtime directory should prepare");
+        let socket_path = lens_dir.join(super::SOCKET_NAME);
+
+        // Act
+        let listener = claim_at(&socket_path);
+
+        // Assert
+        assert!(listener.is_ok());
+        assert_eq!(
+            fs::read_to_string(&unrelated_socket).expect("unrelated socket should remain"),
+            "unrelated application socket"
+        );
+        assert!(socket_path.exists());
+        drop(listener);
         fs::remove_dir_all(root).expect("test fixture should be removable");
     }
 

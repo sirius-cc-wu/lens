@@ -48,10 +48,24 @@ impl ViewerSession {
     }
 }
 
+fn generate_session_token() -> Result<String> {
+    use std::fmt::Write;
+
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|error| anyhow::anyhow!("could not generate session token: {error}"))?;
+    let mut token = String::with_capacity(32);
+    for b in bytes {
+        let _ = write!(token, "{b:02x}");
+    }
+    Ok(token)
+}
+
 pub(crate) async fn start_session(
     target: MarkdownTarget,
     plantuml_server: String,
 ) -> Result<ViewerSession> {
+    let session_token = generate_session_token()?;
     let (document_root, documents, initial_document) = target.into_parts();
     let initial_path = documents[initial_document].canonical_path.clone();
     let state = viewer_state(
@@ -60,6 +74,7 @@ pub(crate) async fn start_session(
         initial_document,
         renderer_client()?,
         plantuml_server,
+        session_token.clone(),
     );
     let listener =
         TcpListener::bind("127.0.0.1:0").context("Could not start the loopback viewer")?;
@@ -81,7 +96,7 @@ pub(crate) async fn start_session(
     let watcher_task = tokio::spawn(watch_documents(state));
 
     Ok(ViewerSession {
-        view_url: format!("http://{address}"),
+        view_url: format!("http://{address}/?token={session_token}"),
         initial_path,
         server_task,
         watcher_task,
@@ -183,6 +198,9 @@ mod tests {
             .view_url()
             .strip_prefix("http://")
             .expect("viewer URL should use HTTP")
+            .split('/')
+            .next()
+            .expect("viewer URL should contain a host")
             .parse()
             .expect("viewer URL should contain a socket address");
 

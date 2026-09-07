@@ -92,7 +92,7 @@ Artifacts Consulted:
 - Current CLI, target, viewer, browser, and PlantUML composition:
   [`src/main.rs`](../../src/main.rs), [`src/target.rs`](../../src/target.rs),
   [`src/viewer/mod.rs`](../../src/viewer/mod.rs),
-  [`src/viewer/browser.rs`](../../src/viewer/browser.rs), and
+  [`src/browser.rs`](../../src/browser.rs), and
   [`src/plantuml.rs`](../../src/plantuml.rs)
 - Pinned Tokio 1.35.1 source: Unix listener and peer credentials, Windows named
   pipe security attributes, and first-instance single-owner support.

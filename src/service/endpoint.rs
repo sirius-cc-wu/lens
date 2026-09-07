@@ -16,6 +16,9 @@ pub(crate) enum EndpointError {
     #[cfg(unix)]
     #[error("endpoint peer user {peer} does not match owner user {owner}")]
     UnauthorizedPeer { peer: u32, owner: u32 },
+    #[cfg(windows)]
+    #[error("endpoint peer identity {peer} does not match owner identity {owner}")]
+    UnauthorizedPeer { peer: String, owner: String },
     #[error("{context}: {source}")]
     Io {
         context: &'static str,

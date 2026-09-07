@@ -1,4 +1,4 @@
-use std::{ffi::c_void, io, mem, ptr};
+use std::{ffi::c_void, io, mem, os::windows::io::AsRawHandle, ptr};
 
 use tokio::net::windows::named_pipe::{
     ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
@@ -13,7 +13,12 @@ use windows_sys::Win32::{
         GetTokenInformation, TokenUser, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY,
         TOKEN_USER,
     },
-    System::Threading::{GetCurrentProcess, OpenProcessToken},
+    System::{
+        Pipes::GetNamedPipeServerProcessId,
+        Threading::{
+            GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+        },
+    },
 };
 
 use super::EndpointError;
@@ -40,11 +45,61 @@ impl Listener {
 
 pub(crate) async fn connect() -> Result<ClientConnection, EndpointError> {
     let sid = current_user_sid()?;
-    ClientOptions::new()
-        .open(pipe_name(&sid))
-        .map_err(|source| {
-            EndpointError::io("Could not connect to the Lens background service", source)
-        })
+    connect_to(&pipe_name(&sid), &sid).await
+}
+
+async fn connect_to(
+    pipe_name: &str,
+    expected_sid: &str,
+) -> Result<ClientConnection, EndpointError> {
+    let client = ClientOptions::new().open(pipe_name).map_err(|source| {
+        EndpointError::io("Could not connect to the Lens background service", source)
+    })?;
+    authenticate_server(&client, expected_sid)?;
+    Ok(client)
+}
+
+fn authenticate_server(client: &NamedPipeClient, expected_sid: &str) -> Result<(), EndpointError> {
+    let mut server_pid = 0u32;
+    // SAFETY: client handle is valid and server_pid is a valid out-pointer.
+    if unsafe { GetNamedPipeServerProcessId(client.as_raw_handle() as HANDLE, &mut server_pid) }
+        == 0
+    {
+        return Err(EndpointError::io(
+            "Could not determine the Lens service process ID",
+            io::Error::last_os_error(),
+        ));
+    }
+
+    // SAFETY: server_pid was obtained from the operating system for the connected pipe server.
+    let process_handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, server_pid) };
+    if process_handle == 0 {
+        return Err(EndpointError::io(
+            "Could not inspect the Lens service process",
+            io::Error::last_os_error(),
+        ));
+    }
+    let process = OwnedHandle(process_handle);
+
+    let mut token_handle: HANDLE = 0;
+    // SAFETY: process.0 is a valid owned process handle and token_handle is an out-pointer.
+    if unsafe { OpenProcessToken(process.0, TOKEN_QUERY, &mut token_handle) } == 0 {
+        return Err(EndpointError::io(
+            "Could not open the Lens service process token",
+            io::Error::last_os_error(),
+        ));
+    }
+    let token = OwnedHandle(token_handle);
+    let server_sid = unsafe { sid_from_token(token.0)? };
+
+    if server_sid != expected_sid {
+        return Err(EndpointError::UnauthorizedPeer {
+            peer: server_sid,
+            owner: expected_sid.to_owned(),
+        });
+    }
+
+    Ok(())
 }
 
 pub(crate) fn claim() -> Result<Listener, EndpointError> {
@@ -116,46 +171,50 @@ fn current_user_sid() -> Result<String, EndpointError> {
             ));
         }
         let token = OwnedHandle(raw_token);
-        let mut size = 0;
-        GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut size);
-        if size == 0 {
-            return Err(EndpointError::io(
-                "Could not size the current user identity",
-                io::Error::last_os_error(),
-            ));
-        }
-        let mut buffer = vec![0u8; size as usize];
-        if GetTokenInformation(
-            token.0,
-            TokenUser,
-            buffer.as_mut_ptr().cast(),
-            size,
-            &mut size,
-        ) == 0
-        {
-            return Err(EndpointError::io(
-                "Could not read the current user identity",
-                io::Error::last_os_error(),
-            ));
-        }
-        let token_user = &*(buffer.as_ptr() as *const TOKEN_USER);
-        let mut sid_text = ptr::null_mut();
-        if ConvertSidToStringSidW(token_user.User.Sid, &mut sid_text) == 0 {
-            return Err(EndpointError::io(
-                "Could not format the current user identity",
-                io::Error::last_os_error(),
-            ));
-        }
-        let length = (0..).take_while(|&index| *sid_text.add(index) != 0).count();
-        let sid = String::from_utf16(std::slice::from_raw_parts(sid_text, length)).map_err(|_| {
-            EndpointError::io(
-                "Could not decode the current user identity",
-                io::Error::new(io::ErrorKind::InvalidData, "user SID is not valid UTF-16"),
-            )
-        });
-        LocalFree(sid_text.cast());
-        sid
+        sid_from_token(token.0)
     }
+}
+
+unsafe fn sid_from_token(token: HANDLE) -> Result<String, EndpointError> {
+    let mut size = 0;
+    GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut size);
+    if size == 0 {
+        return Err(EndpointError::io(
+            "Could not size the user identity",
+            io::Error::last_os_error(),
+        ));
+    }
+    let mut buffer = vec![0u8; size as usize];
+    if GetTokenInformation(
+        token,
+        TokenUser,
+        buffer.as_mut_ptr().cast(),
+        size,
+        &mut size,
+    ) == 0
+    {
+        return Err(EndpointError::io(
+            "Could not read the user identity",
+            io::Error::last_os_error(),
+        ));
+    }
+    let token_user = &*(buffer.as_ptr() as *const TOKEN_USER);
+    let mut sid_text = ptr::null_mut();
+    if ConvertSidToStringSidW(token_user.User.Sid, &mut sid_text) == 0 {
+        return Err(EndpointError::io(
+            "Could not format the user identity",
+            io::Error::last_os_error(),
+        ));
+    }
+    let length = (0..).take_while(|&index| *sid_text.add(index) != 0).count();
+    let sid = String::from_utf16(std::slice::from_raw_parts(sid_text, length)).map_err(|_| {
+        EndpointError::io(
+            "Could not decode the user identity",
+            io::Error::new(io::ErrorKind::InvalidData, "user SID is not valid UTF-16"),
+        )
+    });
+    LocalFree(sid_text.cast());
+    sid
 }
 
 struct OwnedHandle(HANDLE);
@@ -240,5 +299,28 @@ mod tests {
         // Assert
         assert!(matches!(second, Err(EndpointError::AlreadyOwned)));
         drop(first);
+    }
+
+    #[tokio::test]
+    async fn mismatched_server_identity_then_client_rejects_connection() {
+        // Arrange
+        let sid = current_user_sid().expect("current user SID should be readable");
+        let name = format!(
+            r"\\.\pipe\lens-mismatch-test-{}-{}",
+            std::process::id(),
+            sid
+        );
+        let server = create_server(&name, &sid, true).expect("server should start");
+
+        // Act
+        let fake_sid = "S-1-5-21-0-0-0-9999";
+        let client_result = super::connect_to(&name, fake_sid).await;
+
+        // Assert
+        assert!(matches!(
+            client_result,
+            Err(EndpointError::UnauthorizedPeer { .. })
+        ));
+        drop(server);
     }
 }
