@@ -47,4 +47,4 @@ To prevent URL corruption, Lens's client-side link handler in `app.js` explicitl
 
 - Use case: [`UC-11`](../features/markdown-viewing/use-cases.md)
 - Requirements: [`FEAT-01-REQ-MERMAID-SVG`](../features/markdown-viewing/mermaid-svg-requirements.md)
-- Specification: [`mermaid-svg-view-spec.md`](../features/markdown-viewing/mermaid-svg-view-spec.md)
+- Technical design: [`mermaid-svg-technical-design.md`](../features/markdown-viewing/mermaid-svg-technical-design.md)

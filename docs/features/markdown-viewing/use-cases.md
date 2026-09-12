@@ -349,7 +349,7 @@ Special requirements:
 ## Design Views and Specifications
 
 - [Mermaid standalone SVG view requirements](mermaid-svg-requirements.md) (`UC-11`)
-- [Mermaid standalone SVG view technical design](mermaid-svg-view-spec.md)
+- [Mermaid standalone SVG view technical design](mermaid-svg-technical-design.md)
 - [Client-side Mermaid diagram rendering specification](mermaid-rendering-spec.md)
 - [Diagram request operation contract](oc-05-request-diagram.md) (`OC-05`)
 - [V1 component, realization, and Rust type diagrams](uml-design.md) (`CMP-01`,

@@ -1,4 +1,4 @@
-# Spec: Mermaid Diagram Standalone SVG View
+# Technical Design: Mermaid Diagram Standalone Scalable SVG View
 
 ## Objective
 
@@ -44,7 +44,7 @@ docs/
     └── markdown-viewing/
         ├── mermaid-rendering-spec.md          # Client-side Mermaid rendering spec
         ├── mermaid-svg-requirements.md        # Feature requirements and user story
-        └── mermaid-svg-view-spec.md           # This technical specification
+        └── mermaid-svg-technical-design.md    # This technical design
 ```
 
 ## Module Contracts
