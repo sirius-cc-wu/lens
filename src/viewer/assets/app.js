@@ -19,6 +19,22 @@ for (const image of document.querySelectorAll('[data-diagram]')) {
   }
 }
 
+function prepareStandaloneSvg(svgText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, 'image/svg+xml');
+  const svgEl = doc.documentElement;
+  if (!svgEl || svgEl.nodeName !== 'svg') {
+    return svgText;
+  }
+  svgEl.style.maxWidth = '';
+  svgEl.setAttribute('width', '100%');
+  svgEl.setAttribute('height', '100%');
+  if (!svgEl.style.backgroundColor) {
+    svgEl.style.backgroundColor = '#ffffff';
+  }
+  return new XMLSerializer().serializeToString(svgEl);
+}
+
 if (typeof mermaid !== 'undefined') {
   mermaid.initialize({
     startOnLoad: false,
@@ -42,6 +58,7 @@ if (typeof mermaid !== 'undefined') {
   let mermaidCounter = 0;
   for (const container of document.querySelectorAll('[data-mermaid-container]')) {
     const target = container.querySelector('.mermaid-target');
+    const openLink = container.querySelector('[data-mermaid-open]');
     const errorMsg = container.querySelector('.diagram-error');
     const details = container.querySelector('.diagram-source');
     const source = details ? details.querySelector('code').textContent : '';
@@ -53,15 +70,32 @@ if (typeof mermaid !== 'undefined') {
         renderPromise
           .then(({ svg }) => {
             target.innerHTML = svg;
+            if (openLink) {
+              if (openLink.dataset.blobUrl) {
+                URL.revokeObjectURL(openLink.dataset.blobUrl);
+              }
+              const adaptedSvg = prepareStandaloneSvg(svg);
+              const blob = new Blob([adaptedSvg], { type: 'image/svg+xml;charset=utf-8' });
+              const blobUrl = URL.createObjectURL(blob);
+              openLink.href = blobUrl;
+              openLink.dataset.blobUrl = blobUrl;
+              openLink.hidden = false;
+            }
           })
           .catch((_error) => {
             target.hidden = true;
+            if (openLink) {
+              openLink.hidden = true;
+            }
             errorMsg.hidden = false;
             details.open = true;
           });
       }
     } catch (_error) {
       target.hidden = true;
+      if (openLink) {
+        openLink.hidden = true;
+      }
       errorMsg.hidden = false;
       details.open = true;
     }
@@ -95,7 +129,7 @@ document.addEventListener('click', (event) => {
   const link = event.target.closest('a[href]');
   if (!link) return;
   const href = link.getAttribute('href');
-  if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('vscode:') || href.startsWith('mailto:')) {
+  if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('vscode:') || href.startsWith('mailto:') || href.startsWith('blob:')) {
     return;
   }
   const documentView = document.querySelector('[data-session-token]');

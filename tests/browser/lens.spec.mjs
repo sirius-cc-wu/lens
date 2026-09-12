@@ -938,6 +938,138 @@ test("mermaid_gantt_with_all_weekdays_excluded_then_does_not_hang_and_reveals_so
   }
 });
 
+test("rendered_mermaid_diagram_then_displays_standalone_open_svg_link", async ({
+  page,
+}) => {
+  // Arrange
+  const readme = [
+    "# Mermaid Standalone SVG Fixture",
+    "",
+    "```mermaid",
+    "flowchart LR",
+    "  Alpha[Alpha Service] --> Beta[Beta Service]",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Mermaid Standalone SVG Fixture" })).toBeVisible();
+
+    const diagram = page.locator("[data-mermaid-container]");
+    await expect(diagram).toHaveCount(1);
+    await expect(diagram.locator(".mermaid-target svg")).toBeVisible();
+
+    const openLink = diagram.locator("[data-mermaid-open]");
+    await expect(openLink).toBeVisible();
+    await expect(openLink).toHaveAttribute("target", "_blank");
+    await expect(openLink).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(openLink).toHaveText("Open SVG");
+
+    const href = await openLink.getAttribute("href");
+    expect(href).toMatch(/^blob:/);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("invalid_mermaid_syntax_then_suppresses_open_svg_link_and_reveals_source", async ({
+  page,
+}) => {
+  // Arrange
+  const readme = [
+    "# Invalid Mermaid Fixture",
+    "",
+    "```mermaid",
+    "flowchart TD",
+    "  [invalid syntax",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Invalid Mermaid Fixture" })).toBeVisible();
+
+    const diagram = page.locator("[data-mermaid-container]");
+    await expect(diagram).toHaveCount(1);
+    await expect(diagram.locator(".diagram-error")).toBeVisible();
+    await expect(diagram.locator("[data-mermaid-open]")).toBeHidden();
+    await expect(diagram.locator(".diagram-source")).toHaveAttribute("open", "");
+    await expect(diagram.locator(".diagram-source code")).toContainText("[invalid syntax");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("open_svg_link_clicked_then_navigates_to_uncorrupted_blob_url_and_scales_dynamically", async ({
+  page,
+}) => {
+  // Arrange
+  const readme = [
+    "# Mermaid Standalone SVG Fixture",
+    "",
+    "```mermaid",
+    "flowchart LR",
+    "  Alpha[Alpha Service] --> Beta[Beta Service]",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    await page.goto(fixture.lens.url);
+    await expect(page.getByRole("heading", { level: 1, name: "Mermaid Standalone SVG Fixture" })).toBeVisible();
+
+    const diagram = page.locator("[data-mermaid-container]");
+    await expect(diagram.locator(".mermaid-target svg")).toBeVisible();
+    const openLink = diagram.locator("[data-mermaid-open]");
+    await expect(openLink).toBeVisible();
+
+    // Act
+    const pagePromise = page.context().waitForEvent("page");
+    await openLink.click();
+    const svgPage = await pagePromise;
+    await svgPage.waitForLoadState();
+
+    // Assert
+    const linkHref = await openLink.getAttribute("href");
+    expect(linkHref).toMatch(/^blob:/);
+    expect(linkHref).not.toContain("token=");
+
+    const svgUrl = svgPage.url();
+    expect(svgUrl).toMatch(/^blob:/);
+    expect(svgUrl).not.toContain("token=");
+
+    const standaloneSvg = svgPage.locator("svg");
+    await expect(standaloneSvg).toBeVisible();
+    await expect(standaloneSvg).toHaveAttribute("width", "100%");
+    await expect(standaloneSvg).toHaveAttribute("height", "100%");
+
+    const maxWidth = await standaloneSvg.evaluate((el) => el.style.maxWidth);
+    expect(maxWidth).toBe("");
+
+    const backgroundColor = await standaloneSvg.evaluate((el) => el.style.backgroundColor);
+    expect(["rgb(255, 255, 255)", "#ffffff"]).toContain(backgroundColor);
+
+    // Verify dynamic viewport scaling
+    await svgPage.setViewportSize({ width: 600, height: 400 });
+    const initialBox = await standaloneSvg.boundingBox();
+
+    await svgPage.setViewportSize({ width: 1200, height: 800 });
+    const expandedBox = await standaloneSvg.boundingBox();
+
+    expect(expandedBox.width).toBeGreaterThan(initialBox.width);
+  } finally {
+    await fixture.stop();
+  }
+});
+
 async function startBrowserFixture({
   hiddenDocument,
   readme,

@@ -25,6 +25,22 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .mermaid-target svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .diagram-error { color: #9c2f19; font-family: system-ui, sans-serif; font-weight: 700; }
 .diagram button { margin-top: .75rem; }
+.diagram-open-link {
+  display: inline-block;
+  margin-top: .75rem;
+  color: #8b3f21;
+  font-family: system-ui, sans-serif;
+  font-size: .85rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.diagram-open-link[hidden] {
+  display: none;
+}
+.diagram-open-link:hover {
+  color: #5a2712;
+}
 .diagram-source { margin-top: .75rem; }
 .document-metadata { margin: 0 0 1.5rem; border: 1px solid #b6b0a4; background: #fffdf8; font-family: system-ui, sans-serif; font-size: .9rem; }
 .document-metadata table { width: 100%; border-collapse: collapse; table-layout: fixed; }
