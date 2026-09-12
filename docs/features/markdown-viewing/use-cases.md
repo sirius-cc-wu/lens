@@ -32,11 +32,14 @@ Status: implemented and refined through C9
 | `UC-05` | Receive a target-resolution or rendering failure | High |
 | `UC-06` | Open a referenced repository file in VS Code | High |
 | `UC-10` | View a standalone PlantUML file | Medium |
+| `UC-11` | View a Mermaid diagram in a standalone SVG page | Medium |
 
 Inception detailed `UC-01` to validate initial scope without prematurely
 specifying the entire product. E2 adds the document-root and navigation detail
 for `UC-02` through `UC-04`; ADR-004 deferred `UC-06` from V1, and D5 refines
-it as a post-V1 editor handoff.
+it as a post-V1 editor handoff. PR 16 added client-side Mermaid diagram
+rendering, and `UC-11` specifies viewing rendered Mermaid diagrams in a
+standalone scalable SVG page.
 
 ## UC-01: View a Markdown File with PlantUML Blocks
 
@@ -270,14 +273,84 @@ Special requirements:
 - VS Code remains optional. Its absence cannot prevent Lens from starting,
   rendering, refreshing, or serving the current document.
 
+## UC-11: View a Mermaid Diagram in a Standalone SVG Page
+
+Primary actor: Developer or technical writer
+
+Goal: Open a rendered Mermaid diagram in a dedicated browser tab as a standalone,
+scalable SVG document, enabling dynamic resizing, zooming, and clear inspection
+free from Markdown reading-column width constraints.
+
+Preconditions:
+
+- Lens has an active viewing session displaying an authorized Markdown document.
+- The document contains at least one fenced Mermaid block (` ```mermaid `).
+- The Mermaid diagram has been successfully rendered in the browser.
+
+Trigger: The user activates the "Open SVG" control associated with a rendered
+Mermaid diagram.
+
+Main success scenario:
+
+1. The user reads a Markdown document containing a rendered Mermaid diagram.
+2. Lens presents an accessible "Open SVG" control on the rendered diagram
+   figure.
+3. The user activates the "Open SVG" control.
+4. The browser opens a new browser tab displaying the diagram as a standalone
+   SVG document (`image/svg+xml`).
+5. The standalone SVG is unconstrained by the document article column width,
+   scaling to fit the new viewport with full vector fidelity.
+6. The user resizes the browser window or applies native browser zoom to
+   inspect fine diagram details legibly.
+7. The user may natively save or copy the SVG asset using standard browser
+   controls.
+8. The original Markdown document remains open, interactive, and at its
+   current scroll position in the primary browser tab.
+
+Extensions:
+
+- 1a. If a Mermaid block contains invalid syntax or fails to render, Lens
+  displays the diagram error message and source disclosure, and suppresses the
+  "Open SVG" control.
+- 1b. While a Mermaid diagram is being rendered or awaiting client
+  initialization, the "Open SVG" control remains hidden so the user cannot
+  navigate to an unrendered or empty diagram.
+- 3a. If the document contains multiple Mermaid diagrams, each rendered diagram
+  provides its own independent "Open SVG" control opening only that specific
+  diagram.
+- 4a. If the user closes the standalone SVG tab, the main document tab and Lens
+  session continue running without interruption.
+- 4b. If the browser's native image viewer uses a dark or contrasting canvas
+  theme, the standalone SVG provides sufficient background contrast so that
+  diagram elements and text remain legible.
+- 8a. If the source Markdown file is modified and saved, automatic refresh
+  updates the rendered diagram in the document tab and updates the "Open SVG"
+  target for subsequent activations; an existing open standalone tab retains
+  its opened snapshot without error.
+
+Special requirements:
+
+- Standalone viewing operates completely offline with zero external network
+  dependencies or remote service calls.
+- Activating "Open SVG" opens in a new browsing context (`_blank`) via a
+  standard user gesture without triggering browser popup blockers.
+- The standalone SVG must not be constrained by inline `max-width` caps or fixed
+  column widths, allowing users to freely expand the diagram across high-resolution
+  or multi-monitor displays.
+- Standalone diagram viewing does not alter session authorization, expose
+  arbitrary filesystem paths, or leak session tokens into external contexts.
+
 ## Open Questions
 
 - Which Markdown extensions and filenames are in scope?
 - Must the viewer work in a browser that is already running, headless
   environments, or remote development containers?
 
-## UML Design Views
+## Design Views and Specifications
 
+- [Mermaid standalone SVG view requirements](mermaid-svg-requirements.md) (`UC-11`)
+- [Mermaid standalone SVG view technical design](mermaid-svg-view-spec.md)
+- [Client-side Mermaid diagram rendering specification](mermaid-rendering-spec.md)
 - [Diagram request operation contract](oc-05-request-diagram.md) (`OC-05`)
 - [V1 component, realization, and Rust type diagrams](uml-design.md) (`CMP-01`,
   `RZ-01`, and `DCD-01`)
