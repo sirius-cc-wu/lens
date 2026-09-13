@@ -55,5 +55,5 @@ mod platform;
 
 #[allow(unused_imports)]
 pub(crate) use platform::{
-    authorize, claim, connect, ClientConnection, Listener, ServerConnection,
+    authorize, claim, clean_stale_endpoint, connect, ClientConnection, Listener, ServerConnection,
 };

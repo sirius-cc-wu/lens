@@ -1,3 +1,5 @@
+#![allow(unused_assignments)]
+
 use std::{path::PathBuf, time::Duration};
 
 use thiserror::Error;
@@ -11,13 +13,14 @@ use super::{
     process::{self, ProcessError},
     protocol::{
         self, OpenErrorCode, OpenRequest, ProtocolError, ProtocolVersion, RequestId,
-        ServiceRequest, ServiceResponse, WirePath,
+        ServiceRequest, ServiceResponse, StopRequest, WirePath,
     },
 };
 use crate::TargetScope;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(3);
 const ACKNOWLEDGMENT_TIMEOUT: Duration = Duration::from_secs(10);
+const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 const CONNECT_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 
 #[derive(Debug)]
@@ -33,8 +36,10 @@ impl OpenInvocation {
         target: Option<PathBuf>,
         scope: TargetScope,
     ) -> Result<Self, ClientError> {
+        let invocation_directory =
+            std::env::current_dir().map_err(ClientError::CurrentDirectory)?;
         Ok(Self {
-            invocation_directory: std::env::current_dir().map_err(ClientError::CurrentDirectory)?,
+            invocation_directory,
             target,
             scope,
             plantuml_server: std::env::var("LENS_PLANTUML_SERVER").ok(),
@@ -46,6 +51,12 @@ impl OpenInvocation {
 pub(crate) enum ClientOutcome {
     Opened { view_url: String },
     ManualUrl { view_url: String, error: String },
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum StopOutcome {
+    Stopped,
+    NotRunning,
 }
 
 #[derive(Debug, Error)]
@@ -64,6 +75,8 @@ pub(crate) enum ClientError {
     StartupTimeout,
     #[error("Lens background service did not acknowledge the request within ten seconds")]
     AcknowledgmentTimeout,
+    #[error("Lens background service did not acknowledge stop within three seconds")]
+    StopAcknowledgmentTimeout,
     #[error("Lens background service returned a response for a different request")]
     MismatchedResponse,
     #[error("Lens background service uses an incompatible command protocol")]
@@ -75,6 +88,42 @@ pub(crate) enum ClientError {
         code: OpenErrorCode,
         message: String,
     },
+}
+
+pub(crate) async fn stop_background_service() -> Result<StopOutcome, ClientError> {
+    match endpoint::connect().await {
+        Ok(mut connection) => {
+            let request_id = new_request_id()?;
+            let request = ServiceRequest::Stop(StopRequest {
+                protocol_version: ProtocolVersion::CURRENT,
+                request_id,
+            });
+            let response = match exchange_with_timeout(&mut connection, &request, STOP_TIMEOUT)
+                .await
+            {
+                Ok(response) => response,
+                Err(ExchangeError::AcknowledgmentTimeout) => {
+                    return Err(ClientError::StopAcknowledgmentTimeout)
+                }
+                Err(ExchangeError::Protocol(error)) => return Err(ClientError::Protocol(error)),
+            };
+            match response {
+                ServiceResponse::Stopped {
+                    request_id: resp_id,
+                } => {
+                    verify_request_id(request_id, resp_id)?;
+                    Ok(StopOutcome::Stopped)
+                }
+                ServiceResponse::Incompatible { .. } => Err(ClientError::IncompatibleService),
+                _ => Err(ClientError::MismatchedResponse),
+            }
+        }
+        Err(error) if error.is_unavailable() => {
+            endpoint::clean_stale_endpoint()?;
+            Ok(StopOutcome::NotRunning)
+        }
+        Err(error) => Err(ClientError::Endpoint(error)),
+    }
 }
 
 pub(crate) async fn request_target_view(
@@ -141,6 +190,7 @@ where
             })
         }
         ServiceResponse::Incompatible { .. } => Err(ClientError::IncompatibleService),
+        ServiceResponse::Stopped { .. } => Err(ClientError::MismatchedResponse),
     }
 }
 
@@ -320,7 +370,8 @@ mod tests {
     };
 
     use super::{
-        request_target_view_with, ClientError, ClientOutcome, OpenErrorCode, OpenInvocation,
+        request_target_view_with, stop_background_service, ClientError, ClientOutcome,
+        OpenErrorCode, OpenInvocation, StopOutcome,
     };
     use crate::{
         service::{
@@ -335,6 +386,79 @@ mod tests {
     static TEST_ENVIRONMENT: Mutex<()> = Mutex::new(());
     static FIXTURE_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
     type ServiceTask = JoinHandle<Result<(), EndpointError>>;
+
+    #[tokio::test]
+    async fn stop_when_service_not_running_then_returns_not_running() {
+        // Arrange
+        let mut fixture = TestRuntime::new("stop-not-running");
+
+        // Act
+        let outcome = stop_background_service().await;
+
+        // Assert
+        assert_eq!(
+            outcome.expect("stop should succeed"),
+            StopOutcome::NotRunning
+        );
+        fixture.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn stop_when_service_running_then_stops_service_and_returns_stopped() {
+        // Arrange
+        let mut fixture = TestRuntime::new("stop-running");
+        let document_root = fixture.document_root("running-service", "# Running service");
+        let initial_outcome = request_target_view_with(
+            invocation(&document_root),
+            fixture.service_spawner(),
+            |_| Ok(()),
+        )
+        .await
+        .expect("service should start and serve document");
+        let view_url = outcome_url(&initial_outcome);
+        let active_page = response_text(&view_url).await;
+        assert!(active_page.contains("Running service"));
+
+        // Act
+        let outcome = stop_background_service().await;
+
+        // Assert
+        assert_eq!(outcome.expect("stop should succeed"), StopOutcome::Stopped);
+        let second_stop = stop_background_service().await;
+        assert_eq!(
+            second_stop.expect("subsequent stop should succeed"),
+            StopOutcome::NotRunning
+        );
+        fixture.shutdown().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stop_when_stale_endpoint_exists_then_removes_socket_and_returns_not_running() {
+        // Arrange
+        let mut fixture = TestRuntime::new("stop-stale");
+        let lens_dir = fixture.directory.join("lens");
+        create_private_directory(&lens_dir);
+        let endpoint = lens_dir.join("service-v1.sock");
+        let stale = std::os::unix::net::UnixListener::bind(&endpoint)
+            .expect("stale endpoint should be creatable");
+        drop(stale);
+        assert!(
+            endpoint.exists(),
+            "stale socket file must exist before test"
+        );
+
+        // Act
+        let outcome = stop_background_service().await;
+
+        // Assert
+        assert_eq!(
+            outcome.expect("stop should succeed"),
+            StopOutcome::NotRunning
+        );
+        assert!(!endpoint.exists(), "stale socket file must be unlinked");
+        fixture.shutdown().await;
+    }
 
     #[tokio::test]
     async fn missing_service_then_command_starts_service_and_returns_after_view_ready() {
