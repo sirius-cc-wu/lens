@@ -411,19 +411,15 @@ mod tests {
         let service_task = tokio::spawn(crate::service::server::run_background_service());
 
         let deadline = Instant::now() + Duration::from_secs(3);
-        loop {
-            if endpoint::connect().await.is_ok() {
-                break;
+        let _idle_stream = loop {
+            match endpoint::connect().await {
+                Ok(connection) => break connection,
+                Err(error) if error.is_unavailable() && Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+                Err(error) => panic!("idle stream should connect: {error}"),
             }
-            if Instant::now() > deadline {
-                panic!("service failed to become ready");
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-
-        let _idle_stream = endpoint::connect()
-            .await
-            .expect("idle stream should connect");
+        };
 
         // Act
         let start_time = Instant::now();
@@ -842,9 +838,10 @@ mod tests {
     impl TestRuntime {
         fn new(name: &str) -> Self {
             let _ = name;
-            let environment_guard = TEST_ENVIRONMENT
-                .lock()
-                .expect("test environment lock should be available");
+            let environment_guard = match TEST_ENVIRONMENT.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             let sequence = FIXTURE_SEQUENCE.fetch_add(1, Ordering::SeqCst);
             let directory =
                 std::env::temp_dir().join(format!("lc-{}-{sequence}", std::process::id()));
