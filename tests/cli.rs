@@ -113,6 +113,167 @@ fn empty_current_directory_then_reports_no_documents_error() {
     std::fs::remove_dir(directory).expect("test directory should be removable");
 }
 
+#[test]
+fn stop_command_when_service_running_then_stops_service_and_exits_zero() {
+    // Arrange
+    let mut service = BackgroundService::start("stop-active-service");
+    let mut command = service.command();
+    command.arg("stop");
+
+    // Act
+    let output = command.output().expect("lens stop command should run");
+
+    // Assert
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("output should be UTF-8");
+    assert!(stdout.contains("Lens background service stopped."));
+
+    let wait_result = wait_for_child_exit(&mut service.child, Duration::from_secs(3));
+    assert!(
+        wait_result,
+        "background service process should exit after stop"
+    );
+
+    // Act
+    let second_output = service
+        .command()
+        .arg("stop")
+        .output()
+        .expect("subsequent lens stop command should run");
+
+    // Assert
+    assert!(second_output.status.success());
+    let second_stdout = String::from_utf8(second_output.stdout).expect("output should be UTF-8");
+    assert!(second_stdout.contains("No Lens background service is running."));
+}
+
+#[test]
+fn concurrent_stop_commands_when_service_running_then_all_succeed_and_exit_zero() {
+    // Arrange
+    let mut service = BackgroundService::start("concurrent-cli-stops");
+
+    // Act
+    let handles: Vec<_> = (0..4)
+        .map(|_| {
+            let mut command = service.command();
+            command.arg("stop");
+            std::thread::spawn(move || command.output().expect("lens stop command should run"))
+        })
+        .collect();
+
+    let mut outputs = Vec::new();
+    for handle in handles {
+        outputs.push(handle.join().expect("thread should join"));
+    }
+
+    // Assert
+    for output in outputs {
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).expect("output should be UTF-8");
+        assert!(
+            stdout.contains("Lens background service stopped.")
+                || stdout.contains("No Lens background service is running.")
+        );
+    }
+
+    let wait_result = wait_for_child_exit(&mut service.child, Duration::from_secs(3));
+    assert!(
+        wait_result,
+        "background service process should exit after stop"
+    );
+}
+
+#[test]
+fn stop_command_when_service_not_running_then_reports_inactive_and_exits_zero() {
+    // Arrange
+    let _guard = SERVICE_TESTS
+        .lock()
+        .expect("service test lock should be available");
+    let runtime_directory = unique_runtime_directory();
+    create_private_directory(&runtime_directory);
+    let mut command = lens_command();
+    command.env("XDG_RUNTIME_DIR", &runtime_directory);
+    command.arg("stop");
+
+    // Act
+    let output = command.output().expect("lens stop command should run");
+
+    // Assert
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("output should be UTF-8");
+    assert!(stdout.contains("No Lens background service is running."));
+
+    if runtime_directory.exists() {
+        let _ = std::fs::remove_dir_all(&runtime_directory);
+    }
+}
+
+#[test]
+fn stop_command_help_flag_then_describes_stop_command() {
+    // Arrange
+    let mut command = lens_command();
+    command.args(["stop", "--help"]);
+
+    // Act
+    let output = command.output().expect("lens stop help should run");
+
+    // Assert
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
+    assert!(stdout.contains("Stop the background Lens service for the current user"));
+}
+
+#[cfg(unix)]
+#[test]
+fn stop_command_when_stale_socket_exists_then_removes_socket_and_exits_zero() {
+    // Arrange
+    let _guard = SERVICE_TESTS
+        .lock()
+        .expect("service test lock should be available");
+    let runtime_directory = unique_runtime_directory();
+    create_private_directory(&runtime_directory);
+    let lens_dir = runtime_directory.join("lens");
+    create_private_directory(&lens_dir);
+    let endpoint = lens_dir.join("service-v1.sock");
+    let stale = std::os::unix::net::UnixListener::bind(&endpoint)
+        .expect("stale endpoint should be creatable");
+    drop(stale);
+    assert!(
+        endpoint.exists(),
+        "stale socket file must exist before test"
+    );
+
+    let mut command = lens_command();
+    command.env("XDG_RUNTIME_DIR", &runtime_directory);
+    command.arg("stop");
+
+    // Act
+    let output = command.output().expect("lens stop command should run");
+
+    // Assert
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("output should be UTF-8");
+    assert!(stdout.contains("No Lens background service is running."));
+    assert!(!endpoint.exists(), "stale socket file must be unlinked");
+
+    if runtime_directory.exists() {
+        let _ = std::fs::remove_dir_all(&runtime_directory);
+    }
+}
+
+fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if let Ok(Some(_)) = child.try_wait() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 fn unique_path(name: &str) -> PathBuf {
     env::temp_dir().join(format!("lens-cli-{}-{name}", std::process::id()))
 }

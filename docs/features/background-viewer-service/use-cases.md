@@ -32,7 +32,7 @@ and the browser displays Lens responses outside the system boundary.
 
 | Actor | Goal |
 |---|---|
-| Developer or technical writer | Open several documentation targets from one shell without leaving a Lens command in the foreground. |
+| Developer or technical writer | Open several documentation targets from one shell without leaving a Lens command in the foreground, and stop the background service when finished. |
 | Operating system browser | Display each requested Lens view while its owning viewing session remains available. |
 
 ## Use-Case List
@@ -40,10 +40,12 @@ and the browser displays Lens responses outside the system boundary.
 | ID | Use case | Priority |
 |---|---|---|
 | `UC-11` | Open a target without occupying the terminal | High |
+| `UC-12` | Stop the background Lens service | High |
 
 `UC-11` changes command and process lifetime around the target resolution and
-viewing behavior already specified by `FEAT-01`. It does not broaden which
-files a viewing session may read or serve.
+viewing behavior already specified by `FEAT-01`. `UC-12` provides an explicit
+command to stop the running background service and release all retained
+resources when documentation viewing is complete.
 
 ## UC-11: Open a Target Without Occupying the Terminal
 
@@ -98,6 +100,48 @@ Extensions:
   command succeeds, the browser view reports that failure under the existing
   viewing-session rules.
 
+## UC-12: Stop the Background Lens Service
+
+Primary actor: Developer or technical writer
+
+Goal: Stop the background Lens service for the current user and release all
+retained viewing sessions, loopback HTTP listeners, file watchers, and
+communication endpoints.
+
+Trigger: The developer runs `lens stop`.
+
+Main success scenario:
+
+1. The developer asks Lens to stop the background service by running `lens stop`.
+2. Lens discovers the active background service endpoint for the current
+   operating-system user.
+3. Lens connects to the background service and issues a stop request.
+4. The background service acknowledges the stop request.
+5. The background service terminates all active viewing sessions, closes all
+   loopback HTTP listeners, halts all document file watchers, and removes its
+   IPC endpoint.
+6. The background service process exits cleanly.
+7. The invoking `lens stop` command reports to the developer that the
+   background service has stopped and exits with success.
+
+Extensions:
+
+- 2a. If no background service is running (no endpoint exists or service was
+  already stopped), Lens reports that no background service is running and
+  exits with success (idempotent behavior).
+- 2b. If an endpoint exists but the owning background process is no longer
+  active (stale or orphaned endpoint), Lens removes the dead endpoint,
+  reports that no active service was running, and exits with success.
+- 3a. If communication fails or the background service does not acknowledge the
+  stop request within a bounded timeout, Lens informs the developer of the
+  failure and exits with an actionable error.
+- 4a. If in-flight HTTP requests are active when the stop request is accepted,
+  the background service allows a bounded grace period to drain active
+  responses before closing listeners and exiting.
+- 1a. If concurrent `lens stop` commands are executed simultaneously, one
+  initiates service shutdown and all concurrent callers complete cleanly with
+  success.
+
 ## Special Requirements
 
 - One ordinary `lens` command must not remain in the foreground merely to keep
@@ -123,6 +167,16 @@ Extensions:
 - The background process may remain idle or stop after its last viewing session
   is no longer needed. No specific idle shutdown policy is required for this
   feature.
+- `lens stop` must be strictly idempotent: running it when the service is not
+  running must succeed with an informative message and exit code 0.
+- Stopping the service must release all operating-system resources held by the
+  background process, including all TCP loopback ports, filesystem watchers,
+  open file descriptors, and IPC socket/pipe filesystem entries.
+- `lens stop` affects only the background service belonging to the current
+  operating-system user and must not interfere with background services owned
+  by other users.
+- The stop command must be prompt and bounded in time, never hanging the
+  terminal indefinitely even if the service is degraded or unresponsive.
 
 ## Trace
 
@@ -134,6 +188,7 @@ Extensions:
 - Operation contract: [`OC-07`](oc-07-request-target-view.md)
 - Architecture decision: [ADR-022](../../decisions/adr-022-per-user-background-service.md)
 - Responsibility and Rust design: [`RZ-04` and `DCD-04`](design.md)
+- Stop command requirements: [`server-stop-requirements.md`](server-stop-requirements.md) (`UC-12`)
 
 ## Implementation and Transition Outcomes
 

@@ -113,6 +113,10 @@ pub(crate) fn claim() -> Result<Listener, EndpointError> {
     })
 }
 
+pub(crate) fn clean_stale_endpoint() -> Result<(), EndpointError> {
+    Ok(())
+}
+
 pub(crate) fn authorize(_connection: &ServerConnection) -> Result<(), EndpointError> {
     // The protected named-pipe ACL is evaluated by the kernel before a
     // client connection can reach this server instance.

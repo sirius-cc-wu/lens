@@ -55,6 +55,11 @@ pub(crate) fn claim() -> Result<Listener, EndpointError> {
     claim_at(&endpoint_path()?)
 }
 
+pub(crate) fn clean_stale_endpoint() -> Result<(), EndpointError> {
+    let path = endpoint_path()?;
+    remove_verified_stale_socket(&path)
+}
+
 pub(crate) fn authorize(connection: &ServerConnection) -> Result<(), EndpointError> {
     let peer = connection
         .peer_cred()

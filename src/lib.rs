@@ -33,3 +33,17 @@ pub async fn run_background_service() -> anyhow::Result<()> {
     service::server::run_background_service().await?;
     Ok(())
 }
+
+#[doc(hidden)]
+/// Internal CLI entry point for stopping the reusable background service.
+pub async fn stop() -> anyhow::Result<()> {
+    match service::client::stop_background_service().await? {
+        service::client::StopOutcome::Stopped => {
+            println!("Lens background service stopped.");
+        }
+        service::client::StopOutcome::NotRunning => {
+            println!("No Lens background service is running.");
+        }
+    }
+    Ok(())
+}

@@ -1,20 +1,23 @@
+use std::time::Duration;
+
 use indexmap::{map::Entry, IndexMap};
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, oneshot},
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
 };
 
 use super::{
     endpoint::{self, EndpointError, ServerConnection},
     protocol::{
         self, OpenError, OpenErrorCode, OpenRequest, ProtocolError, ProtocolVersion, RequestId,
-        ServiceRequest, ServiceResponse,
+        ServiceRequest, ServiceResponse, StopRequest,
     },
 };
 use crate::viewer::ViewerSession;
 
 const CONTROLLER_CAPACITY: usize = 32;
+const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_millis(1000);
 
 #[derive(Debug, Error)]
 enum ConnectionError {
@@ -32,18 +35,58 @@ pub(crate) async fn run_background_service() -> Result<(), EndpointError> {
         Err(EndpointError::AlreadyOwned) => return Ok(()),
         Err(error) => return Err(error),
     };
-    let controller = start_controller();
+    let mut controller = start_controller();
+    let mut shutdown_receiver = controller
+        .take_shutdown_receiver()
+        .expect("controller should provide shutdown receiver");
+    let mut connections = JoinSet::new();
     println!("Lens background service is ready");
 
     loop {
-        let connection = listener.accept().await?;
-        let handle = controller.handle();
-        tokio::spawn(async move {
-            if let Err(error) = handle_connection(connection, handle).await {
-                eprintln!("Lens background service rejected a command: {error}");
+        tokio::select! {
+            connection = listener.accept() => {
+                let connection = connection?;
+                let handle = controller.handle();
+                connections.spawn(async move {
+                    if let Err(error) = handle_connection(connection, handle).await {
+                        eprintln!("Lens background service rejected a command: {error}");
+                    }
+                });
             }
-        });
+            Some(_) = connections.join_next(), if !connections.is_empty() => {}
+            _ = &mut shutdown_receiver => {
+                break;
+            }
+        }
     }
+
+    let drain_deadline = tokio::time::Instant::now() + SHUTDOWN_DRAIN_TIMEOUT;
+    loop {
+        tokio::select! {
+            connection = listener.accept() => {
+                let connection = connection?;
+                let handle = controller.handle();
+                connections.spawn(async move {
+                    if let Err(error) = handle_connection(connection, handle).await {
+                        eprintln!("Lens background service rejected a command: {error}");
+                    }
+                });
+            }
+            Some(_) = connections.join_next(), if !connections.is_empty() => {
+                if connections.is_empty() {
+                    break;
+                }
+            }
+            _ = tokio::time::sleep_until(drain_deadline) => {
+                break;
+            }
+        }
+    }
+
+    connections.abort_all();
+    while connections.join_next().await.is_some() {}
+
+    Ok(())
 }
 
 async fn handle_connection(
@@ -63,8 +106,10 @@ async fn handle_connection(
         return Ok(());
     }
 
-    let ServiceRequest::Open(request) = request;
-    let response = controller.open(request).await?;
+    let response = match request {
+        ServiceRequest::Open(request) => controller.open(request).await?,
+        ServiceRequest::Stop(request) => controller.stop(request).await?,
+    };
     protocol::write_frame(&mut connection, &response).await?;
     Ok(())
 }
@@ -77,11 +122,16 @@ pub(crate) struct ServiceControllerHandle {
 pub(crate) struct ServiceControllerRuntime {
     handle: ServiceControllerHandle,
     task: JoinHandle<()>,
+    shutdown_receiver: Option<oneshot::Receiver<()>>,
 }
 
 impl ServiceControllerRuntime {
     pub(crate) fn handle(&self) -> ServiceControllerHandle {
         self.handle.clone()
+    }
+
+    pub(crate) fn take_shutdown_receiver(&mut self) -> Option<oneshot::Receiver<()>> {
+        self.shutdown_receiver.take()
     }
 }
 
@@ -117,6 +167,18 @@ impl ServiceControllerHandle {
         response.await.map_err(|_| ControllerError::Unavailable)
     }
 
+    pub(crate) async fn stop(
+        &self,
+        request: StopRequest,
+    ) -> Result<ServiceResponse, ControllerError> {
+        let (reply, response) = oneshot::channel();
+        self.sender
+            .send(ControllerMessage::Stop { request, reply })
+            .await
+            .map_err(|_| ControllerError::Unavailable)?;
+        response.await.map_err(|_| ControllerError::Unavailable)
+    }
+
     #[cfg(test)]
     pub(crate) async fn stats(&self) -> Result<ControllerStats, ControllerError> {
         let (reply, response) = oneshot::channel();
@@ -130,20 +192,37 @@ impl ServiceControllerHandle {
 
 pub(crate) fn start_controller() -> ServiceControllerRuntime {
     let (sender, receiver) = mpsc::channel(CONTROLLER_CAPACITY);
+    let (shutdown_sender, shutdown_receiver) = oneshot::channel();
     let handle = ServiceControllerHandle {
         sender: sender.clone(),
     };
     let controller = ServiceController {
+        state: ControllerState::Running,
         requests: RequestLedger::default(),
         completion_sender: sender,
+        shutdown_signal: Some(shutdown_sender),
     };
     let task = tokio::spawn(controller.run(receiver));
-    ServiceControllerRuntime { handle, task }
+    ServiceControllerRuntime {
+        handle,
+        task,
+        shutdown_receiver: Some(shutdown_receiver),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ControllerState {
+    Running,
+    Stopping,
 }
 
 enum ControllerMessage {
     Open {
         request: OpenRequest,
+        reply: oneshot::Sender<ServiceResponse>,
+    },
+    Stop {
+        request: StopRequest,
         reply: oneshot::Sender<ServiceResponse>,
     },
     Complete {
@@ -157,8 +236,10 @@ enum ControllerMessage {
 }
 
 struct ServiceController {
+    state: ControllerState,
     requests: RequestLedger,
     completion_sender: mpsc::Sender<ControllerMessage>,
+    shutdown_signal: Option<oneshot::Sender<()>>,
 }
 
 impl ServiceController {
@@ -166,10 +247,11 @@ impl ServiceController {
         while let Some(message) = receiver.recv().await {
             match message {
                 ControllerMessage::Open { request, reply } => self.open(request, reply),
+                ControllerMessage::Stop { request, reply } => self.stop(request, reply).await,
                 ControllerMessage::Complete {
                     request_id,
                     completion,
-                } => self.requests.complete(request_id, completion),
+                } => self.complete(request_id, completion).await,
                 #[cfg(test)]
                 ControllerMessage::Stats { reply } => {
                     let _ = reply.send(self.requests.stats());
@@ -179,6 +261,17 @@ impl ServiceController {
     }
 
     fn open(&mut self, request: OpenRequest, reply: oneshot::Sender<ServiceResponse>) {
+        if self.state == ControllerState::Stopping {
+            let _ = reply.send(ServiceResponse::Rejected {
+                request_id: request.request_id,
+                error: OpenError {
+                    code: OpenErrorCode::Session,
+                    message: "Lens background service is stopping".to_owned(),
+                },
+            });
+            return;
+        }
+
         let request_id = request.request_id;
         match self.requests.entries.entry(request_id) {
             Entry::Occupied(mut entry) => match entry.get_mut() {
@@ -204,6 +297,35 @@ impl ServiceController {
             }
         }
     }
+
+    async fn stop(&mut self, request: StopRequest, reply: oneshot::Sender<ServiceResponse>) {
+        let is_first_stop = self.state == ControllerState::Running;
+        self.state = ControllerState::Stopping;
+
+        let _ = reply.send(ServiceResponse::Stopped {
+            request_id: request.request_id,
+        });
+
+        if is_first_stop {
+            let sessions = self.requests.drain_sessions();
+            for session in sessions {
+                session.stop().await;
+            }
+            if let Some(shutdown) = self.shutdown_signal.take() {
+                let _ = shutdown.send(());
+            }
+        }
+    }
+
+    async fn complete(&mut self, request_id: RequestId, completion: SessionCompletion) {
+        if self.state == ControllerState::Stopping {
+            if let Some(session) = completion.session {
+                session.stop().await;
+            }
+            return;
+        }
+        self.requests.complete(request_id, completion);
+    }
 }
 
 #[derive(Default)]
@@ -224,9 +346,21 @@ impl RequestLedger {
             request_id,
             RequestState::Complete {
                 response: completion.response,
-                _session: completion.session,
+                session: completion.session,
             },
         );
+    }
+
+    fn drain_sessions(&mut self) -> Vec<ViewerSession> {
+        let mut sessions = Vec::new();
+        for state in self.entries.values_mut() {
+            if let RequestState::Complete { session, .. } = state {
+                if let Some(session) = session.take() {
+                    sessions.push(session);
+                }
+            }
+        }
+        sessions
     }
 
     #[cfg(test)]
@@ -240,7 +374,7 @@ impl RequestLedger {
                     matches!(
                         state,
                         RequestState::Complete {
-                            _session: Some(_),
+                            session: Some(_),
                             ..
                         }
                     )
@@ -256,7 +390,7 @@ enum RequestState {
     },
     Complete {
         response: ServiceResponse,
-        _session: Option<ViewerSession>,
+        session: Option<ViewerSession>,
     },
 }
 
@@ -315,9 +449,121 @@ mod tests {
     use super::start_controller;
     use crate::{
         plantuml::PUBLIC_SERVER,
-        service::protocol::{OpenRequest, ProtocolVersion, RequestId, ServiceResponse, WirePath},
+        service::protocol::{
+            OpenError, OpenErrorCode, OpenRequest, ProtocolVersion, RequestId, ServiceResponse,
+            StopRequest, WirePath,
+        },
         TargetScope,
     };
+
+    #[tokio::test]
+    async fn stop_message_when_running_then_replies_stopped_and_transitions_state() {
+        // Arrange
+        let root = document_root("stop-running", "# Stop running");
+        let request = open_request(10, &root, PUBLIC_SERVER);
+        let runtime = start_controller();
+        let handle = runtime.handle();
+        let ready = handle.open(request).await.expect("open should succeed");
+        assert!(matches!(ready, ServiceResponse::Ready { .. }));
+        let stats_before = handle.stats().await.expect("stats should succeed");
+        assert_eq!(stats_before.ready_sessions, 1);
+
+        // Act
+        let stop_request = StopRequest {
+            protocol_version: ProtocolVersion::CURRENT,
+            request_id: RequestId::from_bytes([20; 16]),
+        };
+        let response = handle
+            .stop(stop_request)
+            .await
+            .expect("stop should succeed");
+
+        // Assert
+        assert_eq!(
+            response,
+            ServiceResponse::Stopped {
+                request_id: RequestId::from_bytes([20; 16]),
+            }
+        );
+        let stats_after = handle.stats().await.expect("stats should succeed");
+        assert_eq!(stats_after.ready_sessions, 0);
+        drop(runtime);
+        fs::remove_dir_all(root).expect("test fixture should be removable");
+    }
+
+    #[tokio::test]
+    async fn open_message_when_stopping_then_rejects_with_session_error() {
+        // Arrange
+        let root = document_root("open-stopping", "# Open while stopping");
+        let runtime = start_controller();
+        let handle = runtime.handle();
+        let stop_request = StopRequest {
+            protocol_version: ProtocolVersion::CURRENT,
+            request_id: RequestId::from_bytes([21; 16]),
+        };
+        handle
+            .stop(stop_request)
+            .await
+            .expect("stop should succeed");
+
+        // Act
+        let open_req = open_request(22, &root, PUBLIC_SERVER);
+        let response = handle.open(open_req).await.expect("open should complete");
+
+        // Assert
+        assert_eq!(
+            response,
+            ServiceResponse::Rejected {
+                request_id: RequestId::from_bytes([22; 16]),
+                error: OpenError {
+                    code: OpenErrorCode::Session,
+                    message: "Lens background service is stopping".to_owned(),
+                },
+            }
+        );
+        drop(runtime);
+        fs::remove_dir_all(root).expect("test fixture should be removable");
+    }
+
+    #[tokio::test]
+    async fn repeated_stop_message_when_stopping_then_replies_stopped_idempotently() {
+        // Arrange
+        let runtime = start_controller();
+        let handle = runtime.handle();
+        let first_stop = StopRequest {
+            protocol_version: ProtocolVersion::CURRENT,
+            request_id: RequestId::from_bytes([30; 16]),
+        };
+        let first_response = handle
+            .stop(first_stop)
+            .await
+            .expect("first stop should succeed");
+        assert_eq!(
+            first_response,
+            ServiceResponse::Stopped {
+                request_id: RequestId::from_bytes([30; 16]),
+            }
+        );
+
+        // Act
+        let second_stop = StopRequest {
+            protocol_version: ProtocolVersion::CURRENT,
+            request_id: RequestId::from_bytes([31; 16]),
+        };
+        let second_response = handle
+            .stop(second_stop)
+            .await
+            .expect("second stop should succeed");
+
+        // Assert
+        assert_eq!(
+            second_response,
+            ServiceResponse::Stopped {
+                request_id: RequestId::from_bytes([31; 16]),
+            }
+        );
+        drop(runtime);
+    }
 
     #[tokio::test]
     async fn same_request_retried_then_one_viewing_session_is_retained() {

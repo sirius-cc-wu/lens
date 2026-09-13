@@ -29,6 +29,18 @@ impl ViewerSession {
         &self.view_url
     }
 
+    pub(crate) async fn stop(mut self) {
+        if let Some(shutdown_sender) = self.shutdown_sender.take() {
+            let _ = shutdown_sender.send(());
+        }
+        self.watcher_task.abort();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_millis(1000),
+            &mut self.server_task,
+        )
+        .await;
+    }
+
     async fn run_until<F>(mut self, shutdown: F) -> Result<()>
     where
         F: Future<Output = ()>,

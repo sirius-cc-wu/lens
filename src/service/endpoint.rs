@@ -28,20 +28,102 @@ pub(crate) enum EndpointError {
 }
 
 impl EndpointError {
-    fn io(context: &'static str, source: std::io::Error) -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn io(context: &'static str, source: std::io::Error) -> Self {
         Self::Io { context, source }
     }
 
-    pub(crate) fn is_unavailable(&self) -> bool {
+    pub(crate) fn is_absent(&self) -> bool {
         let Self::Io { source, .. } = self else {
             return false;
         };
         matches!(
             source.kind(),
-            std::io::ErrorKind::NotFound
-                | std::io::ErrorKind::ConnectionRefused
-                | std::io::ErrorKind::WouldBlock
-        ) || matches!(source.raw_os_error(), Some(2 | 3 | 231))
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+        ) || matches!(source.raw_os_error(), Some(2 | 3))
+    }
+
+    pub(crate) fn is_busy(&self) -> bool {
+        let Self::Io { source, .. } = self else {
+            return false;
+        };
+        matches!(source.kind(), std::io::ErrorKind::WouldBlock)
+            || matches!(source.raw_os_error(), Some(231))
+    }
+
+    pub(crate) fn is_unavailable(&self) -> bool {
+        self.is_absent() || self.is_busy()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::EndpointError;
+
+    #[test]
+    fn not_found_io_error_then_is_absent_and_unavailable() {
+        // Arrange
+        let error = EndpointError::io("test", io::Error::new(io::ErrorKind::NotFound, "not found"));
+
+        // Act & Assert
+        assert!(error.is_absent());
+        assert!(!error.is_busy());
+        assert!(error.is_unavailable());
+    }
+
+    #[test]
+    fn connection_refused_io_error_then_is_absent_and_unavailable() {
+        // Arrange
+        let error = EndpointError::io(
+            "test",
+            io::Error::new(io::ErrorKind::ConnectionRefused, "refused"),
+        );
+
+        // Act & Assert
+        assert!(error.is_absent());
+        assert!(!error.is_busy());
+        assert!(error.is_unavailable());
+    }
+
+    #[test]
+    fn pipe_busy_raw_os_error_then_is_busy_and_unavailable_but_not_absent() {
+        // Arrange
+        let error = EndpointError::io("test", io::Error::from_raw_os_error(231));
+
+        // Act & Assert
+        assert!(!error.is_absent());
+        assert!(error.is_busy());
+        assert!(error.is_unavailable());
+    }
+
+    #[test]
+    fn would_block_io_error_then_is_busy_and_unavailable_but_not_absent() {
+        // Arrange
+        let error = EndpointError::io(
+            "test",
+            io::Error::new(io::ErrorKind::WouldBlock, "would block"),
+        );
+
+        // Act & Assert
+        assert!(!error.is_absent());
+        assert!(error.is_busy());
+        assert!(error.is_unavailable());
+    }
+
+    #[test]
+    fn other_io_error_then_is_neither_absent_nor_busy() {
+        // Arrange
+        let error = EndpointError::io(
+            "test",
+            io::Error::new(io::ErrorKind::PermissionDenied, "denied"),
+        );
+
+        // Act & Assert
+        assert!(!error.is_absent());
+        assert!(!error.is_busy());
+        assert!(!error.is_unavailable());
     }
 }
 
@@ -55,5 +137,5 @@ mod platform;
 
 #[allow(unused_imports)]
 pub(crate) use platform::{
-    authorize, claim, connect, ClientConnection, Listener, ServerConnection,
+    authorize, claim, clean_stale_endpoint, connect, ClientConnection, Listener, ServerConnection,
 };
