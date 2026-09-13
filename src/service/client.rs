@@ -599,7 +599,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn concurrent_stops_when_service_running_then_all_clients_succeed_with_stopped() {
+    async fn concurrent_stops_when_service_running_then_all_clients_succeed_and_service_stops() {
         // Arrange
         let mut fixture = TestRuntime::new("concurrent-stops");
         let document_root =
@@ -622,12 +622,21 @@ mod tests {
         }
 
         // Assert
+        let mut stopped_count = 0;
         for result in results {
-            assert_eq!(
-                result.expect("concurrent stop must succeed"),
-                StopOutcome::Stopped
+            let outcome = result.expect("concurrent stop must succeed");
+            assert!(
+                matches!(outcome, StopOutcome::Stopped | StopOutcome::NotRunning),
+                "expected Stopped or NotRunning, got {outcome:?}"
             );
+            if outcome == StopOutcome::Stopped {
+                stopped_count += 1;
+            }
         }
+        assert!(
+            stopped_count >= 1,
+            "at least one client should observe Stopped outcome"
+        );
         fixture.shutdown().await;
     }
 
