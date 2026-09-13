@@ -1,8 +1,8 @@
 # Background Viewer Service Stop Command Feature Review
 
-Reviewed `feat/stop-command` from merge base `7c01f2373ee61d82d4b01bfb23c314b3924d3983` with `origin/main` through head `f9c51268305fb79f187a05fe8483bcf31df7fe78`.
+Reviewed `feat/stop-command` from merge base `7c01f2373ee61d82d4b01bfb23c314b3924d3983` with `origin/main` through head `65a6ec7d468d87246aa8be6d5e52a49250ff8cb4`.
 
-**Verdict:** Clean approval — no remaining actionable findings. The implementation delivers the dedicated background service stop command (`lens stop`) specified in [UC-12](../features/background-viewer-service/use-cases.md#uc-12-stop-the-background-lens-service), [FEAT-04-REQ-STOP](../features/background-viewer-service/server-stop-requirements.md), and [ADR-024](../decisions/adr-024-background-service-stop-command.md). All review feedback from PR #18 has been thoroughly resolved, including bounded shutdown connection drains, busy Windows named pipe retries, and shutdown-race disconnect resilience. All quality gates pass with 162 Rust tests and 32 browser scenarios without regressions.
+**Verdict:** Clean approval — no remaining actionable findings. The implementation delivers the dedicated background service stop command (`lens stop`) specified in [UC-12](../features/background-viewer-service/use-cases.md#uc-12-stop-the-background-lens-service), [FEAT-04-REQ-STOP](../features/background-viewer-service/server-stop-requirements.md), and [ADR-024](../decisions/adr-024-background-service-stop-command.md). All review feedback from PR #18 and multi-platform CI edge cases have been thoroughly resolved, including bounded shutdown connection drains, busy Windows named pipe retries, shutdown-race disconnect resilience, and concurrent stop assertion allowances for post-teardown callers. All local quality gates (162 Rust tests, 32 browser scenarios) and full GitHub Actions matrix CI jobs (Linux, macOS, Windows MSVC, Playwright) pass cleanly.
 
 ## Scope
 
@@ -21,7 +21,7 @@ Inspected the complete authored diff against `origin/main`:
   - `src/service/server.rs`: `ControllerState::Stopping` state transition, session ledger draining, rejection of in-flight open requests during stopping, idempotent stop responses, server backlog draining during shutdown, bounded connection task draining via `SHUTDOWN_DRAIN_TIMEOUT` (1,000ms), and forceful task abort fallback (`abort_all()`).
   - `src/viewer/mod.rs`: `ViewerSession::stop()` implementation triggering Axum server shutdown, aborting document filesystem watchers, and waiting on server task completion.
 - Client Coordination & Recovery:
-  - `src/service/client.rs`: `stop_background_service()` client coordination, bounded timeouts (`STOP_TIMEOUT`), exit polling, busy endpoint retry loop (`is_busy()`), stale endpoint detection (`is_absent()`), and shutdown-race disconnect recovery.
+  - `src/service/client.rs`: `stop_background_service()` client coordination, bounded timeouts (`STOP_TIMEOUT`), exit polling, busy endpoint retry loop (`is_busy()`), stale endpoint detection (`is_absent()`), shutdown-race disconnect recovery, and concurrent caller outcome accommodation.
 - Platform Endpoint Management:
   - `src/service/endpoint.rs`: Differentiated `is_absent()` and `is_busy()` error classifiers, export of `clean_stale_endpoint`.
   - `src/service/endpoint/unix.rs`: `clean_stale_endpoint` delegating to verified stale socket unlinking.
@@ -29,9 +29,9 @@ Inspected the complete authored diff against `origin/main`:
 - CLI Integration Tests:
   - `tests/cli.rs`: CLI test cases verifying active service stop, inactive service idempotency, stale socket recovery, concurrent CLI process stops, and CLI `--help` discoverability.
 
-## PR #18 Feedback Resolution
+## PR #18 Feedback & CI Resolution
 
-Commits `41f00f8`, `1f10ed3`, and `f9c5126` resolved all actionable review findings identified during review:
+Commits `41f00f8`, `1f10ed3`, `f9c5126`, and `65a6ec7` resolved all actionable review findings and cross-platform CI race conditions:
 
 1. **Bounded IPC Connection Drain on Shutdown (`src/service/server.rs`):**
    - *Reported behavior:* `run_background_service()` previously joined remaining IPC connection tasks via an unbounded loop `while connections.join_next().await.is_some() {}`. If an idle client process maintained an open connection socket without sending frames or disconnecting, the background service could hang indefinitely on shutdown.
@@ -48,7 +48,12 @@ Commits `41f00f8`, `1f10ed3`, and `f9c5126` resolved all actionable review findi
    - *Resolution:*
      - *Client-side:* In `stop_background_service_with()`, if an IO error occurs during the exchange with a stopping service, the client enters a 500ms verification loop. If the endpoint becomes absent (confirming the service terminated) or reconnects and confirms stopped status, the client reports `StopOutcome::Stopped` instead of erroring.
      - *Server-side:* In `run_background_service()`, the server continues accepting incoming connections on its listener during `SHUTDOWN_DRAIN_TIMEOUT`. Connections accepted while in `ControllerState::Stopping` immediately receive `ServiceResponse::Stopped` rather than connection aborts.
-   - *Verification:* Verified with `service::client::tests::stop_when_transport_disconnects_during_shutdown_and_service_stops_then_reports_stopped`, `service::client::tests::concurrent_stops_when_service_running_then_all_clients_succeed_with_stopped` (5 concurrent async tasks), and `tests::cli::concurrent_stop_commands_when_service_running_then_all_succeed_and_exit_zero` (4 concurrent CLI processes).
+   - *Verification:* Verified with `service::client::tests::stop_when_transport_disconnects_during_shutdown_and_service_stops_then_reports_stopped`, `service::client::tests::concurrent_stops_when_service_running_then_all_clients_succeed_and_service_stops` (5 concurrent async tasks), and `tests::cli::concurrent_stop_commands_when_service_running_then_all_succeed_and_exit_zero` (4 concurrent CLI processes).
+
+4. **Post-Teardown Concurrent Caller Outcome Accommodation (`src/service/client.rs`):**
+   - *Reported behavior:* In `concurrent_stops_when_service_running_then_all_clients_succeed_and_service_stops`, the test previously asserted `StopOutcome::Stopped` across all 5 concurrent tasks. On Windows MSVC runners where process teardown is fast and task scheduling can vary, a task scheduled after the service has already completed its shutdown observes `StopOutcome::NotRunning`. While both `Stopped` and `NotRunning` produce identical exit code 0 for the CLI, the overly strict test assertion caused intermittent CI test failures on Windows.
+   - *Resolution:* Updated the test assertion to permit concurrent stop callers to observe either `StopOutcome::Stopped` or `StopOutcome::NotRunning`, while asserting that at least one caller observed `StopOutcome::Stopped` and the service terminated.
+   - *Verification:* Verified locally and via GitHub Actions CI (Run ID `34742259071`), where `Native Rust (x86_64-pc-windows-msvc)` passed cleanly in 3m26s.
 
 ## Multi-Axis Review
 
@@ -98,7 +103,7 @@ All verification quality gates and test suites were executed against the worktre
    - Result: Passed (0 warnings, 0 errors).
 3. **Rust Unit & CLI Test Suite:**
    - Command: `cargo test --locked`
-   - Result: Passed 162 tests (148 library unit tests, 3 main unit tests, and 11 CLI integration tests) in 5.43s.
+   - Result: Passed 162 tests (148 library unit tests, 3 main unit tests, and 11 CLI integration tests) in 5.42s.
    - New & regression tests passed:
      - `service::endpoint::tests::not_found_io_error_then_is_absent_and_unavailable`
      - `service::endpoint::tests::connection_refused_io_error_then_is_absent_and_unavailable`
@@ -110,7 +115,7 @@ All verification quality gates and test suites were executed against the worktre
      - `service::client::tests::stop_with_persistently_busy_endpoint_times_out_without_reporting_not_running`
      - `service::client::tests::stop_with_absent_endpoint_reports_not_running_without_retry`
      - `service::client::tests::stop_when_transport_disconnects_during_shutdown_and_service_stops_then_reports_stopped`
-     - `service::client::tests::concurrent_stops_when_service_running_then_all_clients_succeed_with_stopped`
+     - `service::client::tests::concurrent_stops_when_service_running_then_all_clients_succeed_and_service_stops`
      - `service::client::tests::stop_when_service_not_running_then_returns_not_running`
      - `service::client::tests::stop_when_service_running_then_stops_service_and_returns_stopped`
      - `service::client::tests::stop_when_stale_endpoint_exists_then_removes_socket_and_returns_not_running`
@@ -124,13 +129,19 @@ All verification quality gates and test suites were executed against the worktre
      - `concurrent_stop_commands_when_service_running_then_all_succeed_and_exit_zero`
 4. **Playwright Browser Test Suite:**
    - Command: `npx playwright test`
-   - Result: Passed 32 tests in 22.9s across Chromium.
+   - Result: Passed 32 tests in 24.8s across Chromium.
+5. **GitHub Actions Matrix CI (Run ID `34742259071`):**
+   - Result: All 4 jobs completed with success:
+     - `Compiled browser behavior` (ID 103683828479): Passed in 1m28s
+     - `Native Rust (x86_64-pc-windows-msvc)` (ID 103683828517): Passed in 3m26s
+     - `Native Rust (x86_64-apple-darwin)` (ID 103683828584): Passed in 2m54s
+     - `Native Rust (x86_64-unknown-linux-gnu)` (ID 103683828624): Passed in 1m45s
 
 ## Residual Risks & Validation Limits
 
-- **Windows Named Pipe Integration:** Verification was conducted in a Linux environment using Unix domain sockets. Named pipe semantics, busy-pipe retry behavior, and Windows ACL evaluation compile cleanly and share protocol contracts, but native Windows kernel named-pipe teardown was not directly exercised on Windows hardware in this pipeline run.
+- **Windows Named Pipe Integration:** Verification was conducted across local Linux unit/browser tests and full GitHub Actions Windows MSVC CI testing. All named pipe tests passed cleanly under the Windows MSVC CI runner.
 - **Ungraceful Service Termination Window:** If a background service process is forcibly terminated (e.g. `SIGKILL`), the orphaned socket file remains on disk until the next invocation of `lens` or `lens stop`, which safely recovers and unlinks it.
 
 ---
 
-*Note on PlantUML Diagrams:* Per repository guidelines in `AGENTS.md`, this record includes no PlantUML diagrams because there are no actionable findings or unresolved defects; all prior review comments have been fully resolved and verified.
+*Note on PlantUML Diagrams:* Per repository guidelines in `AGENTS.md`, this record includes no PlantUML diagrams because there are no actionable findings or unresolved defects; all prior review comments and platform-specific CI considerations have been fully resolved and verified.
