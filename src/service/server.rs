@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use indexmap::{map::Entry, IndexMap};
 use thiserror::Error;
 use tokio::{
@@ -15,6 +17,7 @@ use super::{
 use crate::viewer::ViewerSession;
 
 const CONTROLLER_CAPACITY: usize = 32;
+const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_millis(1000);
 
 #[derive(Debug, Error)]
 enum ConnectionError {
@@ -57,7 +60,15 @@ pub(crate) async fn run_background_service() -> Result<(), EndpointError> {
         }
     }
 
-    while connections.join_next().await.is_some() {}
+    let drain_completed = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, async {
+        while connections.join_next().await.is_some() {}
+    })
+    .await;
+
+    if drain_completed.is_err() {
+        connections.abort_all();
+        while connections.join_next().await.is_some() {}
+    }
 
     Ok(())
 }

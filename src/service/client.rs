@@ -91,38 +91,55 @@ pub(crate) enum ClientError {
 }
 
 pub(crate) async fn stop_background_service() -> Result<StopOutcome, ClientError> {
-    match endpoint::connect().await {
-        Ok(mut connection) => {
-            let request_id = new_request_id()?;
-            let request = ServiceRequest::Stop(StopRequest {
-                protocol_version: ProtocolVersion::CURRENT,
-                request_id,
-            });
-            let response = match exchange_with_timeout(&mut connection, &request, STOP_TIMEOUT)
-                .await
-            {
-                Ok(response) => response,
-                Err(ExchangeError::AcknowledgmentTimeout) => {
-                    return Err(ClientError::StopAcknowledgmentTimeout)
-                }
-                Err(ExchangeError::Protocol(error)) => return Err(ClientError::Protocol(error)),
-            };
-            match response {
-                ServiceResponse::Stopped {
-                    request_id: resp_id,
-                } => {
-                    verify_request_id(request_id, resp_id)?;
-                    Ok(StopOutcome::Stopped)
-                }
-                ServiceResponse::Incompatible { .. } => Err(ClientError::IncompatibleService),
-                _ => Err(ClientError::MismatchedResponse),
+    stop_background_service_with(endpoint::connect, STOP_TIMEOUT).await
+}
+
+pub(crate) async fn stop_background_service_with<C, Fut>(
+    mut connect: C,
+    timeout: Duration,
+) -> Result<StopOutcome, ClientError>
+where
+    C: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<ClientConnection, EndpointError>>,
+{
+    let deadline = Instant::now() + timeout;
+    let mut connection = loop {
+        match connect().await {
+            Ok(connection) => break connection,
+            Err(error) if error.is_busy() && Instant::now() < deadline => {
+                sleep(CONNECT_RETRY_INTERVAL).await;
             }
+            Err(error) if error.is_busy() => return Err(ClientError::StopAcknowledgmentTimeout),
+            Err(error) if error.is_absent() => {
+                endpoint::clean_stale_endpoint()?;
+                return Ok(StopOutcome::NotRunning);
+            }
+            Err(error) => return Err(ClientError::Endpoint(error)),
         }
-        Err(error) if error.is_unavailable() => {
-            endpoint::clean_stale_endpoint()?;
-            Ok(StopOutcome::NotRunning)
+    };
+
+    let request_id = new_request_id()?;
+    let request = ServiceRequest::Stop(StopRequest {
+        protocol_version: ProtocolVersion::CURRENT,
+        request_id,
+    });
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let response = match exchange_with_timeout(&mut connection, &request, remaining).await {
+        Ok(response) => response,
+        Err(ExchangeError::AcknowledgmentTimeout) => {
+            return Err(ClientError::StopAcknowledgmentTimeout)
         }
-        Err(error) => Err(ClientError::Endpoint(error)),
+        Err(ExchangeError::Protocol(error)) => return Err(ClientError::Protocol(error)),
+    };
+    match response {
+        ServiceResponse::Stopped {
+            request_id: resp_id,
+        } => {
+            verify_request_id(request_id, resp_id)?;
+            Ok(StopOutcome::Stopped)
+        }
+        ServiceResponse::Incompatible { .. } => Err(ClientError::IncompatibleService),
+        _ => Err(ClientError::MismatchedResponse),
     }
 }
 
@@ -370,12 +387,12 @@ mod tests {
     };
 
     use super::{
-        request_target_view_with, stop_background_service, ClientError, ClientOutcome,
-        OpenErrorCode, OpenInvocation, StopOutcome,
+        request_target_view_with, stop_background_service, stop_background_service_with,
+        ClientError, ClientOutcome, OpenErrorCode, OpenInvocation, StopOutcome,
     };
     use crate::{
         service::{
-            endpoint::EndpointError,
+            endpoint::{self, EndpointError},
             protocol::{
                 read_frame, OpenRequest, ProtocolVersion, RequestId, ServiceRequest, WirePath,
             },
@@ -386,6 +403,138 @@ mod tests {
     static TEST_ENVIRONMENT: Mutex<()> = Mutex::new(());
     static FIXTURE_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
     type ServiceTask = JoinHandle<Result<(), EndpointError>>;
+
+    #[tokio::test]
+    async fn idle_connection_held_during_stop_then_service_terminates_within_grace_period() {
+        // Arrange
+        let mut fixture = TestRuntime::new("idle-connection-stop");
+        let service_task = tokio::spawn(crate::service::server::run_background_service());
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if endpoint::connect().await.is_ok() {
+                break;
+            }
+            if Instant::now() > deadline {
+                panic!("service failed to become ready");
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+
+        let _idle_stream = endpoint::connect()
+            .await
+            .expect("idle stream should connect");
+
+        // Act
+        let start_time = Instant::now();
+        let outcome = stop_background_service().await;
+
+        // Assert
+        assert_eq!(outcome.expect("stop should succeed"), StopOutcome::Stopped);
+        let terminated = tokio::time::timeout(Duration::from_millis(2500), service_task).await;
+        assert!(
+            terminated.is_ok(),
+            "service task should terminate within grace period despite idle connection"
+        );
+        let elapsed = start_time.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(3000),
+            "shutdown should be prompt, took {elapsed:?}"
+        );
+        fixture.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn stop_with_busy_endpoint_retries_and_succeeds_when_endpoint_becomes_available() {
+        // Arrange
+        let mut fixture = TestRuntime::new("busy-retry-succeeds");
+        let document_root = fixture.document_root("busy-service", "# Busy service");
+        let _ = request_target_view_with(
+            invocation(&document_root),
+            fixture.service_spawner(),
+            |_| Ok(()),
+        )
+        .await
+        .expect("service should start");
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let observed_attempts = attempts.clone();
+        let connect_mock = move || {
+            let attempt = observed_attempts.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if attempt < 2 {
+                    Err(EndpointError::io(
+                        "connect",
+                        io::Error::from_raw_os_error(231),
+                    ))
+                } else {
+                    endpoint::connect().await
+                }
+            }
+        };
+
+        // Act
+        let outcome = stop_background_service_with(connect_mock, Duration::from_secs(3)).await;
+
+        // Assert
+        assert_eq!(outcome.expect("stop should succeed"), StopOutcome::Stopped);
+        assert!(attempts.load(Ordering::SeqCst) >= 3);
+        fixture.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn stop_with_persistently_busy_endpoint_times_out_without_reporting_not_running() {
+        // Arrange
+        let _fixture = TestRuntime::new("busy-timeout");
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let observed_attempts = attempts.clone();
+        let connect_mock = move || {
+            observed_attempts.fetch_add(1, Ordering::SeqCst);
+            async move {
+                Err(EndpointError::io(
+                    "connect",
+                    io::Error::from_raw_os_error(231),
+                ))
+            }
+        };
+
+        // Act
+        let outcome = stop_background_service_with(connect_mock, Duration::from_millis(60)).await;
+
+        // Assert
+        assert!(matches!(
+            outcome,
+            Err(ClientError::StopAcknowledgmentTimeout)
+        ));
+        assert!(attempts.load(Ordering::SeqCst) > 1);
+    }
+
+    #[tokio::test]
+    async fn stop_with_absent_endpoint_reports_not_running_without_retry() {
+        // Arrange
+        let _fixture = TestRuntime::new("absent-no-retry");
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let observed_attempts = attempts.clone();
+        let connect_mock = move || {
+            observed_attempts.fetch_add(1, Ordering::SeqCst);
+            async move {
+                Err(EndpointError::io(
+                    "connect",
+                    io::Error::new(io::ErrorKind::NotFound, "not found"),
+                ))
+            }
+        };
+
+        // Act
+        let outcome = stop_background_service_with(connect_mock, Duration::from_secs(3)).await;
+
+        // Assert
+        assert_eq!(
+            outcome.expect("stop should succeed"),
+            StopOutcome::NotRunning
+        );
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
 
     #[tokio::test]
     async fn stop_when_service_not_running_then_returns_not_running() {
