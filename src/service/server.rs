@@ -60,15 +60,31 @@ pub(crate) async fn run_background_service() -> Result<(), EndpointError> {
         }
     }
 
-    let drain_completed = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, async {
-        while connections.join_next().await.is_some() {}
-    })
-    .await;
-
-    if drain_completed.is_err() {
-        connections.abort_all();
-        while connections.join_next().await.is_some() {}
+    let drain_deadline = tokio::time::Instant::now() + SHUTDOWN_DRAIN_TIMEOUT;
+    loop {
+        tokio::select! {
+            connection = listener.accept() => {
+                let connection = connection?;
+                let handle = controller.handle();
+                connections.spawn(async move {
+                    if let Err(error) = handle_connection(connection, handle).await {
+                        eprintln!("Lens background service rejected a command: {error}");
+                    }
+                });
+            }
+            Some(_) = connections.join_next(), if !connections.is_empty() => {
+                if connections.is_empty() {
+                    break;
+                }
+            }
+            _ = tokio::time::sleep_until(drain_deadline) => {
+                break;
+            }
+        }
     }
+
+    connections.abort_all();
+    while connections.join_next().await.is_some() {}
 
     Ok(())
 }

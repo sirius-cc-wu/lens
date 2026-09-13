@@ -148,6 +148,42 @@ fn stop_command_when_service_running_then_stops_service_and_exits_zero() {
 }
 
 #[test]
+fn concurrent_stop_commands_when_service_running_then_all_succeed_and_exit_zero() {
+    // Arrange
+    let mut service = BackgroundService::start("concurrent-cli-stops");
+
+    // Act
+    let handles: Vec<_> = (0..4)
+        .map(|_| {
+            let mut command = service.command();
+            command.arg("stop");
+            std::thread::spawn(move || command.output().expect("lens stop command should run"))
+        })
+        .collect();
+
+    let mut outputs = Vec::new();
+    for handle in handles {
+        outputs.push(handle.join().expect("thread should join"));
+    }
+
+    // Assert
+    for output in outputs {
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).expect("output should be UTF-8");
+        assert!(
+            stdout.contains("Lens background service stopped.")
+                || stdout.contains("No Lens background service is running.")
+        );
+    }
+
+    let wait_result = wait_for_child_exit(&mut service.child, Duration::from_secs(3));
+    assert!(
+        wait_result,
+        "background service process should exit after stop"
+    );
+}
+
+#[test]
 fn stop_command_when_service_not_running_then_reports_inactive_and_exits_zero() {
     // Arrange
     let _guard = SERVICE_TESTS
