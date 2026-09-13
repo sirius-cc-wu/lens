@@ -33,7 +33,9 @@ Enable developers and technical writers to open any successfully rendered Mermai
 
 ---
 
-## 3. Example Mapping (Three-Amigos Discovery)
+## 3. Collaborative Requirements Workshop (Three Amigos / Example Mapping)
+
+To clarify requirements, uncover boundary scenarios, and align on acceptance criteria, product, engineering, and quality contributors collaborate in a requirements discovery workshop (Three Amigos discovery using example mapping). The structured visual map below illustrates the user story, underlying business rules, and concrete examples.
 
 ### User Story
 > *Open a rendered Mermaid diagram in a standalone SVG tab to inspect and resize it without document column constraints.*
