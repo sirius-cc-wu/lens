@@ -316,7 +316,7 @@ fn diagram_placeholder(document_id: usize, diagram_id: usize, source: &str) -> S
 
 fn mermaid_placeholder(source: &str) -> String {
     format!(
-        r#"<figure class="diagram mermaid-diagram" data-mermaid-container><div class="mermaid-target"></div><p class="diagram-error" hidden>Mermaid rendering failed. The source is shown below.</p><details class="diagram-source"><summary>Mermaid source</summary><pre><code>{}</code></pre></details></figure>"#,
+        r#"<figure class="diagram mermaid-diagram" data-mermaid-container><div class="mermaid-target"></div><a class="diagram-open-link" data-mermaid-open target="_blank" rel="noopener noreferrer" hidden>Open SVG</a><p class="diagram-error" hidden>Mermaid rendering failed. The source is shown below.</p><details class="diagram-source"><summary>Mermaid source</summary><pre><code>{}</code></pre></details></figure>"#,
         escape_html(source),
     )
 }
@@ -840,6 +840,39 @@ mod tests {
         assert!(document.html.contains(r#"src="/diagrams/1/0""#));
         assert!(document.html.contains(r#"class="diagram mermaid-diagram""#));
         assert!(document.html.contains("Client-&gt;&gt;Server: ping"));
+    }
+
+    #[test]
+    fn mermaid_block_then_emits_open_svg_link_in_placeholder() {
+        // Arrange
+        let markdown = "```mermaid\ngraph TD;\nA-->B;\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            r#"<a class="diagram-open-link" data-mermaid-open target="_blank" rel="noopener noreferrer" hidden>Open SVG</a>"#
+        ));
+    }
+
+    #[test]
+    fn mixed_plantuml_and_mermaid_document_then_emits_open_svg_only_on_mermaid() {
+        // Arrange
+        let markdown = "# System\n\n```plantuml\n@startuml\nnode Server\n@enduml\n```\n\n```mermaid\nsequenceDiagram\nClient->>Server: ping\n```";
+
+        // Act
+        let document = render_test(markdown, 1, "doc.md", &BTreeSet::new());
+
+        // Assert
+        assert_eq!(document.diagrams.len(), 1);
+        assert!(document.html.contains(r#"src="/diagrams/1/0""#));
+        assert!(document.html.contains(r#"data-diagram"#));
+        assert!(document.html.contains(
+            r#"<a class="diagram-open-link" data-mermaid-open target="_blank" rel="noopener noreferrer" hidden>Open SVG</a>"#
+        ));
+        assert_eq!(document.html.matches("diagram-open-link").count(), 1);
+        assert_eq!(document.html.matches("data-mermaid-open").count(), 1);
     }
 
     fn temporary_source_link_root(name: &str) -> PathBuf {
