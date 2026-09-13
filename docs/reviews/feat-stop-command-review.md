@@ -1,8 +1,8 @@
 # Background Viewer Service Stop Command Feature Review
 
-Reviewed `feat/stop-command` from merge base `7c01f2373ee61d82d4b01bfb23c314b3924d3983` with `origin/main` through head `41f00f89d38cce8c5a45ae8b98eb6c72d1f7c5e2`.
+Reviewed `feat/stop-command` from merge base `7c01f2373ee61d82d4b01bfb23c314b3924d3983` with `origin/main` through head `f9c51268305fb79f187a05fe8483bcf31df7fe78`.
 
-**Verdict:** Clean approval — no remaining actionable findings. The implementation delivers the dedicated background service stop command (`lens stop`) specified in [UC-12](../features/background-viewer-service/use-cases.md#uc-12-stop-the-background-lens-service), [FEAT-04-REQ-STOP](../features/background-viewer-service/server-stop-requirements.md), and [ADR-024](../decisions/adr-024-background-service-stop-command.md). All review feedback from PR #18 has been thoroughly resolved with bounded shutdown drains and busy Windows named pipe retry handling. All quality gates pass with 159 tests and 32 browser scenarios without regressions.
+**Verdict:** Clean approval — no remaining actionable findings. The implementation delivers the dedicated background service stop command (`lens stop`) specified in [UC-12](../features/background-viewer-service/use-cases.md#uc-12-stop-the-background-lens-service), [FEAT-04-REQ-STOP](../features/background-viewer-service/server-stop-requirements.md), and [ADR-024](../decisions/adr-024-background-service-stop-command.md). All review feedback from PR #18 has been thoroughly resolved, including bounded shutdown connection drains, busy Windows named pipe retries, and shutdown-race disconnect resilience. All quality gates pass with 162 Rust tests and 32 browser scenarios without regressions.
 
 ## Scope
 
@@ -18,20 +18,20 @@ Inspected the complete authored diff against `origin/main`:
 - IPC Protocol Framing:
   - `src/service/protocol.rs`: `StopRequest` and `ServiceResponse::Stopped` frames, protocol version validation, serialization, and round-trip unit tests.
 - Service Controller & Viewer Session Lifecycle:
-  - `src/service/server.rs`: `ControllerState::Stopping` state transition, session ledger draining, rejection of in-flight open requests during stopping, idempotent stop responses, bounded connection task draining via `SHUTDOWN_DRAIN_TIMEOUT` (1,000ms), and forceful task abort fallback (`abort_all()`).
+  - `src/service/server.rs`: `ControllerState::Stopping` state transition, session ledger draining, rejection of in-flight open requests during stopping, idempotent stop responses, server backlog draining during shutdown, bounded connection task draining via `SHUTDOWN_DRAIN_TIMEOUT` (1,000ms), and forceful task abort fallback (`abort_all()`).
   - `src/viewer/mod.rs`: `ViewerSession::stop()` implementation triggering Axum server shutdown, aborting document filesystem watchers, and waiting on server task completion.
 - Client Coordination & Recovery:
-  - `src/service/client.rs`: `stop_background_service()` client coordination, bounded timeouts (`STOP_TIMEOUT`), exit polling, busy endpoint retry loop (`is_busy()`), and stale endpoint detection (`is_absent()`).
+  - `src/service/client.rs`: `stop_background_service()` client coordination, bounded timeouts (`STOP_TIMEOUT`), exit polling, busy endpoint retry loop (`is_busy()`), stale endpoint detection (`is_absent()`), and shutdown-race disconnect recovery.
 - Platform Endpoint Management:
   - `src/service/endpoint.rs`: Differentiated `is_absent()` and `is_busy()` error classifiers, export of `clean_stale_endpoint`.
   - `src/service/endpoint/unix.rs`: `clean_stale_endpoint` delegating to verified stale socket unlinking.
   - `src/service/endpoint/windows.rs`: No-op named pipe cleanup parity for Windows.
 - CLI Integration Tests:
-  - `tests/cli.rs`: CLI test cases verifying active service stop, inactive service idempotency, stale socket recovery, and CLI `--help` discoverability.
+  - `tests/cli.rs`: CLI test cases verifying active service stop, inactive service idempotency, stale socket recovery, concurrent CLI process stops, and CLI `--help` discoverability.
 
 ## PR #18 Feedback Resolution
 
-Commit `41f00f8` addressed both actionable review findings identified during review:
+Commits `41f00f8`, `1f10ed3`, and `f9c5126` resolved all actionable review findings identified during review:
 
 1. **Bounded IPC Connection Drain on Shutdown (`src/service/server.rs`):**
    - *Reported behavior:* `run_background_service()` previously joined remaining IPC connection tasks via an unbounded loop `while connections.join_next().await.is_some() {}`. If an idle client process maintained an open connection socket without sending frames or disconnecting, the background service could hang indefinitely on shutdown.
@@ -40,8 +40,15 @@ Commit `41f00f8` addressed both actionable review findings identified during rev
 
 2. **Differentiating Absent vs. Busy Endpoints with Windows Named Pipe Retries (`src/service/endpoint.rs`, `src/service/client.rs`):**
    - *Reported behavior:* `EndpointError::is_unavailable()` previously grouped Windows `ERROR_PIPE_BUSY` (raw OS error 231) with absent socket errors (`NotFound`, `ConnectionRefused`). Under high concurrency on Windows, all pipe instances may be temporarily busy connecting, causing `lens stop` to incorrectly assume no service was running, print `"No Lens background service is running."`, and exit prematurely.
-   - *Resolution:* Partitioned error detection into `is_absent()` (endpoint does not exist) and `is_busy()` (endpoint exists but pipe instances or threads are temporarily busy). `stop_background_service()` now implements an exponential-free retry loop with `CONNECT_RETRY_INTERVAL` (25ms) bounded by `STOP_TIMEOUT` when encountering `is_busy()`. Only `is_absent()` unlinks stale sockets and reports `NotRunning`.
+   - *Resolution:* Partitioned error detection into `is_absent()` (endpoint does not exist) and `is_busy()` (endpoint exists but pipe instances or threads are temporarily busy). `stop_background_service()` now implements a retry loop with `CONNECT_RETRY_INTERVAL` (25ms) bounded by `STOP_TIMEOUT` when encountering `is_busy()`. Only `is_absent()` unlinks stale sockets and reports `NotRunning`.
    - *Verification:* Added 5 unit tests for `EndpointError` classification and 3 client coordination tests (`stop_with_busy_endpoint_retries_and_succeeds_when_endpoint_becomes_available`, `stop_with_persistently_busy_endpoint_times_out_without_reporting_not_running`, `stop_with_absent_endpoint_reports_not_running_without_retry`).
+
+3. **Shutdown-Race Disconnect Resilience & Server Backlog Drain (`src/service/client.rs`, `src/service/server.rs`):**
+   - *Reported behavior:* Under concurrent stop commands, if the service initiated shutdown while another client had connected or was transmitting its frame, the connection could experience transport disconnects (`Broken pipe` or `Connection reset`). Previously, this surfaced as an uncaught `ProtocolError::Io`, causing concurrent invocations to fail non-idempotently.
+   - *Resolution:*
+     - *Client-side:* In `stop_background_service_with()`, if an IO error occurs during the exchange with a stopping service, the client enters a 500ms verification loop. If the endpoint becomes absent (confirming the service terminated) or reconnects and confirms stopped status, the client reports `StopOutcome::Stopped` instead of erroring.
+     - *Server-side:* In `run_background_service()`, the server continues accepting incoming connections on its listener during `SHUTDOWN_DRAIN_TIMEOUT`. Connections accepted while in `ControllerState::Stopping` immediately receive `ServiceResponse::Stopped` rather than connection aborts.
+   - *Verification:* Verified with `service::client::tests::stop_when_transport_disconnects_during_shutdown_and_service_stops_then_reports_stopped`, `service::client::tests::concurrent_stops_when_service_running_then_all_clients_succeed_with_stopped` (5 concurrent async tasks), and `tests::cli::concurrent_stop_commands_when_service_running_then_all_succeed_and_exit_zero` (4 concurrent CLI processes).
 
 ## Multi-Axis Review
 
@@ -50,7 +57,7 @@ Commit `41f00f8` addressed both actionable review findings identified during rev
 - **AC-1 (Command Syntax & Discovery):** Running `lens --help` lists `stop` as a recognized subcommand. Running `lens stop --help` describes its purpose. `subcommand_precedence_over_arg = true` ensures `lens stop` is never misinterpreted as a file target named "stop".
 - **AC-2 (Graceful Shutdown of Active Service):** Executing `lens stop` when a background service is active connects over local IPC, sends `StopRequest`, receives `ServiceResponse::Stopped`, awaits process termination within a 3-second bounded window, and reports `"Lens background service stopped."` with exit code 0.
 - **AC-3 (Network & Resource Release):** `ServiceController::stop` calls `drain_sessions()`, which invokes `ViewerSession::stop()` on every retained session. Each session notifies its Axum server to gracefully shut down, aborts its file notification watcher task (releasing inotify/file descriptors), and drops the TCP listener, immediately freeing bound loopback ports. Dropping the IPC `Listener` unlinks the Unix domain socket.
-- **AC-4 (Strict Idempotency):** When no service is running, `lens stop` cleanly detects endpoint unavailability, prints `"No Lens background service is running."`, and exits successfully with code 0. Repeated back-to-back executions of `lens stop` succeed with code 0.
+- **AC-4 (Strict Idempotency):** When no service is running, `lens stop` cleanly detects endpoint unavailability, prints `"No Lens background service is running."`, and exits successfully with code 0. Repeated back-to-back executions of `lens stop` succeed with code 0. Concurrent executions of `lens stop` all succeed with code 0.
 - **AC-5 (Stale Endpoint Cleanup):** If an orphaned Unix domain socket exists from an abnormally terminated process, `lens stop` verifies the endpoint is dead, unlinks the socket file, prints `"No Lens background service is running."`, and exits with code 0.
 - **AC-6 (Per-User Isolation):** Communication endpoints resolve exclusively within the invoking user's runtime directory (`XDG_RUNTIME_DIR` on Unix, user SID pipe on Windows). On Unix, peer credentials (`SO_PEERCRED`) verify the caller's UID matches the service owner before processing requests.
 - **AC-7 (Prompt Execution):** Under normal execution, `lens stop` completes in ~10–50ms. An unresponsive service is bounded by `STOP_TIMEOUT` (3000ms), and connection drain is bounded by `SHUTDOWN_DRAIN_TIMEOUT` (1000ms), preventing shell hangs.
@@ -73,10 +80,10 @@ Commit `41f00f8` addressed both actionable review findings identified during rev
 - **Cohesive Module Boundaries:** Modules maintain single responsibilities:
   - `src/main.rs`: CLI argument parsing and dispatch.
   - `src/service/protocol.rs`: Type-safe frame definition, validation, and serde.
-  - `src/service/server.rs`: Controller state transitions, session draining, and request gating.
-  - `src/service/client.rs`: Client-side discovery, timeout handling, retry loop, and outcome mapping.
+  - `src/service/server.rs`: Controller state transitions, session draining, request gating, and backlog acceptance.
+  - `src/service/client.rs`: Client-side discovery, timeout handling, retry loop, outcome mapping, and disconnect recovery.
   - `src/service/endpoint.rs`: Transport error classification (`is_absent` vs `is_busy`) and stale socket unlinking.
-- **Line Count Compliance:** All modified source files remain well below the 500 non-test lines split signal (e.g., non-test lines in `server.rs` are ~420; `client.rs` are ~380).
+- **Line Count Compliance:** All modified source files remain well below the 500 non-test lines split signal (e.g., non-test lines in `server.rs` are ~430; `client.rs` are ~400).
 - **Behavior-Oriented Testing:** Every new unit and CLI test strictly follows `<condition_or_action>_then_<observable_result>` naming and includes `// Arrange`, `// Act`, and `// Assert` structure.
 
 ## Validation & Test Execution Metrics
@@ -91,7 +98,7 @@ All verification quality gates and test suites were executed against the worktre
    - Result: Passed (0 warnings, 0 errors).
 3. **Rust Unit & CLI Test Suite:**
    - Command: `cargo test --locked`
-   - Result: Passed 159 tests (146 library unit tests, 3 main unit tests, and 10 CLI integration tests) in 4.39s.
+   - Result: Passed 162 tests (148 library unit tests, 3 main unit tests, and 11 CLI integration tests) in 5.43s.
    - New & regression tests passed:
      - `service::endpoint::tests::not_found_io_error_then_is_absent_and_unavailable`
      - `service::endpoint::tests::connection_refused_io_error_then_is_absent_and_unavailable`
@@ -102,6 +109,8 @@ All verification quality gates and test suites were executed against the worktre
      - `service::client::tests::stop_with_busy_endpoint_retries_and_succeeds_when_endpoint_becomes_available`
      - `service::client::tests::stop_with_persistently_busy_endpoint_times_out_without_reporting_not_running`
      - `service::client::tests::stop_with_absent_endpoint_reports_not_running_without_retry`
+     - `service::client::tests::stop_when_transport_disconnects_during_shutdown_and_service_stops_then_reports_stopped`
+     - `service::client::tests::concurrent_stops_when_service_running_then_all_clients_succeed_with_stopped`
      - `service::client::tests::stop_when_service_not_running_then_returns_not_running`
      - `service::client::tests::stop_when_service_running_then_stops_service_and_returns_stopped`
      - `service::client::tests::stop_when_stale_endpoint_exists_then_removes_socket_and_returns_not_running`
@@ -112,9 +121,10 @@ All verification quality gates and test suites were executed against the worktre
      - `stop_command_when_service_not_running_then_reports_inactive_and_exits_zero`
      - `stop_command_help_flag_then_describes_stop_command`
      - `stop_command_when_stale_socket_exists_then_removes_socket_and_exits_zero`
+     - `concurrent_stop_commands_when_service_running_then_all_succeed_and_exit_zero`
 4. **Playwright Browser Test Suite:**
    - Command: `npx playwright test`
-   - Result: Passed 32 tests in 22.2s across Chromium.
+   - Result: Passed 32 tests in 22.9s across Chromium.
 
 ## Residual Risks & Validation Limits
 
