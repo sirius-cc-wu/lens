@@ -976,6 +976,43 @@ test("rendered_mermaid_diagram_then_displays_standalone_open_svg_link", async ({
   }
 });
 
+test("blob_url_creation_fails_then_in_document_mermaid_renders_and_open_link_remains_hidden", async ({
+  page,
+}) => {
+  // Arrange
+  const readme = [
+    "# Mermaid Standalone SVG Fixture",
+    "",
+    "```mermaid",
+    "flowchart LR",
+    "  Alpha[Alpha Service] --> Beta[Beta Service]",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    await page.addInitScript(() => {
+      window.URL.createObjectURL = () => {
+        throw new Error("Simulated Blob URL creation failure");
+      };
+    });
+
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Mermaid Standalone SVG Fixture" })).toBeVisible();
+
+    const diagram = page.locator("[data-mermaid-container]");
+    await expect(diagram).toHaveCount(1);
+    await expect(diagram.locator(".mermaid-target svg")).toBeVisible();
+    await expect(diagram.locator(".diagram-error")).toBeHidden();
+    await expect(diagram.locator("[data-mermaid-open]")).toBeHidden();
+  } finally {
+    await fixture.stop();
+  }
+});
+
 test("invalid_mermaid_syntax_then_suppresses_open_svg_link_and_reveals_source", async ({
   page,
 }) => {

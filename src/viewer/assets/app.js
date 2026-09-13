@@ -71,15 +71,19 @@ if (typeof mermaid !== 'undefined') {
           .then(({ svg }) => {
             target.innerHTML = svg;
             if (openLink) {
-              if (openLink.dataset.blobUrl) {
-                URL.revokeObjectURL(openLink.dataset.blobUrl);
+              try {
+                if (openLink.dataset.blobUrl) {
+                  URL.revokeObjectURL(openLink.dataset.blobUrl);
+                }
+                const adaptedSvg = prepareStandaloneSvg(svg);
+                const blob = new Blob([adaptedSvg], { type: 'image/svg+xml;charset=utf-8' });
+                const blobUrl = URL.createObjectURL(blob);
+                openLink.href = blobUrl;
+                openLink.dataset.blobUrl = blobUrl;
+                openLink.hidden = false;
+              } catch (_blobError) {
+                openLink.hidden = true;
               }
-              const adaptedSvg = prepareStandaloneSvg(svg);
-              const blob = new Blob([adaptedSvg], { type: 'image/svg+xml;charset=utf-8' });
-              const blobUrl = URL.createObjectURL(blob);
-              openLink.href = blobUrl;
-              openLink.dataset.blobUrl = blobUrl;
-              openLink.hidden = false;
             }
           })
           .catch((_error) => {
