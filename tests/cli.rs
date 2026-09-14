@@ -95,6 +95,31 @@ fn missing_target_then_reports_actionable_error() {
 }
 
 #[test]
+fn ready_view_then_prints_only_loopback_url() {
+    // Arrange
+    let service = BackgroundService::start("ready-view-service");
+    let document_root = unique_path("ready-view-root");
+    std::fs::create_dir(&document_root).expect("test document root should be creatable");
+    let document = document_root.join("README.md");
+    std::fs::write(&document, "# Ready view").expect("test document should be writable");
+    let mut command = service.command();
+    command.args(["--scope", "target"]);
+    command.arg(&document);
+
+    // Act
+    let output = command.output().expect("Lens command should run");
+
+    // Assert
+    let stderr = String::from_utf8(output.stderr).expect("command error output should be UTF-8");
+    assert!(output.status.success(), "Lens command failed: {stderr}");
+    assert!(stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).expect("command output should be UTF-8");
+    assert!(stdout.starts_with("http://127.0.0.1:"));
+    assert_eq!(stdout.lines().count(), 1);
+    std::fs::remove_dir_all(document_root).expect("test document root should be removable");
+}
+
+#[test]
 fn empty_current_directory_then_reports_no_documents_error() {
     // Arrange
     let service = BackgroundService::start("empty-directory-service");

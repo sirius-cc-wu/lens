@@ -1,4 +1,3 @@
-mod browser;
 mod markdown;
 mod plantuml;
 mod service;
@@ -16,15 +15,9 @@ pub use viewer::serve;
 /// Library consumers should use [`serve`] for supported foreground document viewing.
 pub async fn open(target: Option<std::path::PathBuf>, scope: TargetScope) -> anyhow::Result<()> {
     let invocation = service::client::OpenInvocation::capture(target, scope)?;
-    match service::client::request_target_view(invocation).await? {
-        service::client::ClientOutcome::Opened { view_url } => {
-            println!("Lens view is ready at {view_url}");
-        }
-        service::client::ClientOutcome::ManualUrl { view_url, error } => {
-            eprintln!("Could not open a browser automatically: {error}");
-            eprintln!("Open {view_url} manually.");
-        }
-    }
+    let service::client::ClientOutcome::Ready { view_url } =
+        service::client::request_target_view(invocation).await?;
+    println!("{view_url}");
     Ok(())
 }
 

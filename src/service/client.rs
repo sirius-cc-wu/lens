@@ -49,8 +49,7 @@ impl OpenInvocation {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum ClientOutcome {
-    Opened { view_url: String },
-    ManualUrl { view_url: String, error: String },
+    Ready { view_url: String },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -176,22 +175,18 @@ where
 pub(crate) async fn request_target_view(
     invocation: OpenInvocation,
 ) -> Result<ClientOutcome, ClientError> {
-    request_target_view_with(
-        invocation,
-        || process::spawn_detached_service().map_err(ClientError::from),
-        crate::browser::open_browser,
-    )
+    request_target_view_with(invocation, || {
+        process::spawn_detached_service().map_err(ClientError::from)
+    })
     .await
 }
 
-pub(crate) async fn request_target_view_with<S, B>(
+pub(crate) async fn request_target_view_with<S>(
     invocation: OpenInvocation,
     mut spawn_service: S,
-    open_browser: B,
 ) -> Result<ClientOutcome, ClientError>
 where
     S: FnMut() -> Result<(), ClientError>,
-    B: FnOnce(&str) -> std::io::Result<()>,
 {
     let request_id = new_request_id()?;
     let request = ServiceRequest::Open(OpenRequest {
@@ -218,13 +213,7 @@ where
         } => {
             verify_request_id(request_id, response_id)?;
             validate_loopback_url(&view_url)?;
-            match open_browser(&view_url) {
-                Ok(()) => Ok(ClientOutcome::Opened { view_url }),
-                Err(error) => Ok(ClientOutcome::ManualUrl {
-                    view_url,
-                    error: error.to_string(),
-                }),
-            }
+            Ok(ClientOutcome::Ready { view_url })
         }
         ServiceResponse::Rejected {
             request_id: response_id,
@@ -475,13 +464,9 @@ mod tests {
         // Arrange
         let mut fixture = TestRuntime::new("busy-retry-succeeds");
         let document_root = fixture.document_root("busy-service", "# Busy service");
-        let _ = request_target_view_with(
-            invocation(&document_root),
-            fixture.service_spawner(),
-            |_| Ok(()),
-        )
-        .await
-        .expect("service should start");
+        let _ = request_target_view_with(invocation(&document_root), fixture.service_spawner())
+            .await
+            .expect("service should start");
 
         let attempts = Arc::new(AtomicUsize::new(0));
         let observed_attempts = attempts.clone();
@@ -604,13 +589,9 @@ mod tests {
         let mut fixture = TestRuntime::new("concurrent-stops");
         let document_root =
             fixture.document_root("concurrent-stop-root", "# Concurrent stop service");
-        let _ = request_target_view_with(
-            invocation(&document_root),
-            fixture.service_spawner(),
-            |_| Ok(()),
-        )
-        .await
-        .expect("service should start");
+        let _ = request_target_view_with(invocation(&document_root), fixture.service_spawner())
+            .await
+            .expect("service should start");
 
         // Act
         let handles: Vec<_> = (0..5)
@@ -661,13 +642,10 @@ mod tests {
         // Arrange
         let mut fixture = TestRuntime::new("stop-running");
         let document_root = fixture.document_root("running-service", "# Running service");
-        let initial_outcome = request_target_view_with(
-            invocation(&document_root),
-            fixture.service_spawner(),
-            |_| Ok(()),
-        )
-        .await
-        .expect("service should start and serve document");
+        let initial_outcome =
+            request_target_view_with(invocation(&document_root), fixture.service_spawner())
+                .await
+                .expect("service should start and serve document");
         let view_url = outcome_url(&initial_outcome);
         let active_page = response_text(&view_url).await;
         assert!(active_page.contains("Running service"));
@@ -719,20 +697,11 @@ mod tests {
         // Arrange
         let mut fixture = TestRuntime::new("missing-service");
         let document_root = fixture.document_root("started", "# Background session");
-        let browser_attempts = Arc::new(AtomicUsize::new(0));
-        let observed_attempts = browser_attempts.clone();
-
         // Act
-        let outcome = request_target_view_with(
-            invocation(&document_root),
-            fixture.service_spawner(),
-            move |_| {
-                observed_attempts.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            },
-        )
-        .await
-        .expect("a missing service should be started automatically");
+        let outcome =
+            request_target_view_with(invocation(&document_root), fixture.service_spawner())
+                .await
+                .expect("a missing service should be started automatically");
         let view_url = outcome_url(&outcome);
         let page = reqwest::get(&view_url)
             .await
@@ -742,8 +711,7 @@ mod tests {
             .expect("acknowledged view should be readable");
 
         // Assert
-        assert!(matches!(outcome, ClientOutcome::Opened { .. }));
-        assert_eq!(browser_attempts.load(Ordering::SeqCst), 1);
+        assert!(matches!(outcome, ClientOutcome::Ready { .. }));
         assert!(page.contains("Background session"));
         fixture.shutdown().await;
     }
@@ -754,28 +722,10 @@ mod tests {
         let mut fixture = TestRuntime::new("concurrent-first");
         let first_root = fixture.document_root("first", "# First command");
         let second_root = fixture.document_root("second", "# Second command");
-        let browser_attempts = Arc::new(AtomicUsize::new(0));
-        let first_attempts = browser_attempts.clone();
-        let second_attempts = browser_attempts.clone();
-
         // Act
         let (first, second) = tokio::join!(
-            request_target_view_with(
-                invocation(&first_root),
-                fixture.service_spawner(),
-                move |_| {
-                    first_attempts.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                },
-            ),
-            request_target_view_with(
-                invocation(&second_root),
-                fixture.service_spawner(),
-                move |_| {
-                    second_attempts.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                },
-            )
+            request_target_view_with(invocation(&first_root), fixture.service_spawner()),
+            request_target_view_with(invocation(&second_root), fixture.service_spawner())
         );
         let first_url = outcome_url(&first.expect("first command should be accepted"));
         let second_url = outcome_url(&second.expect("second command should be accepted"));
@@ -786,7 +736,6 @@ mod tests {
         assert_ne!(first_url, second_url);
         assert!(first_page.contains("First command"));
         assert!(second_page.contains("Second command"));
-        assert_eq!(browser_attempts.load(Ordering::SeqCst), 2);
         fixture.shutdown().await;
     }
 
@@ -804,56 +753,18 @@ mod tests {
         drop(stale);
 
         // Act
-        let outcome = request_target_view_with(
-            invocation(&document_root),
-            fixture.service_spawner(),
-            |_| Ok(()),
-        )
-        .await;
+        let outcome =
+            request_target_view_with(invocation(&document_root), fixture.service_spawner()).await;
 
         // Assert
-        assert!(matches!(outcome, Ok(ClientOutcome::Opened { .. })));
+        assert!(matches!(outcome, Ok(ClientOutcome::Ready { .. })));
         fixture.shutdown().await;
     }
 
     #[tokio::test]
-    async fn browser_launch_failure_then_reports_manual_url_and_keeps_session_available() {
-        // Arrange
-        let mut fixture = TestRuntime::new("browser-failure");
-        let document_root = fixture.document_root("manual", "# Manual URL session");
-
-        // Act
-        let outcome = request_target_view_with(
-            invocation(&document_root),
-            fixture.service_spawner(),
-            |_| {
-                Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "controlled browser failure",
-                ))
-            },
-        )
-        .await
-        .expect("browser failure should preserve the ready outcome");
-        let view_url = outcome_url(&outcome);
-        let page = response_text(&view_url).await;
-
-        // Assert
-        assert!(matches!(
-            outcome,
-            ClientOutcome::ManualUrl { ref error, .. }
-                if error.contains("controlled browser failure")
-        ));
-        assert!(page.contains("Manual URL session"));
-        fixture.shutdown().await;
-    }
-
-    #[tokio::test]
-    async fn target_rejected_then_command_returns_error_without_browser_attempt() {
+    async fn rejected_target_then_command_returns_error() {
         // Arrange
         let mut fixture = TestRuntime::new("target-rejection");
-        let browser_attempts = Arc::new(AtomicUsize::new(0));
-        let observed_attempts = browser_attempts.clone();
         let invocation = OpenInvocation {
             invocation_directory: fixture.directory.clone(),
             target: Some(PathBuf::from("missing.md")),
@@ -862,11 +773,7 @@ mod tests {
         };
 
         // Act
-        let outcome = request_target_view_with(invocation, fixture.service_spawner(), move |_| {
-            observed_attempts.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        })
-        .await;
+        let outcome = request_target_view_with(invocation, fixture.service_spawner()).await;
 
         // Assert
         assert!(matches!(
@@ -876,7 +783,6 @@ mod tests {
                 ..
             })
         ));
-        assert_eq!(browser_attempts.load(Ordering::SeqCst), 0);
         fixture.shutdown().await;
     }
 
@@ -921,14 +827,10 @@ mod tests {
         let started_at = Instant::now();
 
         // Act
-        let outcome = request_target_view_with(
-            invocation(&document_root),
-            move || {
-                observed_attempts.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            },
-            |_| panic!("a timed-out request must not attempt browser launch"),
-        )
+        let outcome = request_target_view_with(invocation(&document_root), move || {
+            observed_attempts.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
         .await;
 
         // Assert
@@ -1048,9 +950,7 @@ mod tests {
 
     fn outcome_url(outcome: &ClientOutcome) -> String {
         match outcome {
-            ClientOutcome::Opened { view_url } | ClientOutcome::ManualUrl { view_url, .. } => {
-                view_url.clone()
-            }
+            ClientOutcome::Ready { view_url } => view_url.clone(),
         }
     }
 

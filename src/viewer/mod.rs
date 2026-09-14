@@ -1,4 +1,4 @@
-use std::{future::Future, net::TcpListener, path::PathBuf};
+use std::{future::Future, net::TcpListener};
 
 use anyhow::{Context, Result};
 use tokio::{sync::oneshot, task::JoinHandle};
@@ -13,12 +13,10 @@ use rendering::renderer_client;
 use routes::router;
 use state::{viewer_state, watch_documents};
 
-use crate::browser::open_browser;
 use crate::target::MarkdownTarget;
 
 pub(crate) struct ViewerSession {
     view_url: String,
-    initial_path: PathBuf,
     server_task: JoinHandle<Result<()>>,
     watcher_task: JoinHandle<()>,
     shutdown_sender: Option<oneshot::Sender<()>>,
@@ -79,7 +77,6 @@ pub(crate) async fn start_session(
 ) -> Result<ViewerSession> {
     let session_token = generate_session_token()?;
     let (document_root, documents, initial_document) = target.into_parts();
-    let initial_path = documents[initial_document].canonical_path.clone();
     let state = viewer_state(
         document_root,
         documents,
@@ -109,7 +106,6 @@ pub(crate) async fn start_session(
 
     Ok(ViewerSession {
         view_url: format!("http://{address}/?token={session_token}"),
-        initial_path,
         server_task,
         watcher_task,
         shutdown_sender: Some(shutdown_sender),
@@ -119,15 +115,7 @@ pub(crate) async fn start_session(
 pub async fn serve(target: MarkdownTarget) -> Result<()> {
     let session = start_session(target, crate::plantuml::server()).await?;
 
-    println!(
-        "Lens is serving {} at {}",
-        session.initial_path.display(),
-        session.view_url()
-    );
-    if let Err(error) = open_browser(session.view_url()) {
-        eprintln!("Could not open a browser automatically: {error}");
-        eprintln!("Open {} manually.", session.view_url());
-    }
+    println!("{}", session.view_url());
 
     session.run_until(shutdown_signal()).await
 }

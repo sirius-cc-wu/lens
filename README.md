@@ -6,8 +6,7 @@ does not depend on Obsidian.
 
 ## Requirements
 
-- A browser and the platform launcher: `xdg-open` on Linux, `open` on macOS,
-  or `cmd /C start` on Windows.
+- A browser to open the loopback URL Lens prints.
 - Optional: Visual Studio Code with its stable `vscode:` URL handler registered
   to open source-file links from rendered documents.
 - Rust 1.75 or newer to build from source.
@@ -70,19 +69,17 @@ ignore behavior remain user-managed.
 
 An ordinary `lens` command starts or reuses one background Lens process for
 the current operating-system user. It waits only until a new isolated viewing
-session is ready, asks the operating system to open that loopback URL, prints
-the URL, and returns control to the terminal. Run another `lens <target>` from
-the same terminal to open a separate view alongside the existing one.
+session is ready, prints that loopback URL, and returns control to the terminal.
+Open the URL in your preferred browser. Run another `lens <target>` from the
+same terminal to create a separate view alongside the existing one.
 
 Each command gets its own loopback listener, fixed document set, target scope,
 source-link boundary, and PlantUML server selection. Reusing the process does
 not merge repositories or admit newly created documents to an older session.
 Saving a document already in a session continues to refresh that session.
 
-If target validation fails, Lens reports the CLI error and does not ask the
-browser to open a view. If the operating system cannot launch the browser, Lens
-prints the ready URL for manual opening and continues to host it. If the
-background process stops, every URL it owned stops with it; the next Lens
+If target validation fails, Lens reports the CLI error and prints no URL. If
+the background process stops, every URL it owned stops with it; the next Lens
 command automatically starts a replacement and recovers a stale local endpoint
 without a cleanup command. This release has no user-facing stop command or idle
 shutdown policy.

@@ -13,8 +13,8 @@ does not prescribe the implementation architecture.
 
 ## Runtime and Portability
 
-- Lens supports Linux, macOS, and Windows. It launches the browser through
-  `xdg-open`, `open`, or `cmd /C start` respectively.
+- Lens supports Linux, macOS, and Windows and prints the loopback URL for the
+  user to open in a browser.
 - The supported source-install command is `cargo install --path . --locked`.
 - Release artifacts use a target-specific archive name and contain the native
   binary name for the selected platform.
@@ -22,15 +22,15 @@ does not prescribe the implementation architecture.
   starts or reuses one background Lens process for the current operating-system
   user and does not require a separate server-start command.
 - The client returns after Lens acknowledges that the target's browser view is
-  available and the browser handoff has been attempted. It must not wait for
-  the browser view to close. A startup, delivery, or acknowledgment failure
-  must not be reported as success.
+  available and prints its URL. It must not wait for the browser view to close.
+  A startup, delivery, or acknowledgment failure must not be reported as
+  success.
 - Service startup is bounded at three seconds and a delivered request is
   bounded at ten seconds for acknowledgment. The local command protocol rejects
   frames larger than 64 KiB before allocating their declared payload.
 - The CLI starts a local-only browser session and should not expose the viewer
   to the local network by default.
-- Failure to launch a browser must leave the local URL visible in the CLI.
+- A successful command must print only the ready local URL on standard output.
 
 ## Content Handling
 

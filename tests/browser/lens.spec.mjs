@@ -1401,12 +1401,12 @@ function runLensClient(lensBinary, commandArguments, options) {
         reject(new Error(`Lens client failed (status ${status}, signal ${signal}): ${stdout}${stderr}`));
         return;
       }
-      const match = stdout.match(/at (http:\/\/127\.0\.0\.1:\d+\S*)/);
-      if (!match) {
+      const viewUrl = stdout.trim();
+      if (!/^http:\/\/127\.0\.0\.1:\d+\S*$/.test(viewUrl)) {
         reject(new Error(`Lens client did not print a loopback URL: ${stdout}${stderr}`));
         return;
       }
-      resolveUrl(match[1]);
+      resolveUrl(viewUrl);
     });
   });
 }
