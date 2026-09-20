@@ -1,7 +1,7 @@
 ---
 type: "Operation Contract"
 title: "OC-07: Request Source Document"
-description: "Specifies authorization, containment, encoding, and markup guarantees for the request_source operation."
+description: "Specifies authorization, containment, encoding, and markup guarantees for the request_source operation with zero external editor dependencies."
 id: "OC-07"
 operation: "request_source(source_path)"
 traces: [UC-12, SSD-07]
@@ -34,7 +34,7 @@ Scope: Lens
   - Each line is enclosed within an identifiable DOM element with `id="L{line_number}"` (1-indexed).
   - An accessible gutter renders line numbers linking to their respective `#L{line_number}` hash.
   - The document header renders the file's repository-relative path, total line count, and byte size.
-  - An optional action link labeled `Open in VS Code` points to `vscode://file/{percent_encoded_canonical_path}`.
+  - No editor URLs, `vscode://` links, or external protocol calls are emitted.
   - The page root carries `data-source-path="{source_path}"` to enable client-side live refresh.
 
 ## Postconditions on Disallowed or Unavailable Targets

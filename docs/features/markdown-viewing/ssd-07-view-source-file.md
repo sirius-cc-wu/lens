@@ -1,7 +1,7 @@
 ---
 type: "System Sequence Diagram"
 title: "SSD-07: View a Referenced Repository Source File"
-description: "Shows Lens returning an in-browser source document route and rendering line-numbered source code with optional editor handoff."
+description: "Shows Lens returning an in-browser source document route and rendering line-numbered source code with zero external editor dependencies."
 id: "SSD-07"
 use_case: "UC-12"
 scenario: "Render and view a qualifying repository source file inside Lens."
@@ -41,19 +41,12 @@ Developer             Browser                      Lens Loopback                
     │                    │                               │    size <= 2MB, UTF-8 text   │
     │                    │                               │                              │
     │                    │ 6. HTTP 200 (HTML with lines, │                              │
-    │                    │    anchors & VS Code link)    │                              │
+    │                    │    gutter & line anchors)     │                              │
     │                    │<──────────────────────────────│                              │
     │                    │                               │                              │
     │ 7. View code,      │                               │                              │
     │    scroll to #L42  │                               │                              │
     │<───────────────────│                               │                              │
-    │                    │                               │                              │
-    │ (Optional)         │                               │                              │
-    │ 8. Click "Open in  │                               │                              │
-    │    VS Code" link   │                               │                              │
-    │───────────────────>│                               │                              │
-    │                    │ 9. Launch vscode://file/...   │                              │
-    │                    │───(external OS handoff)───>   │                              │
 ```
 
 ## Discovered System Operations

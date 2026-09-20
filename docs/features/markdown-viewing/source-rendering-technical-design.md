@@ -1,15 +1,15 @@
-# Technical Design: In-Browser Source Code Rendering
+# Technical Design: In-Browser Source Code Rendering and Pruning of VS Code Integration
 
 ## Objective
 
-Extend [Lens](file:///home/ccwu/lens/README.md) to render qualifying repository source files natively in the browser viewer, eliminating the disruptive context-switch of launching external editors for inspection while preserving optional editor handoff and strict filesystem security.
+Extend [Lens](file:///home/ccwu/lens/README.md) to render qualifying repository source files natively in the browser viewer and **entirely remove** all VS Code URL generation, external scheme handling, and vestigial editor contracts, keeping Lens 100% self-contained and offline.
 
 ## Tech Stack
 
 - **Language / Runtime:** Rust 1.75+ (2021 edition)
 - **HTTP / Loopback Server:** `axum` (v0.6.20)
 - **HTML Escaping & Markdown AST:** `pulldown-cmark` (v0.9.3)
-- **Styling:** Semantic HTML5 table/ordered list with native CSS `:target` selectors and line gutters
+- **Styling:** Semantic HTML5 table with native CSS `:target` selectors and line gutters
 - **Target OS:** Cross-platform (Linux, macOS, Windows)
 
 ## Architecture Overview
@@ -24,7 +24,7 @@ Extend [Lens](file:///home/ccwu/lens/README.md) to render qualifying repository 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                       Axum Route: GET /source/*path                         │
 │  1. Session Auth (token == session_token)                                   │
-│  2. SourceLinkResolver::authorize_path(document_root, path)                 │
+│  2. SourceLinkResolver::resolve_source_content(path)                        │
 │     - Rejects .. traversal, hidden parts, symlinks, directories             │
 │     - Validates canonical path starts with document_root                    │
 │  3. Content Boundary Checks                                                 │
@@ -35,27 +35,46 @@ Extend [Lens](file:///home/ccwu/lens/README.md) to render qualifying repository 
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        Rendered Source Code HTML Page                       │
-│  - Document Header: Path, line count, size, "Open in VS Code" action        │
+│  - Document Header: Breadcrumb (← Documentation), path, line count, size    │
 │  - Semantic Code Gutter: <tr id="L42"><td>42</td><td>...</td></tr>         │
-│  - CSS :target highlight rule: background tint & scroll position            │
+│  - CSS :target highlight rule: amber background tint & scroll position      │
 │  - Auto-refresh polling hook: data-source-path="src/markdown.rs"            │
+│  - ZERO external editor links or vscode:// references                       │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Module Contracts & Changes
+## Vestigial Contract & Code Pruning Audit
+
+Under the `audit-vestigial-contracts` methodology, removing VS Code integration allows pruning obsolete helpers, constants, and parameters:
+
+1. **`src/source_link.rs` Pruning:**
+   - **Delete constant:** `VSCODE_PATH_ENCODE_SET` (AsciiSet used only for `vscode://file/`).
+   - **Delete helper:** `fn vscode_url(path: &Path) -> Option<String>`.
+   - **Delete helper:** `fn has_ambiguous_vscode_position_suffix(path: &str) -> bool` (previously needed because VS Code parsed trailing `:digits` as `:line:col`).
+   - **Prune tests:** Remove tests asserting `vscode://file/...` URI formatting, Windows drive colon preservation, and colon-digit suffix rejection.
+2. **`src/markdown.rs` Pruning:**
+   - **Remove field:** `ResolvedLink::opens_in_vscode`.
+   - **Delete state:** `source_link_stack: Vec<bool>` (previously pushed boolean to emit indicator).
+   - **Delete markup insertion:** `<span class="source-link-indicator"> (opens in VS Code)</span>`.
+   - **Simplify suffix parsing:** Supported line fragments (`#L42`) are directly preserved on the `/source/...` path instead of being translated into `:line:1`.
+3. **`src/viewer/assets/app.css` Pruning:**
+   - **Remove class:** `.source-link-indicator` (and any associated styling).
+
+## Module Contracts & Additions
 
 ### 1. Link Rewriter (`src/markdown.rs`)
 
 Modify `resolve_link`:
 - If `known_documents.contains(&candidate)`: returns `/documents/{candidate}{suffix}`.
-- If `source_links.qualifies(current_document_path, path)`:
+- If target qualifies as a regular source file:
   - Formats destination as `/source/{normalized_path}{suffix}`.
-  - Sets `opens_in_vscode: false` (omitting the `(opens in VS Code)` indicator span).
+  - Emits clean anchor without any indicator text or external scheme.
 - Disallowed paths retain authored destination (falling through to 404).
 
-### 2. Source Authorization & Resolver (`src/source_link.rs`)
+### 2. Source Authorization & Content Resolution (`src/source_link.rs`)
 
-Add method to `SourceLinkResolver`:
+`SourceLinkResolver` becomes the sole domain authority for repository source inspection:
+
 ```rust
 pub(crate) struct AuthorizedSourceFile {
     pub(crate) relative_identifier: String,
@@ -74,7 +93,6 @@ pub(crate) enum SourceResolution {
 
 impl SourceLinkResolver {
     pub(crate) fn resolve_source_content(&self, relative_path: &str) -> SourceResolution;
-    pub(crate) fn canonical_editor_url(&self, canonical_path: &Path) -> Option<String>;
 }
 ```
 
@@ -99,7 +117,7 @@ Add routes to `router`:
   - Calls `state.source_resolver.resolve_source_content(source_path)`.
   - Returns `Html(source_page(...))` with appropriate headers (CSP, no-referrer).
 - `source_revision`:
-  - Returns the mtime timestamp of the file for live refresh.
+  - Returns the mtime timestamp of the source file for live refresh.
 
 ### 4. Page Template & HTML Generation (`src/viewer/page.rs`)
 
@@ -108,7 +126,6 @@ Add `source_page`:
 pub(super) fn source_page(
     relative_path: &str,
     source: &str,
-    vscode_url: Option<&str>,
     session_token: &str,
 ) -> String
 ```
@@ -120,11 +137,7 @@ Generates markup:
     <p class="eyebrow"><a href="/?token={token}">← Documentation</a></p>
     <div class="source-header-row">
       <h1>{escaped_path}</h1>
-      <div class="source-actions">
-        <span class="source-meta">{lines} lines • {size}</span>
-        <!-- Optional VS Code link -->
-        <a href="{vscode_url}" class="vscode-handoff-link">Open in VS Code</a>
-      </div>
+      <span class="source-meta">{lines} lines • {size}</span>
     </div>
   </header>
   <article class="source-content">
