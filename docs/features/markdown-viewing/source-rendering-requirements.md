@@ -94,7 +94,7 @@ Enable developers and technical writers to inspect referenced repository source 
 
 #### Rule 4: Content Boundaries & Graceful Degradation
 *Files that are binary or exceed safe size limits must display helpful diagnostic notices rather than breaking the viewer or consuming excessive memory.*
-- **Example 4.1 (Binary file):** Linking to a compiled `.wasm`, `.png`, or binary fixture under `/source/fixtures/test.bin` detects non-UTF-8 content and renders a clean message: *"Binary file cannot be displayed as text."*
+- **Example 4.1 (Binary file):** Linking to a compiled `.wasm`, `.png`, or binary fixture under `/source/fixtures/test.bin` detects NUL bytes or non-UTF-8 content and renders a clean message: *"Binary file cannot be displayed as text."*
 - **Example 4.2 (Oversized file):** Linking to a 10 MB generated log or database file exceeds the 2 MB limit and displays: *"File size (10.0 MB) exceeds maximum supported view limit (2.0 MB)."*
 
 #### Rule 5: Automatic Refresh Support

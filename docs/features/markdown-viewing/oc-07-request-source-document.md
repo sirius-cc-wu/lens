@@ -27,7 +27,7 @@ Scope: Lens
 - **Filesystem Containment:** The decoded relative path `source_path` is verified to contain no `..` traversal escaping the root, no hidden components, and no symbolic links.
 - **Regular File Validation:** The resolved file exists, is a regular file (not a directory or FIFO), and is readable by the Lens process. Its canonicalized absolute path begins with `document_root`.
 - **Size Boundary:** The file size is less than or equal to 2,097,152 bytes (2 MB).
-- **Encoding Validation:** The file content is valid UTF-8.
+- **Encoding & Text Validation:** The file content is valid UTF-8 and contains no NUL (`\0`) bytes.
 - **Markup Guarantees:**
   - The returned response has HTTP status 200 and Content-Type `text/html; charset=utf-8`.
   - Every line of source code is HTML-escaped (`&`, `<`, `>`, `"`, `'`).
@@ -41,7 +41,7 @@ Scope: Lens
 
 - If the path targets a non-existent file, a directory, a symlink, a hidden path, or traverses outside `document_root`, Lens returns HTTP 404 with the standard Lens document unavailable page.
 - If the target file exceeds 2 MB, Lens returns HTTP 200 with an informative page indicating that the file is too large to render in the browser.
-- If the target file contains non-UTF-8 bytes, Lens returns HTTP 200 with an informative page indicating that binary files cannot be displayed as text.
+- If the target file contains NUL bytes or non-UTF-8 bytes, Lens returns HTTP 200 with an informative page indicating that binary files cannot be displayed as text.
 
 ## Refresh Guarantees
 

@@ -65,7 +65,7 @@ GET /source/*source_path?token={session_token}
 - **Path Resolution & Containment:** The route decodes `source_path`, verifies that no path component is hidden or a symlink, confirms the target is a regular file, canonicalizes the path, and verifies that the canonical path strictly starts with the session's immutable `document_root`.
 - **Content Boundaries & Guards:**
   - **Size Cap:** Enforces a maximum file size limit of 2 MB. Files exceeding 2 MB return a clean, styled notice indicating that the file is too large for browser rendering.
-  - **Encoding Check:** Source files must be valid UTF-8. Non-UTF-8 or binary files return a styled notice indicating that binary files cannot be displayed as text.
+  - **Encoding & Binary Check:** Source files must be valid UTF-8 and must not contain NUL (`\0`) bytes. Binary files or non-UTF-8 content return a styled notice indicating that binary files cannot be displayed as text.
 - **Session Authentication:** The route requires a valid `token` matching `state.session_token`. Lens's `inject_capability` helper automatically appends the session token to all emitted `/source/...` links.
 
 ### 4. Presentation, Line Numbering & Deep Linking

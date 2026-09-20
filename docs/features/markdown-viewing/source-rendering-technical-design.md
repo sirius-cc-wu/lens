@@ -102,7 +102,7 @@ impl SourceLinkResolver {
 3. Must be a regular file (`metadata.is_file()`).
 4. Canonical path must begin with `self.document_root`.
 5. Size check: File size must not exceed `MAX_SOURCE_SIZE = 2 * 1024 * 1024` (2 MB).
-6. UTF-8 check: `fs::read()` followed by `String::from_utf8()`. If UTF-8 parsing fails, return `SourceResolution::Binary`.
+6. Binary & Encoding check: Read file bytes into a buffer. If `bytes.contains(&0)` or `String::from_utf8(bytes)` returns an error, classify as `SourceResolution::Binary`. Rejecting NUL bytes prevents ASCII-range binary files from masquerading as text.
 
 ### 3. Route Handlers (`src/viewer/routes.rs`)
 
