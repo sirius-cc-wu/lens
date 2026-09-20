@@ -71,32 +71,36 @@ Transform Lens into a high-performance, single-instance **Desktop Application** 
 
 ## 4. Detailed Business Rules
 
-### Rule 1: Single-Instance Window Enforcement
-* **Rule 1.1:** Exactly one desktop application window may run per operating-system user.
-* **Rule 1.2:** Single-instance coordination MUST use an authenticated local IPC channel (Unix domain socket on POSIX, Named Pipe on Windows) located in `$XDG_RUNTIME_DIR/lens.sock` (or `%LOCALAPPDATA%\lens\lens.ipc`).
-* **Rule 1.3:** If an unlinked or stale socket file exists from a crashed instance, the launching process MUST test connectivity. If connection is refused, the stale socket file is removed and a new listener established.
+### Rule 1: Single-Instance Window & Endpoint Security
+* **Rule 1.1:** Exactly one desktop application window executes per operating-system user.
+* **Rule 1.2:** The local IPC endpoint MUST reside within a verified user-owned private runtime directory (`0700` permissions) at `$XDG_RUNTIME_DIR/lens/lens.sock` (or `/tmp/lens-$UID/lens.sock` on POSIX, `\\.\pipe\lens-$USERNAME` on Windows with current-user ACL).
+* **Rule 1.3:** Both client and server MUST verify peer operating-system credentials (`SO_PEERCRED` on Linux, `getpeereid` on macOS) before exchanging frames; connections from differing UIDs are rejected immediately.
+* **Rule 1.4:** When multiple `lens` commands start concurrently without a running instance, endpoint acquisition MUST be an atomic election. The winner initializes the desktop window; losing instances wait with bounded backoff for the endpoint to become ready, then forward their targets over IPC.
+* **Rule 1.5:** Stale socket files from terminated instances MUST be recovered automatically after testing connection failure.
 
-### Rule 2: CLI Command Handoff
-* **Rule 2.1:** Invoking `lens [TARGET]` when an instance is already running MUST serialize an `OpenTarget` payload to the IPC socket and exit with code `0` immediately after receiving acknowledgment.
-* **Rule 2.2:** When the desktop application receives `OpenTarget`, it MUST resolve the target against the target's enclosing git repository or canonical directory root.
-* **Rule 2.3:** If the target is already open in an existing tab, the application MUST switch active focus to that tab.
-* **Rule 2.4:** If the target is not open, the application MUST append a new tab and focus it.
-* **Rule 2.5:** The desktop application MUST request window focus and un-minimize if minimized.
+### Rule 2: CLI Command Handoff & Bounded Framing
+* **Rule 2.1:** IPC communication MUST use 4-byte big-endian length-prefixed framing with a hard cap of `MAX_FRAME_BYTES = 64 * 1024` (64 KB). Oversized or malformed frames are rejected immediately without unbounded buffering.
+* **Rule 2.2:** Filesystem paths (`target` and `invocation_directory`) MUST use lossless platform-native byte/unit representations (`WirePath`) rather than lossy Unicode strings.
+* **Rule 2.3:** When the desktop application receives `OpenRequest`, it resolves the target and assigns it to the appropriate tab.
+* **Rule 2.4:** If the target is already open in an existing tab, the application switches active focus to that tab; otherwise, it appends a new tab.
+* **Rule 2.5:** The desktop application requests the window manager to un-minimize and focus the window.
 
-### Rule 3: In-Process Webview & Diagram Rendering
+### Rule 3: In-Process Presentation & Passive Diagram Security
 * **Rule 3.1:** The Dioxus desktop window uses `tao` for window management and `wry` for webview rendering.
-* **Rule 3.2:** Markdown parsing MUST continue using `pulldown-cmark`, generating sanitized HTML rendered directly into the Dioxus component tree via `dangerous_inner_html`.
-* **Rule 3.3:** PlantUML diagrams MUST be fetched as SVGs from the configured PlantUML server (default: `https://www.plantuml.com/plantuml`) and embedded directly into the DOM.
-* **Rule 3.4:** Mermaid diagram blocks (`<pre class="mermaid">`) MUST trigger client-side Mermaid.js evaluation via Dioxus DOM evaluation hooks (`document::eval`) upon tab mount or document refresh.
-* **Rule 3.5:** No loopback HTTP server or query tokens are required for the desktop webview; asset delivery and RPC communication occur entirely in-process.
+* **Rule 3.2:** Markdown parsing uses `pulldown-cmark`, generating sanitized HTML rendered directly into the Dioxus component tree via `dangerous_inner_html`.
+* **Rule 3.3 (Passive SVG Boundary):** PlantUML diagrams MUST be rendered strictly behind a passive `<img>` boundary (e.g. `data:image/svg+xml;base64,...` or custom asset protocol) rather than injecting raw SVGs into the live DOM, strictly blocking script execution and event-handler injection from untrusted diagram responses.
+* **Rule 3.4:** Mermaid diagram blocks (`<pre class="mermaid">`) trigger client-side Mermaid.js evaluation via Dioxus DOM evaluation hooks (`document::eval`) upon tab mount or document refresh without external network calls.
+* **Rule 3.5:** No loopback HTTP server or query tokens are required for the desktop webview.
 
-### Rule 4: Live File Watching & State Preservation
-* **Rule 4.1:** The desktop application watches open files and their document roots for file-system modifications.
-* **Rule 4.2:** Modifying a document on disk triggers reactive re-render of that document's tab without resetting scroll position or discarding open tab state.
+### Rule 4: Per-Tab Workspace Context & Live Watching
+* **Rule 4.1:** Each open tab retains its own independent `WorkspaceContext` containing its canonical document root, discovered document set, target scope, source-link resolver, and PlantUML server configuration.
+* **Rule 4.2:** Opening documents from multiple distinct repositories across separate tabs preserves independent link resolution and discovery sets without mutual interference.
+* **Rule 4.3:** File-system watchers update tab content reactively upon on-disk changes without resetting scroll position or discarding open tab state.
 
-### Rule 5: Headless & Non-Display Environment Handling
-* **Rule 5.1:** If `lens` is invoked in an environment where no graphical display server is available (e.g., `DISPLAY` and `WAYLAND_DISPLAY` are unset on Linux), the command MUST NOT panic.
-* **Rule 5.2:** If invoked with `--server` or when headless fallback is enabled, Lens starts or forwards to the loopback HTTP service. Otherwise, it exits with code `1` and outputs: `error: No graphical display server detected. Run with --server to start a loopback browser session.`
+### Rule 5: Platform Display Environment Handling
+* **Rule 5.1:** On Linux, if both `DISPLAY` and `WAYLAND_DISPLAY` are unset, Lens does not attempt to initialize graphical windows; it outputs an actionable diagnostic message directing the user to `--server`.
+* **Rule 5.2:** On macOS and Windows, platform-native GUI subsystem availability is used; macOS desktop launches MUST NOT require `DISPLAY` or `WAYLAND_DISPLAY`.
+* **Rule 5.3:** If invoked with `--server` in any environment, Lens starts or forwards to the headless loopback HTTP service.
 
 ---
 
@@ -112,15 +116,20 @@ Transform Lens into a high-performance, single-instance **Desktop Application** 
 * **When:** User runs `lens src/architecture.puml` in a shell.
 * **Then:** The shell returns within 200ms with `Opened 'src/architecture.puml' in active Lens window.`; the desktop window displays a new tab with the rendered PlantUML diagram and gains window focus.
 
-### Example 1.3: Target Already Open
-* **Given:** Tab 1 is `docs/README.md` and Tab 2 is `docs/spec.md`. Active tab is Tab 1.
-* **When:** User runs `lens docs/spec.md`.
-* **Then:** No new tab is opened; Tab 2 becomes the active tab; the window is brought to the foreground.
+### Example 1.3: Multi-Repository Tab Isolation
+* **Given:** Tab 1 displays `README.md` in `/home/user/repo-a`.
+* **When:** User runs `lens /home/user/repo-b/docs/api.md`.
+* **Then:** Tab 2 opens with `docs/api.md` scoped to `/home/user/repo-b`. Relative links in Tab 1 resolve to `repo-a`, and relative links in Tab 2 resolve to `repo-b`.
 
-### Example 1.4: Invalid Target Path
-* **Given:** User executes `lens nonexistent.md`.
-* **When:** Target validation executes.
-* **Then:** The CLI prints `error: Target 'nonexistent.md' does not exist or is not readable.` to stderr and exits with code `1`. The running desktop window is not modified.
+### Example 1.4: Concurrent Cold Starts
+* **Given:** Two `lens` commands run concurrently while the application is not running.
+* **When:** Both commands execute startup.
+* **Then:** One command wins the atomic endpoint election and launches the desktop window; the other waits for readiness, forwards its target over IPC, and exits code 0. Exactly one window is opened with two tabs.
+
+### Example 1.5: Passive PlantUML SVG Sanitization
+* **Given:** A PlantUML server returns an SVG containing `<script>alert(1)</script>` or `<svg onload="evil()">`.
+* **When:** The document renders in the Dioxus webview.
+* **Then:** The diagram renders through `<img src="data:image/svg+xml;base64,...">`; the browser engine disables script execution and event handlers, preventing DOM access.
 
 ---
 
@@ -129,9 +138,9 @@ Transform Lens into a high-performance, single-instance **Desktop Application** 
 | Dimension | Requirement |
 |---|---|
 | **Performance** | CLI handoff to running instance MUST complete within 250ms end-to-end. Window launch on cold start MUST be responsive (< 1.5s on desktop hardware). |
-| **Security** | The IPC socket MUST enforce `0600` permissions (read/write only by the invoking user). Foreign users cannot send targets or trigger window events. |
-| **Reliability** | Stale socket files from terminated instances MUST be recovered automatically without user intervention or manual cleanup commands. |
-| **Dependencies** | Pure Rust workspace; no Node.js, npm, or external frontend build steps required for compilation. Linux releases document `libwebkit2gtk-4.1` package dependency. |
+| **Security** | The IPC endpoint MUST verify peer OS UID credentials (`SO_PEERCRED`/`getpeereid`), reject oversized frames (> 64KB), and isolate PlantUML SVGs behind passive `<img>` boundaries. |
+| **Reliability** | Stale socket files from terminated instances MUST be recovered automatically. Concurrent cold starts coordinate atomically without lost targets or duplicate windows. |
+| **Cross-Platform** | Native GUI availability correctly supports Linux (Wayland/X11 check), macOS (AppKit native), and Windows (Win32 session). Lossless `WirePath` preserves platform-native paths. |
 
 ---
 

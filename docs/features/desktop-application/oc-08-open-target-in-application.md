@@ -24,21 +24,23 @@ When no Lens desktop instance is active, launching the desktop application creat
 
 ## Preconditions
 
-- The host environment provides a graphical display server (`DISPLAY`, `WAYLAND_DISPLAY`, or native desktop environment).
+- The host environment provides a graphical display server (active Wayland or X11 session on Linux, native AppKit on macOS, desktop session on Windows).
 - No active process is listening on the current user's designated IPC endpoint.
 
 ## Postconditions on Success
 
 - The optional target was resolved relative to the canonical form of `invocation_directory`; an omitted target resolved to `invocation_directory`.
 - Target resolution produced a canonical document root, a discovered document set, and an initial selected document.
-- Exactly one local IPC listener (Unix domain socket or Windows named pipe) was bound under user-exclusive permissions (`0600`).
+- The IPC listener was bound in a private user-owned runtime directory (`0700`) and verified to enforce peer UID authentication (`SO_PEERCRED` / `getpeereid`).
 - A native desktop window was created via `tao` and surfaced to the display server.
 - The webview was initialized via `wry` with the bundled Mermaid.js script injected.
-- The initial document was parsed by `lens-core` into sanitized HTML and rendered into Tab 1 of the Dioxus application shell.
+- PlantUML diagrams were mounted strictly behind passive `<img>` elements (e.g. data URIs), neutralizing active SVG scripts and event handlers.
+- The initial document was parsed by `lens-core` into sanitized HTML, attached to an independent `WorkspaceContext`, and rendered into Tab 1 of the Dioxus application shell.
 - File-system watchers were registered for the active document root.
 
 ## Error Conditions
 
-- **No Display Server:** If no display environment is detected, Lens does not panic; it outputs an actionable diagnostic message directing the user to start a headless server session or run in a graphical environment.
+- **No Display Server (Linux):** If `DISPLAY` and `WAYLAND_DISPLAY` are unset on Linux, Lens does not panic; it outputs an actionable diagnostic message directing the user to start a headless server session (`--server`).
+- **Concurrent Cold Start:** If another instance wins the atomic socket election, this instance waits for endpoint readiness, converts to a client invocation, and executes `OC-09`.
 - **Stale Socket:** If an existing socket file cannot be reached (connection refused), the stale file is automatically removed and a new listener established.
 - **Target Unreadable:** If the target does not exist or is unreadable, an error toast is surfaced in the application shell and an empty workspace catalog is displayed.

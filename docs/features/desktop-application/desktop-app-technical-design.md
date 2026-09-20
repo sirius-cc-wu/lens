@@ -51,12 +51,19 @@ When a user executes `lens docs/spec.md` from a terminal while Lens Desktop is o
 * **Option A: Loopback HTTP Control Server (Axum on a local port):**
   * The desktop application binds a random loopback port (e.g., `127.0.0.1:PORT`) and writes port + token to a metadata file.
   * *Trade-off:* Requires TCP port allocation, security tokens to prevent cross-user probing, and handling firewall alerts on some platforms.
-* **Option B: Local Domain Sockets / Named Pipes (Qualified Choice):**
-  * Unix Domain Socket on POSIX (`$XDG_RUNTIME_DIR/lens.sock` or `/tmp/lens-$UID.sock`).
-  * Named Pipe on Windows (`\\.\pipe\lens-$USERNAME`).
-  * Communication uses line-delimited JSON messages (`{"action":"open_target","path":"...","scope":"..."}`).
-  * *Trade-off:* Filesystem-based access control (`0600` permissions) strictly limits communication to the invoking OS user without cryptographic tokens. Connection refused cleanly identifies stale crashed sockets.
-  * *Verdict:* **Adopt Option B.** Maximum speed (< 10ms handshake), zero network stack overhead, and native OS user isolation.
+### Debate 2: Single-Instance Inter-Process Communication (IPC)
+
+When a user executes `lens docs/spec.md` from a terminal while Lens Desktop is open, how should the CLI forward the target to the existing window?
+
+* **Option A: Loopback HTTP Control Server (Axum on a local port):**
+  * The desktop application binds a random loopback port (e.g., `127.0.0.1:PORT`) and writes port + token to a metadata file.
+  * *Trade-off:* Requires TCP port allocation, security tokens to prevent cross-user probing, and handling firewall alerts on some platforms.
+* **Option B: Bounded Local Sockets with OS Peer-Credential Verification (Qualified Choice):**
+  * Unix Domain Socket on POSIX located in a verified user-owned private runtime directory (`0700`) under `$XDG_RUNTIME_DIR/lens/lens.sock` (or `/tmp/lens-$UID/lens.sock`).
+  * Named Pipe on Windows (`\\.\pipe\lens-$USERNAME`) with explicit current-user security descriptor (ACL).
+  * **Peer Authentication:** On Unix, both client and server query operating-system peer credentials (`SO_PEERCRED` on Linux, `getpeereid` on macOS) immediately after connection to verify the peer's UID matches the invoking user's UID. Connections from differing UIDs are rejected before reading any bytes.
+  * **Bounded Framing:** Communication reuses the 4-byte big-endian length-prefixed framing established in ADR-022, with a hard `MAX_FRAME_BYTES = 64 * 1024` (64 KB). Any client attempting to send an oversized or unterminated frame is disconnected immediately without unbounded memory allocation.
+  * *Verdict:* **Adopt Option B.** Sub-millisecond handshake, zero network stack overhead, strict OS peer isolation, and immunity to memory exhaustion attacks.
 
 ---
 
@@ -74,14 +81,15 @@ When a user executes `lens docs/spec.md` from a terminal while Lens Desktop is o
 
 ### Debate 4: Client-Side Mermaid.js & PlantUML Execution Lifecycle
 
-* **PlantUML:**
+* **PlantUML (Passive Image Boundary):**
   * Fetched asynchronously by `lens-core` via `reqwest` from the configured PlantUML server.
-  * Returned SVG strings are cached in memory and injected directly into the DOM tree inside a `<div class="plantuml-diagram">`.
+  * **Security Boundary:** To prevent malicious or compromised PlantUML servers from injecting active scripts, event handlers (`onload`, `onclick`), or foreign DOM nodes into the desktop webview, returned SVGs are **never injected directly as raw markup into the live DOM**.
+  * SVGs are encoded as passive data URIs (`<img class="plantuml-diagram" src="data:image/svg+xml;base64,..." alt="...">`) or served via an isolated custom asset protocol (`lens://plantuml/{hash}`). Browsers and webviews enforce that `<img>` SVG representations execute no scripts and cannot access the parent DOM.
 * **Mermaid.js:**
   * Bundled directly into the `lens-app` binary via `include_str!("../assets/mermaid.min.js")`.
   * Injected into the `wry` webview at startup using `with_initialization_script`.
   * On every tab switch or document re-render, a Dioxus `use_effect` fires `document::eval("mermaid.run({ querySelector: '.mermaid' });")`.
-  * *Verdict:* Instant, offline rendering of Mermaid diagrams without external network calls; clean separation between async PlantUML network fetches and local Mermaid rendering.
+  * *Verdict:* Instant, offline rendering of Mermaid diagrams without external network calls; clean separation between async PlantUML network fetches and local Mermaid rendering, with complete neutralization of active SVG payloads.
 
 ---
 
@@ -95,28 +103,28 @@ When a user executes `lens docs/spec.md` from a terminal while Lens Desktop is o
 │ │                         AppShell (Dioxus)                          │ │
 │ │                                                                    │ │
 │ │ ┌──────────────────────┐ ┌───────────────────────────────────────┐ │ │
-│ │ │ TabBar Component     │ │ Quick Actions & Status               │ │ │
-│ │ │ [spec.md ×] [arch.puml]│ │ Root: /home/user/project             │ │ │
+│ │ │ TabBar Component     │ │ Active Workspace Status               │ │ │
+│ │ │ [spec.md ×] [arch.puml]│ │ Root: /home/user/project-A            │ │ │
 │ │ └──────────────────────┘ └───────────────────────────────────────┘ │ │
 │ │ ┌──────────────────┬─────────────────────────────────────────────┐ │ │
-│ │ │ Drawer / Catalog │ DocumentViewer                              │ │ │
-│ │ │ - docs/          │ ┌─────────────────────────────────────────┐ │ │ │
-│ │ │   - spec.md      │ │ # Architecture Specification            │ │ │ │
-│ │ │   - api.md       │ │                                         │ │ │ │
+│ │ │ Drawer / Catalog │ DocumentViewer (Scoped to Tab Context)      │ │ │
+│ │ │ (Active Tab Root)│ ┌─────────────────────────────────────────┐ │ │ │
+│ │ │ - docs/          │ │ # Architecture Specification            │ │ │ │
+│ │ │   - spec.md      │ │                                         │ │ │ │
+│ │ │   - api.md       │ │ <img src="data:image/svg+xml;base64,..">│ │ │ │
 │ │ │ - src/           │ │ ```mermaid                              │ │ │ │
-│ │ │   - main.rs      │ │ graph TD; ...                           │ │ │ │
-│ │ │                  │ │ ```                                     │ │ │ │
+│ │ │                  │ │ graph TD; ...                           │ │ │ │
 │ │ │                  │ └─────────────────────────────────────────┘ │ │ │
 │ │ └──────────────────┴─────────────────────────────────────────────┘ │ │
 │ └────────────────────────────────────────────────────────────────────┘ │
 │                                    │                                   │
 │                                    ▼                                   │
 │ ┌────────────────────────────────────────────────────────────────────┐ │
-│ │                   Local IPC Listener (Unix Socket)                 │ │
-│ │                  $XDG_RUNTIME_DIR/lens.sock                        │ │
+│ │              Local IPC Listener (Length-Prefixed Framing)          │ │
+│ │           $XDG_RUNTIME_DIR/lens/lens.sock (Peer UID Verified)      │ │
 │ └──────────────────────────────────▲─────────────────────────────────┘ │
 └────────────────────────────────────┼───────────────────────────────────┘
-                                     │ (OpenTarget JSON)
+                                     │ (Framed OpenRequest: 64KB Bound)
                         ┌────────────┴───────────┐
                         │    CLI: lens <path>    │
                         └────────────────────────┘
@@ -126,42 +134,50 @@ When a user executes `lens docs/spec.md` from a terminal while Lens Desktop is o
 
 ## 3. IPC Message Protocol Specification
 
-The CLI and Desktop Application communicate over the local socket using line-delimited JSON:
+The CLI and Desktop Application communicate over the local socket using 4-byte big-endian length-prefixed frames (max 64 KB) containing typed JSON payloads with lossless platform-native paths:
 
-### Request: `OpenTarget`
+### Request: `OpenRequest`
 ```json
 {
-  "version": 1,
-  "action": "open_target",
-  "target": "docs/architecture.md",
-  "invocation_directory": "/home/user/project",
+  "protocol_version": 1,
+  "request_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+  "invocation_directory": {
+    "platform": "unix",
+    "units": [47, 104, 111, 109, 101, 47, 117, 115, 101, 114]
+  },
+  "target": {
+    "platform": "unix",
+    "units": [100, 111, 99, 115, 47, 115, 112, 101, 99, 46, 109, 100]
+  },
   "scope": "repository",
   "plantuml_server": null
 }
 ```
 
-### Response: `OpenTargetResponse`
+### Response: `OpenResponse`
 ```json
 {
-  "version": 1,
+  "protocol_version": 1,
+  "request_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
   "status": "ok",
   "tab_id": "tab-3",
   "message": "Target opened in active window."
 }
 ```
 
-### Request: `StopApp`
+### Request: `StopRequest`
 ```json
 {
-  "version": 1,
-  "action": "stop"
+  "protocol_version": 1,
+  "request_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 }
 ```
 
-### Response: `StopAppResponse`
+### Response: `StopResponse`
 ```json
 {
-  "version": 1,
+  "protocol_version": 1,
+  "request_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
   "status": "ok",
   "message": "Lens desktop application shutting down."
 }
@@ -169,15 +185,15 @@ The CLI and Desktop Application communicate over the local socket using line-del
 
 ---
 
-## 4. Dioxus Reactive State Hierarchy
+## 4. Dioxus Reactive State & Per-Tab Workspace Isolation
+
+To prevent cross-repository contamination when a developer works across multiple repositories in separate tabs, all document discovery, source links, and scope state are encapsulated in an immutable `WorkspaceContext` attached to each tab:
 
 ```rust
 pub struct AppState {
-    pub active_root: PathBuf,
     pub tabs: Vec<TabState>,
     pub active_tab_index: usize,
     pub drawer_open: bool,
-    pub discovered_catalog: Vec<DocumentEntry>,
 }
 
 pub struct TabState {
@@ -187,24 +203,39 @@ pub struct TabState {
     pub rendered_html: String,
     pub scroll_offset: f64,
     pub is_modified_on_disk: bool,
+    pub workspace: Arc<WorkspaceContext>,
+}
+
+pub struct WorkspaceContext {
+    pub document_root: PathBuf,
+    pub discovered_documents: HashSet<PathBuf>,
+    pub source_link_resolver: SourceLinkResolver,
+    pub scope: TargetScope,
+    pub plantuml_server: Option<String>,
 }
 ```
 
-1. **`use_signal(|| AppState)`**: Holds global window state.
-2. **`use_coroutine` for IPC Reception**: Spawns an async loop listening on the Unix Domain Socket; when an `OpenTarget` arrives, it invokes `AppState::open_or_switch_tab(target)` and calls `window.set_focus()`.
-3. **`use_coroutine` for File Watching**: Watches paths referenced by active tabs using `notify`; on change, re-parses through `lens-core` and updates the active `TabState.rendered_html`.
+* Switching between Tab 1 (Repository A) and Tab 2 (Repository B) seamlessly switches the active `WorkspaceContext`.
+* Relative links inside Tab 1 resolve strictly against Repository A's root; links inside Tab 2 resolve strictly against Repository B's root.
+* Modifying a document on disk in Repository A only triggers a refresh on tabs associated with that repository's context.
 
 ---
 
-## 5. Platform Dependencies & Linux Packaging
+## 5. Platform Dependencies, Display Detection & Concurrent Startup
 
-* **Linux Requirements:**
-  * Build-time: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`.
-  * Runtime: `libwebkit2gtk-4.1-0`, `libgtk-3-0`.
-* **Debian Packaging (`debs/`):**
-  * Update package control file to specify `Depends: libwebkit2gtk-4.1-0 (>= 2.38), libgtk-3-0 (>= 3.24)`.
-* **Headless Detection:**
-  * If neither `DISPLAY` nor `WAYLAND_DISPLAY` is present on POSIX systems, `lens` CLI aborts before attempting to initialize `tao`, reporting clear guidance.
+### Concurrent Cold-Start Election
+When two or more `lens` commands start concurrently when no application is running:
+1. Both commands observe that no server is responding.
+2. Both attempt atomic creation of a lockfile or atomic binding of the domain socket in the private runtime directory.
+3. The winner of the election assumes server responsibility and spawns `lens-app`.
+4. The loser(s) observe the socket lock, enter a client poll loop with exponential backoff (e.g., polling every 50ms up to 5 seconds) waiting for the winner's endpoint to acknowledge a ping.
+5. Once the endpoint is verified ready and authenticated, the losing instance sends its `OpenRequest` over the IPC socket and exits code 0.
+6. **Result:** Exactly one desktop window is launched, and both targets are opened as distinct tabs.
+
+### Platform Display Detection
+* **Linux:** Checks whether `DISPLAY` or `WAYLAND_DISPLAY` is non-empty. If both are unset (e.g., SSH session, headless container), GUI launch is aborted with an actionable error directing the user to `--server`.
+* **macOS:** Does not inspect `DISPLAY` or `WAYLAND_DISPLAY`. Availability is determined by the macOS WindowServer/AppKit environment.
+* **Windows:** Uses Win32 GUI session detection (`GetSystemMetrics(SM_REMOTESESSION)` / desktop availability).
 
 ---
 

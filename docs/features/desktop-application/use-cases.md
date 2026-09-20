@@ -62,7 +62,7 @@ Open an integrated desktop window displaying a resolved target document or repos
 The developer runs `lens [TARGET]` when no desktop application instance is currently running, or launches Lens from the desktop application launcher.
 
 ### Preconditions
-1. The operating system provides an active graphical display environment (`DISPLAY`, `WAYLAND_DISPLAY`, or native OS desktop).
+1. The operating system provides an active graphical display environment (active Wayland or X11 session on Linux, native AppKit on macOS, desktop session on Windows).
 2. The resolved target is valid and readable within the document root.
 
 ### Main Success Scenario
@@ -70,21 +70,24 @@ The developer runs `lens [TARGET]` when no desktop application instance is curre
 1. The developer invokes `lens [TARGET]` or opens the desktop application directly.
 2. Lens validates the target, discovers the document root, and resolves the initial document.
 3. Lens verifies that no existing single-instance socket is actively listening.
-4. Lens establishes the single-instance IPC listener for the invoking operating-system user.
+4. Lens atomically establishes the single-instance IPC listener in a private runtime directory (`0700`) for the invoking operating-system user.
 5. Lens initializes the Dioxus desktop runtime (`tao` window and `wry` webview).
-6. Lens opens the application window with an initial tab displaying the rendered Markdown document and any associated diagrams (PlantUML / Mermaid).
-7. Lens establishes file-system watchers for the active document root to support automatic refresh.
-8. The developer reviews the document, navigates relative links, and interacts with diagrams directly inside the application window.
+6. Lens opens the application window with an initial tab displaying the rendered Markdown document and any associated diagrams (PlantUML via passive `<img>` boundaries, Mermaid via bundled JS).
+7. Lens encapsulates the document root, discovered document set, and source-link resolver in an independent `WorkspaceContext` for the tab.
+8. Lens establishes file-system watchers for the active document root to support automatic refresh.
+9. The developer reviews the document, navigates relative links, and interacts with diagrams directly inside the application window.
 
 ### Extensions
 
 * **3a. An existing desktop instance is already active:**
   * Lens branches to `UC-14` (Forward Command-Line Target to Running Desktop Application).
-* **5a. No graphical display environment is detected (e.g., SSH session, headless container):**
-  * Lens detects the lack of display server.
-  * If `--headless` or fallback is permitted, Lens logs an informative message and falls back to the headless loopback HTTP server (`FEAT-04`), or exits cleanly with exit code `1` and actionable diagnostic output.
+* **3b. Concurrent cold start:**
+  * Another instance is concurrently winning the atomic socket election. Lens awaits endpoint readiness with exponential backoff, verifies peer OS credentials, and branches to `UC-14`.
+* **5a. No graphical display environment is detected (e.g., Linux SSH session without X11/Wayland):**
+  * On Linux, Lens detects that both `DISPLAY` and `WAYLAND_DISPLAY` are unset.
+  * If `--server` is specified, Lens falls back to the headless loopback HTTP server (`FEAT-04`); otherwise, it exits cleanly with exit code `1` and actionable diagnostic guidance.
 * **6a. Initial target contains PlantUML diagrams:**
-  * Lens requests rendered SVGs from the configured PlantUML server and mounts them asynchronously within the document body.
+  * Lens requests rendered SVGs from the configured PlantUML server and mounts them strictly behind a passive `<img>` element (e.g., `data:image/svg+xml;base64,...`), preventing active script execution.
 * **6b. Initial target contains Mermaid diagrams:**
   * The webview executes bundled Mermaid.js in the DOM and replaces diagram blocks with interactive SVGs.
 
@@ -108,18 +111,21 @@ The developer runs `lens <TARGET>` in a shell while a Lens desktop application w
 ### Main Success Scenario
 
 1. The developer runs `lens <TARGET>` in a terminal.
-2. The CLI client connects to the active per-user IPC socket.
-3. The CLI client transmits an `open_target` request containing the resolved target path, scope, and invocation directory.
-4. The running desktop application receives the request, resolves the target against its known roots, and opens the document in a new workspace tab.
-5. The running desktop application requests the OS window manager to bring the Lens window to the foreground and focus the newly opened tab.
-6. The desktop application returns a success acknowledgment over the IPC socket.
-7. The CLI command prints a confirmation to stdout and exits immediately with code `0`, returning control to the invoking terminal.
+2. The CLI client connects to the active per-user IPC socket in the verified private runtime directory.
+3. Both client and server verify operating-system peer credentials (`SO_PEERCRED` on Linux, `getpeereid` on macOS, current-user ACL on Windows), rejecting mismatched UIDs.
+4. The CLI client transmits a 4-byte length-prefixed `OpenRequest` frame (bounded to 64 KB) containing the lossless native `WirePath`, scope, and invocation directory.
+5. The running desktop application receives the request, resolves the target, creates an isolated `WorkspaceContext` for the target's project, and opens the document in a new workspace tab (or focuses the existing tab if already open).
+6. The running desktop application requests the OS window manager to bring the Lens window to the foreground and focus the newly opened tab.
+7. The desktop application returns a success acknowledgment frame over the IPC socket.
+8. The CLI command prints a confirmation to stdout and exits immediately with code `0`, returning control to the invoking terminal.
 
 ### Extensions
 
 * **2a. Socket exists but connection is refused (stale socket file from abrupt termination):**
   * The CLI client detects the stale socket, unlinks the stale file, and falls back to `UC-13` (launching a new desktop application instance).
-* **3a. Target path fails validation (missing file or outside allowed root):**
+* **3a. Peer credentials mismatch:**
+  * The CLI or application terminates the connection immediately without processing payloads.
+* **4a. Target path fails validation (missing file or outside allowed root):**
   * The CLI client or application rejects the target.
   * The CLI client prints an actionable validation error to stderr and exits with code `1`. The running application window state is unaffected.
 
@@ -131,7 +137,7 @@ The developer runs `lens <TARGET>` in a shell while a Lens desktop application w
 Developer or Technical Writer.
 
 ### Goal
-Organize multiple open documentation files within a single Lens desktop window using tabs, a file explorer drawer, and quick-switching controls.
+Organize multiple open documentation files—even from different repositories—within a single Lens desktop window using tabs, preserving independent project roots and link resolution.
 
 ### Trigger
 The developer clicks a document link, opens files via the drawer, or closes an active tab.
@@ -141,10 +147,10 @@ The Lens desktop application is open and visible.
 
 ### Main Success Scenario
 
-1. The developer clicks a link to another discovered Markdown document inside the active view.
-2. Lens opens the target document in the current tab or a new tab (based on user interaction, e.g., middle-click or Ctrl+click).
+1. The developer clicks a link to another discovered Markdown document inside the active view, or opens a document via CLI handoff (`UC-14`).
+2. Lens assigns the tab its corresponding `WorkspaceContext` (preserving independent document roots for cross-repo tabs).
 3. The tab bar reflects all active documents with their titles and dirty/modified indicators.
-4. The developer switches between tabs; Lens preserves scroll position and render state.
+4. The developer switches between tabs; Lens preserves scroll position and switches the active workspace scope and file catalog.
 5. The developer closes a tab; Lens releases file watchers associated solely with that document, focusing the adjacent active tab.
 
 ### Extensions
