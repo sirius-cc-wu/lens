@@ -33,13 +33,16 @@ Status: implemented and refined through C9
 | `UC-06` | Open a referenced repository file in VS Code | High |
 | `UC-10` | View a standalone PlantUML file | Medium |
 | `UC-11` | View a Mermaid diagram in a standalone SVG page | Medium |
+| `UC-12` | View a referenced source code file in the browser | High |
 
 Inception detailed `UC-01` to validate initial scope without prematurely
 specifying the entire product. E2 adds the document-root and navigation detail
 for `UC-02` through `UC-04`; ADR-004 deferred `UC-06` from V1, and D5 refines
 it as a post-V1 editor handoff. PR 16 added client-side Mermaid diagram
 rendering, and `UC-11` specifies viewing rendered Mermaid diagrams in a
-standalone scalable SVG page.
+standalone scalable SVG page. ADR-025 and `UC-12` supersede the editor-only
+handoff of `UC-06` to render qualifying source files directly in the browser
+with optional VS Code handoff.
 
 ## UC-01: View a Markdown File with PlantUML Blocks
 
@@ -340,6 +343,30 @@ Special requirements:
 - Standalone diagram viewing does not alter session authorization, expose
   arbitrary filesystem paths, or leak session tokens into external contexts.
 
+## UC-12: View a Referenced Source Code File in the Browser
+
+Primary actor: Developer or technical writer
+
+Goal: Inspect a referenced repository source file in the browser without switching applications or requiring an external editor.
+
+Preconditions:
+- A Lens viewing session is active.
+- The user is viewing a rendered Markdown document that contains a relative link to an existing regular file inside the session root.
+
+Trigger: The user clicks the source-file link.
+
+Main success scenario:
+1. The browser requests `/source/{percent-encoded-path}?token={token}`.
+2. Lens validates that the path is within the document root, non-hidden, non-symlink, and a regular readable file.
+3. Lens verifies the file size is <= 2 MB and that content is valid UTF-8.
+4. Lens renders the source code page with line numbers, anchor targets (`#L{n}`), and an optional "Open in VS Code" action link.
+5. The browser displays the source code and scrolls to the specified line fragment if present.
+
+Extensions:
+- 2a. If the path escapes the root, is hidden, or is a symlink, Lens returns the document unavailable page.
+- 3a. If the file exceeds 2 MB, Lens displays an oversized file notice.
+- 3b. If the file is binary, Lens displays a binary file notice.
+
 ## Open Questions
 
 - Which Markdown extensions and filenames are in scope?
@@ -348,6 +375,9 @@ Special requirements:
 
 ## Design Views and Specifications
 
+- [Source code in-browser rendering requirements](source-rendering-requirements.md) (`UC-12`)
+- [Source code in-browser rendering technical design](source-rendering-technical-design.md)
+- [Request source document operation contract](oc-07-request-source-document.md) (`OC-07`)
 - [Mermaid standalone SVG view requirements](mermaid-svg-requirements.md) (`UC-11`)
 - [Mermaid standalone SVG view technical design](mermaid-svg-technical-design.md)
 - [Client-side Mermaid diagram rendering specification](mermaid-rendering-spec.md)
