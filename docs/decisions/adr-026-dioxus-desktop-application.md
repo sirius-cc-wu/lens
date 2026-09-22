@@ -91,6 +91,4 @@ Lens is refactored into three modular crates:
 
 ## Trace
 
-- Use cases: [`docs/features/desktop-application/use-cases.md`](../features/desktop-application/use-cases.md) (`UC-13`, `UC-14`, `UC-15`)
-- Requirements: [`docs/features/desktop-application/desktop-app-requirements.md`](../features/desktop-application/desktop-app-requirements.md) (`FEAT-05-REQ`)
-- Technical design: [`docs/features/desktop-application/desktop-app-technical-design.md`](../features/desktop-application/desktop-app-technical-design.md)
+- Feature specification & execution plan: [`docs/features/desktop-application/feature-spec.md`](../features/desktop-application/feature-spec.md) (`FEAT-05`)
