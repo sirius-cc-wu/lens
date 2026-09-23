@@ -189,6 +189,7 @@ Lens is licensed under the [MIT License](LICENSE).
 
 ```bash
 cargo fmt --check
+cargo build --locked
 cargo test --locked
 cargo clippy --locked --all-targets --all-features -- -D warnings
 ```

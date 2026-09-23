@@ -7,7 +7,7 @@ usage() {
 }
 
 host_target() {
-  rustc -vV | awk '/^host: / { print $2; exit }'
+  rustc -vV | awk '/^host: / { host = $2 } END { print host }'
 }
 
 package_version() {

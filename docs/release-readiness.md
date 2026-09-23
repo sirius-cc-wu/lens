@@ -17,12 +17,13 @@ rather than only internal implementation details.
 
 ```bash
 cargo fmt --check
+cargo build --locked
 cargo test --locked
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo package --allow-dirty
 ```
 
-Pull requests and pushes to `main` run the locked Rust test, Clippy, and package
+Pull requests and pushes to `main` run the locked Rust build, test, Clippy, and package
 checks on native x86-64 Linux, macOS, and Windows runners. Formatting and the
 compiled-browser suite run on Linux.
 
@@ -135,7 +136,7 @@ or checksum.
 
 ## Tagged Release Automation
 
-GitHub Actions runs native Rust test, Clippy, and package checks plus Linux
+GitHub Actions runs native Rust build, test, Clippy, and package checks plus Linux
 formatting and browser checks for pull requests and pushes to `main`. A pushed
 tag named `v<package-version>` starts the release workflow. It rejects a tag
 whose version does not match `Cargo.toml`, builds native archives on Linux,
