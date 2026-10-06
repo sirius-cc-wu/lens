@@ -1448,6 +1448,8 @@ test("currency_range_with_escapes_then_renders_literal_dollars", async ({ page }
     "# Currency Guidance Test",
     "",
     "Price range: \\$5-\\$10. Unescaped: $10 and $20.",
+    "",
+    "Active formula: $x = 1$.",
   ].join("\n");
   const fixture = await startBrowserFixture({ readme });
 
@@ -1457,7 +1459,8 @@ test("currency_range_with_escapes_then_renders_literal_dollars", async ({ page }
 
     // Assert
     await expect(page.getByRole("heading", { level: 1, name: "Currency Guidance Test" })).toBeVisible();
-    await expect(page.locator(".katex")).toHaveCount(0);
+    await expect(page.locator(".katex")).toHaveCount(1);
+    await expect(page.locator(".math-inline .katex")).toBeVisible();
     await expect(page.locator("article")).toContainText("Price range: $5-$10. Unescaped: $10 and $20.");
   } finally {
     await fixture.stop();
@@ -1531,7 +1534,7 @@ test("image_alt_with_math_then_exposes_literal_alt_text", async ({ page }) => {
   const readme = [
     "# Image Alt Math Test",
     "",
-    "![Formula: $E = mc^2$](/diagrams/test.svg)",
+    "![Formula: $E = mc^2$](plot.png)",
   ].join("\n");
   const fixture = await startBrowserFixture({ readme });
 
@@ -1564,6 +1567,11 @@ test("javascript_disabled_then_preserves_readable_math_and_diagram_sources", asy
     "x + y",
     "```",
     "",
+    "```mermaid",
+    "flowchart TD",
+    "  Start --> Stop",
+    "```",
+    "",
     "```plantuml",
     "@startuml",
     "Alice -> Bob: hello",
@@ -1571,15 +1579,18 @@ test("javascript_disabled_then_preserves_readable_math_and_diagram_sources", asy
     "```",
   ].join("\n");
   const fixture = await startBrowserFixture({ readme });
-  const context = await browser.newContext({ javaScriptEnabled: false });
-  const page = await context.newPage();
+  let context;
 
   try {
+    context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+
     // Act
     await page.goto(fixture.lens.url);
 
     // Assert
     await expect(page.getByRole("heading", { level: 1, name: "No-JS Degradation Test" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(0);
     await expect(page.locator(".math-inline")).toBeVisible();
     await expect(page.locator(".math-inline")).toHaveText("E = mc^2");
     await expect(page.locator(".math-display")).toBeVisible();
@@ -1587,13 +1598,27 @@ test("javascript_disabled_then_preserves_readable_math_and_diagram_sources", asy
 
     const mathBlockSource = page.locator(".math-block .math-source");
     await expect(mathBlockSource).toBeVisible();
+    await expect(mathBlockSource).not.toHaveAttribute("open");
     await expect(mathBlockSource.locator("code")).toContainText("x + y");
 
+    await expect(page.locator(".mermaid-target svg")).toHaveCount(0);
+    const mermaidSource = page.locator(".mermaid-diagram .diagram-source, .mermaid-block .mermaid-source");
+    await expect(mermaidSource).toBeVisible();
+    await expect(mermaidSource).not.toHaveAttribute("open");
+    await expect(mermaidSource.locator("code")).toContainText("Start --> Stop");
+
+    await expect.poll(() => fixture.renderer.requests).toBeGreaterThanOrEqual(1);
     const plantumlImg = page.locator('img[src*="/diagrams/"]');
     await expect(plantumlImg).toBeVisible();
+    await expect.poll(async () => plantumlImg.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
   } finally {
-    await context.close();
-    await fixture.stop();
+    try {
+      if (context) {
+        await context.close();
+      }
+    } finally {
+      await fixture.stop();
+    }
   }
 });
 
