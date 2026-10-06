@@ -65,10 +65,14 @@ Lens treats exactly the `Event::InlineMath` and `Event::DisplayMath` events from
 | `[l](https://a.example/$x$)` and `<https://a.example/$x$>` | The URL keeps `$x$` exactly; no span |
 | `<!-- $x$ -->` | Escaped literal text (R5); no span |
 | Math in a heading, link text, footnote definition, blockquote, list item or table cell | Span emitted in place |
+| `> $x$` (blockquote) and `- $x$` (list item) | Span emitted in place inside `<blockquote>` or `<li>` |
 | Mermaid or PlantUML fence containing `$a$` | Diagram source keeps `$a$`; no span |
 | `Range $5-$10` (D1) | Span with text `5-`. **Accepted** |
 | `$y$2` (D2) | Span `y`, then text `2`. **Accepted** |
+| `\| $|x|$ \|` in a table (D3) | Cell splits at unescaped `\|`. **Accepted.** Authors write `\lvert x \rvert` or `\Vert` |
 | `$(CC)$(FLAGS)` in prose (D6) | Span `(CC)`, then text `(FLAGS)`. **Accepted** |
+| Block starter line inside `$$...$$` (D7) | Paragraph ends; no display math. **Accepted.** Authors use `aligned` or indent 4+ spaces |
+| Footnotes under 0.13 `ENABLE_FOOTNOTES` (D9) | GitHub-compatible footnote semantics. **Accepted** |
 
 ### R2: Math span markup
 
@@ -117,10 +121,13 @@ A fenced block whose info string trims to `math` (case-insensitive) emits:
 
 ### R6: Capability injection touches tag attributes only (I2, security and integrity)
 
+`inject_capability` tokenizes start tags. Inside matching attributes (`href` on `a` starting with `/documents/`, `src` on `img` starting with `/diagrams/`), `push_capability_url` splits the URL at the actual fragment `#` and query `?` delimiters while correctly distinguishing HTML character references (e.g. `&#x27;` in `/documents/O&#x27;Reilly.md#intro`).
+
 | Example (HTML passed to `inject_capability`) | Expected |
 | :--- | :--- |
 | `<a href="/documents/a.md#x">` | `href="/documents/a.md?token=T#x"` |
 | `<a href="/documents/a.md?v=1">` | `href="/documents/a.md?v=1&token=T"` |
+| `<a href="/documents/O&#x27;Reilly.md#intro">` | `href="/documents/O&#x27;Reilly.md?token=T#intro"` (entity not broken) |
 | `<img src="/diagrams/0/0" alt="d" data-diagram>` | `src="/diagrams/0/0?token=T"` |
 | `<p>href="/documents/a.md"</p>` | Byte-for-byte unchanged |
 | `<pre><code>&lt;a href="/documents/a.md"&gt;</code></pre>` | Byte-for-byte unchanged |
@@ -145,8 +152,8 @@ A fenced block whose info string trims to `math` (case-insensitive) emits:
   - The source is read from text content before rendering: the span's own text, or the block's `.math-source code`.
   - Each call gets a fresh options object: `{displayMode, throwOnError: false, trust: false, maxSize: 500, maxExpand: 1000, strict: "warn"}`, with no `macros` option.
 - When KaTeX throws, or its output contains `.katex-error`:
-  - spans are replaced with a fallback built only with `createElement` and `textContent`;
-  - blocks hide `.math-target`, un-hide `.math-error`, and open `.math-source`.
+  - **Spans** are replaced with a strictly phrasing-safe fallback: `<span class="math-error" title="Formula rendering failed">Formula error: <code>{source}</code></span>`. CSS controls styling (`display: inline-block` or `display: block`). Spans never insert block elements (`<div>`, `<p>`, `<details>`) that violate phrasing content in `<p>`, `<td>`, or headings.
+  - **Blocks** hide `.math-target`, un-hide `.math-error`, and set `.math-source` `open = true`.
 - A malformed formula never blanks the document or blocks Mermaid or PlantUML.
 
 ### R9: Offline assets, routes and CSP
@@ -168,33 +175,28 @@ A fenced block whose info string trims to `math` (case-insensitive) emits:
 
 | Condition | Expected |
 | :--- | :--- |
-| `/katex.js` fails to load, or JavaScript is off | Spans show raw TeX; `math-block` shows a collapsed "Formula source"; the rest of the document, Mermaid and PlantUML work |
-| An element has `id="katex"` and KaTeX is missing | `renderMath()` returns without throwing |
+| **Mode A: KaTeX script unavailable, JavaScript enabled** | Spans show raw TeX; `math-block` shows collapsed "Formula source"; Mermaid interactive SVGs and live refresh work completely |
+| **Mode B: JavaScript disabled** | Spans show raw TeX; `math-block` shows collapsed "Formula source"; PlantUML images load; Mermaid SVG and dynamic refresh are inactive (Mermaid source readable in `<details>`) |
+| **Mode C: `id="katex"` element without KaTeX engine** | `renderMath()` returns cleanly without throwing |
 
 ## Security Boundaries
 
-- **Always:** escape parser `Html` and `InlineHtml` (R5). Strip heading custom attributes (R10). Keep `inject_capability` tag-aware (R6). Keep KaTeX at `trust: false`. Read sources through `textContent`.
+- **Always:** escape parser `Html` and `InlineHtml` (R5). Strip heading custom attributes (R10). Keep `inject_capability` tag-aware and entity-safe (R6). Keep KaTeX at `trust: false`. Read sources through `textContent`. Keep span error fallbacks phrasing-safe (R8).
 - **Ask first:** any other Rust dependency change; any change to the R7 option set; any KaTeX version change; adding `CAPABILITY_ATTRIBUTES` entries outside an accepted ADR.
-- **Never:** load KaTeX or fonts from a CDN; set `trust: true`; pass a shared `macros` object; weaken `script-src`; scan Markdown source for `$` in Lens code; use `Options::all()`; construct `Event::InlineHtml` in Lens; use `innerHTML` for fallbacks.
+- **Never:** load KaTeX or fonts from a CDN; set `trust: true`; pass a shared `macros` object; weaken `script-src`; scan Markdown source for `$` in Lens code; use `Options::all()`; construct `Event::InlineHtml` in Lens; use `innerHTML` for fallbacks; insert block elements into math spans.
 
 ## Testing Strategy
 
 - **Rust unit tests in `src/markdown.rs`:** at least one per example row in R1–R5, R7 and R10. Name them `<condition_or_action>_then_<observable_result>` and use 3A structure (Arrange, Act, Assert). Existing assertions may change only for the `Tag`/`TagEnd` API migration or `&quot;` → `"` in body text, and each change is listed in the Builder report.
-- **Rust unit tests in `src/viewer/page.rs`:** every R6 row, the R9 page-tag order, and the R9 `url(` check.
+- **Rust unit tests in `src/viewer/page.rs`:** every R6 row (including entity-aware URL handling), the R9 page-tag order, and the R9 `url(` check.
 - **Route tests in `src/viewer/routes.rs`:** R9 routes, 401s and the exact CSP.
 - **Browser tests in `tests/browser/lens.spec.mjs`:**
-  - the fixture's inline, display, aligned, block and table formulas;
-  - `\href` producing no anchor;
-  - the `maxExpand` fallback and the `maxSize` `\rule` clamp to `500em`;
-  - inline, display and block error fallbacks;
-  - zero off-origin requests;
-  - live refresh and Mermaid coexistence;
-  - a table cell with `\lvert x \rvert` (D3);
-  - R11 with `/katex.js` aborted.
+  - **In Slice 4 (core client qualification):** math rendering, `{trust: false, maxSize: 500, maxExpand: 1000}`, phrasing-safe error fallbacks (R8), missing KaTeX (R11 Mode A), `id="katex"` guard (R11 Mode C), zero off-origin requests.
+  - **In Slice 5 (fixture and integration):** the full fixture's inline, display, aligned, block and table formulas; `\lvert x \rvert` table cell (D3); currency ranges (D1 guidance); live refresh and Mermaid coexistence; JavaScript-disabled degradation (R11 Mode B).
 
 ## Acceptance Criteria
 
 1. R1–R11 hold, each with at least one passing test that names the rule in the Builder report.
 2. `cargo fmt --check`, `cargo clippy --locked --all-targets --all-features -- -D warnings`, `cargo test --locked` and `npm run test:browser` all pass. The Builder report attaches the logs.
 3. PlantUML, Mermaid, links, source links and frontmatter work as before. Pre-existing tests change only as allowed above.
-4. The Builder report records SHA-256 of both KaTeX assets and the font-inlining check.
+4. The Builder report records SHA-256 of both KaTeX assets matching ADR-027 and the font-inlining check.

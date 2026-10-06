@@ -59,6 +59,7 @@ Design notes:
 - Display math uses `span`, because the parser emits it inside `<p>` and `<td>`. CSS sets `display: block`.
 - Lens tracks image nesting depth, because the upstream alt-text writer drops `Event::Html`. A mapped formula would vanish from the alt text.
 - Lens emits its own trusted markup only as `Event::Html`. It never constructs `Event::InlineHtml`.
+- Error fallbacks for spans are strictly phrasing-safe (e.g. `<span class="math-error">Formula error: <code>{source}</code></span>`), avoiding illegal block elements (`<div>`, `<p>`, `<details>`) inside `<p>`, `<td>`, or headings. Block-level `<details>` disclosures are used only for fenced `math-block` containers.
 
 ### 3. Pinned parser options
 
@@ -66,28 +67,29 @@ Lens passes exactly this set from one constant, and never uses `Options::all()`:
 
 `ENABLE_TABLES | ENABLE_FOOTNOTES | ENABLE_STRIKETHROUGH | ENABLE_TASKLISTS | ENABLE_SMART_PUNCTUATION | ENABLE_HEADING_ATTRIBUTES | ENABLE_MATH`
 
-These stay disabled: subscript, superscript, wikilinks, definition lists, GFM alerts, YAML and plus metadata blocks, and old footnotes. Lens's own frontmatter handling ([ADR-015](adr-015-yaml-frontmatter-rendering.md)) is unchanged. `ENABLE_FOOTNOTES` selects 0.13's GitHub-compatible footnote semantics. The spike corpus showed no difference from 0.9.3, and a parity test pins defined-footnote output.
+These stay disabled: subscript, superscript, wikilinks, definition lists, GFM alerts, YAML and plus metadata blocks, and old footnotes. Lens's own frontmatter handling ([ADR-015](adr-015-yaml-frontmatter-rendering.md)) is unchanged. `ENABLE_FOOTNOTES` selects 0.13's GitHub-compatible footnote semantics (accepted behavior D9). The spike corpus showed no difference from 0.9.3, and tests pin defined-footnote and undefined-footnote output.
 
 ### 4. Security invariants (they block the upgrade)
 
 - **I1: No parser raw HTML reaches the page.** Both `Event::Html` and `Event::InlineHtml` from the parser become escaped text. Only Lens templates are emitted as raw HTML.
-- **I2: Capability injection never changes text content.** `inject_capability` (`src/viewer/page.rs`) is a single-pass tokenizer that understands tags. It appends the session token only to:
+- **I2: Capability injection never changes text content and preserves URL semantics.** `inject_capability` (`src/viewer/page.rs`) is a single-pass tokenizer that understands tags. It appends the session token only to:
   - an `href` attribute value on an `a` start tag, when the value starts with `/documents/`;
   - a `src` attribute value on an `img` start tag, when the value starts with `/diagrams/`.
 
-  Text between tags is copied byte for byte, by construction. I2 is sound because of I1. After I1, every `<` in rendered HTML starts a real tag, and every attribute value is double-quoted with no raw `"` or `>`: parser text, `escape_html`, `escape_href` and Lens's `escape_html` all encode them.
+  Text between tags is copied byte for byte, by construction. Inside target URLs, `push_capability_url` splits at the actual fragment `#` and query `?` delimiters while correctly distinguishing HTML character references (e.g. `&#x27;` in `/documents/O&#x27;Reilly.md#intro`), preserving the decoded URL destination without corrupting paths.
+  I2 is sound because of I1. After I1, every `<` in rendered HTML starts a real tag, and every attribute value is double-quoted with no raw `"` or `>`: parser text, `escape_html`, `escape_href` and Lens's `escape_html` all encode them.
 - **I3: The option set is pinned** as in §3.
 - **I4: Heading attribute blocks produce only `id` and `class`.** Custom attributes are discarded, restoring 0.9.3 behavior. Without I4, authors could forge `style` (allowed by `style-src 'unsafe-inline'`), `href` or `src` (capability-carrying), or `data-*` markers that `app.js` acts on.
 
 ### 5. KaTeX, routes and CSP (ADR-026 §3–§5, version corrected)
 
 - Bundled KaTeX **0.16.22**:
-  - `katex.min.js` is identical to the npm `dist` file.
-  - `katex.min.css` is the `dist` stylesheet with every font `url()` replaced by a `data:font/woff2;base64` URI of the matching `dist/fonts` file.
-  - The C19 Builder report records SHA-256 hashes of both files.
+  - `katex.min.js`: identical to npm `katex@0.16.22/dist/katex.min.js` (SHA-256: `e8d885505949f3a5f4abdd5dd0d53696bd1371ad26ffbf4f310dcd77c8cdae89`).
+  - `katex.min.css`: `dist` stylesheet with every font `url()` replaced by a `data:font/woff2;base64` URI of the matching `dist/fonts` file (SHA-256: `05f52c1d80561bc3d1024881edd88c25e49352d4ee08493d2f912c27d2ef7a12`).
+  - Salvage provenance: ported from `feat/offline-math-rendering` commit `394d7ea4ba`.
 - The token-guarded routes `/katex.js` (`text/javascript; charset=utf-8`) and `/katex.css` (`text/css; charset=utf-8`).
 - The CSP adds `font-src 'self' data:`. `script-src` stays `'self'`.
-- `app.js` renders with a fresh options object per formula: `{displayMode, throwOnError: false, trust: false, maxSize: 500, maxExpand: 1000, strict: "warn"}`, with no shared `macros` object. Error fallbacks are built with `textContent` only.
+- `app.js` renders with a fresh options object per formula: `{displayMode, throwOnError: false, trust: false, maxSize: 500, maxExpand: 1000, strict: "warn"}`, with no shared `macros` object. Error fallbacks are built with phrasing-safe DOM elements using `textContent` only.
 
 ### 6. Accepted behaviors
 
@@ -97,12 +99,13 @@ These follow from §1. They are documented for authors and pinned by tests, but 
 | :--- | :--- | :--- | :--- |
 | D1 | `Range $5-$10` | `5-` renders as math | Write `\$5-\$10` |
 | D2 | `$y$2` | `y` renders as math, followed by `2` | None needed |
-| D3 | `\| $\|x\|$ \|` in a table | The cell splits at `\|` (GitHub behaves the same) | Use `\lvert x \rvert` or `\vert` |
+| D3 | `\| $|x|$ \|` in a table | The cell splits at unescaped `\|` (GitHub behaves the same). Escaping as `$\|x\|$` strips the backslash in TeX yielding `|x|`. | Use `\lvert x \rvert` or `\Vert` for norms |
 | D4 | ```` ```math ```` | Intercepted by Lens as a `math-block` (§2) | None |
 | D5 | `$$\verb\|$x$\|$$` | Fragments | Avoid `$` inside `\verb` |
 | D6 | `$(CC)$(FLAGS)` written in prose | `(CC)` renders as math | Put shell and Make expressions in code spans |
-| D7 | A blank line inside `$$ … $$` | The paragraph ends; no display math | Keep display math free of blank lines |
+| D7 | A line starting with a block marker (`- `, `+ `, `> `, `1.`, `#`, `===`, or blank line) inside `$$ … $$` | The paragraph ends; no display math | Keep display math free of block markers, use `\begin{aligned} ... \end{aligned}`, or indent continuation lines 4+ spaces |
 | D8 | `$x$` in YAML frontmatter | Literal | None |
+| D9 | Footnote syntax under 0.13 `ENABLE_FOOTNOTES` | GitHub-compatible: consecutive `[^a]:` lines separate; undefined `[^x]` renders as literal text; indented continuation paragraphs stay inside footnote | Follow standard GitHub Flavored Markdown footnote conventions |
 
 ## Alternatives considered
 
@@ -116,7 +119,7 @@ These follow from §1. They are documented for authors and pinned by tests, but 
 ## Consequences
 
 - The 1,106-line pre-parser, its placeholders, the placeholder allowlist and the `&#10;`/`&#124;` attribute encodings are not carried forward.
-- Math correctness becomes a property of the parser, which is tested upstream. Lens tests the event mapping and pins the accepted behaviors (D1–D3, D6) so that an upstream change shows up as a failing test.
+- Math correctness becomes a property of the parser, which is tested upstream. Lens tests the event mapping and pins the accepted behaviors (D1–D3, D6, D7, D9) so that an upstream change shows up as a failing test.
 - Body text no longer encodes `"` as `&quot;`. On `main`, no Lens assertion depends on it: the only `&quot;` assertion checks Lens's own `escape_html` output for Mermaid source.
 - New parser behavior arrives only through a deliberate version bump (the `=` pin) or an option-set change, never implicitly.
 - The binary grows by about the size of the KaTeX assets.
