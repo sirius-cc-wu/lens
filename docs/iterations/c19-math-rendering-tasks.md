@@ -56,10 +56,10 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
 
 **Files:** `src/viewer/page.rs`
 
-- [ ] **1.1** Add `CAPABILITY_ATTRIBUTES`, `scan`, `is_capability_attribute` and `push_capability_url`.
+- [x] **1.1** Add `CAPABILITY_ATTRIBUTES`, `scan`, `is_capability_attribute` and `push_capability_url`.
   - Rewrite `inject_capability`: tokenizes start tags, rewriting only matching attribute values (`href` on `a` starting with `/documents/`, `src` on `img` starting with `/diagrams/`).
   - Inside `push_capability_url`: locate query `?` and fragment `#` delimiters while ignoring HTML character references (e.g. `&#x27;`). Insert `token=` before fragment or query cleanly without corrupting the path.
-- [ ] **1.2** Tests in `page.rs`:
+- [x] **1.2** Tests in `page.rs`:
   - *Red-first tests* (must fail on the old scanner before 1.1):
     - `body_text_resembling_document_attribute_then_remains_byte_identical` (input `<p>href="/documents/a.md"</p>`)
     - `code_text_resembling_anchor_markup_then_remains_byte_identical` (input `<pre><code>&lt;a href="/documents/a.md"&gt;</code></pre>`)
@@ -73,7 +73,7 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
     - `diagram_image_with_trailing_boolean_attribute_then_appends_token`
     - `truncated_tag_then_copies_remainder_unchanged`
     - `non_ascii_text_around_tags_then_is_preserved` (UTF-8 boundary safety)
-- **Commit:** `fix: inject session capability only into tag attributes with entity-safe URL boundaries`
+- **Commit:** `fix: inject session capability only into tag attributes with entity-safe URL boundaries` (`3f4d982`, remediated in `7ca7c85`)
 - **Stage:** `git add src/viewer/page.rs`
 
 ---
