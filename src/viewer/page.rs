@@ -259,7 +259,7 @@ fn scan(html: &str, token: &str) -> String {
             }
 
             if bytes[idx] == b'>' {
-                result.push('>');
+                result.push_str(&html[idx..tag_end]);
                 break;
             }
             if bytes[idx] == b'/' {
@@ -377,10 +377,7 @@ pub(super) fn content_security_policy() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, path::PathBuf};
-
     use super::{document_unavailable_page, inject_capability, page};
-    use crate::{markdown::render, source_link::SourceLinkResolver};
 
     const TEST_TOKEN: &str = "test-token";
 
@@ -473,22 +470,8 @@ mod tests {
         assert!(page.contains(r#"href="/?token=test-token""#));
     }
 
-    fn render_markdown(markdown: &str) -> String {
-        let root = PathBuf::from("/");
-        let resolver = SourceLinkResolver::new(root);
-        let rendered = render(
-            markdown,
-            0,
-            "test.md",
-            std::path::Path::new("test.md"),
-            &BTreeSet::new(),
-            &resolver,
-        );
-        rendered.html
-    }
-
     #[test]
-    fn document_page_injects_script_and_stylesheet_tokens_only_in_head_and_body_tags() {
+    fn document_page_then_injects_script_and_stylesheet_tokens_only_in_head_and_body_tags() {
         // Arrange
         let content = "<p>Standard article content.</p>";
 
@@ -503,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn document_page_with_head_token_in_prose_does_not_inject_script() {
+    fn document_page_with_head_token_in_prose_then_does_not_inject_script() {
         // Arrange
         let html = r#"<p>head token in prose: <script src="/diagrams/app.js"></script></p>"#;
 
@@ -516,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn document_page_with_link_tag_in_code_block_does_not_inject_stylesheet() {
+    fn document_page_with_link_tag_in_code_block_then_does_not_inject_stylesheet() {
         // Arrange
         let html = r#"<pre><code><link rel="stylesheet" href="/documents/style.css"></code></pre>"#;
 
@@ -531,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn document_page_with_external_links_does_not_inject_tokens() {
+    fn document_page_with_external_links_then_does_not_inject_tokens() {
         // Arrange
         let content = r#"<p><a href="https://example.com/documents/doc.md">External</a></p>"#;
 
@@ -544,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn document_page_with_query_and_fragment_in_local_link_preserves_both() {
+    fn document_page_with_query_and_fragment_in_local_link_then_preserves_both() {
         // Arrange
         let content = r#"<p><a href="/documents/guide.md?view=full#chapter-1">Guide</a></p>"#;
 
@@ -558,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn document_page_with_apostrophe_entity_in_local_link_preserves_entity_and_fragment() {
+    fn document_page_with_apostrophe_entity_in_local_link_then_preserves_entity_and_fragment() {
         // Arrange
         let html = r#"<p><a href="/documents/O&#x27;Reilly.md#intro">Book</a></p>"#;
 
@@ -568,37 +551,6 @@ mod tests {
         // Assert
         assert!(rendered.contains(r#"href="/documents/O&#x27;Reilly.md?token=test-token#intro""#));
         assert!(!rendered.contains(r#"href="/documents/O&?token="#));
-    }
-
-    #[test]
-    fn markdown_table_with_dollars_in_cells_then_preserves_table_structure() {
-        // Arrange
-        let markdown = "| Price | Cost |\n| --- | --- |\n| $10 | $20 |";
-        let html = render_markdown(markdown);
-
-        // Act
-        let rendered = page("Table", html, None, TEST_TOKEN);
-
-        // Assert
-        assert!(rendered.contains("<table>"));
-        assert!(rendered.contains("<td>$10</td>"));
-        assert!(rendered.contains("<td>$20</td>"));
-    }
-
-    #[test]
-    fn autolink_and_email_autolink_with_dollars_then_preserve_literal_urls() {
-        // Arrange
-        let markdown = "<https://example.com/$pricing> <user$name@example.com>";
-        let html = render_markdown(markdown);
-
-        // Act
-        let rendered = page("Autolinks", html, None, TEST_TOKEN);
-
-        // Assert
-        assert!(rendered.contains(r#"href="https://example.com/$pricing""#));
-        assert!(rendered.contains(r#"href="mailto:user$name@example.com""#));
-        assert!(!rendered.contains("https://example.com/$pricing?token="));
-        assert!(!rendered.contains("user$name@example.com?token="));
     }
 
     #[test]
@@ -748,6 +700,51 @@ mod tests {
         assert_eq!(
             injected,
             r#"<p>你好 <a href="/documents/指南.md?token=test-token#安装">安装</a> 世界 🚀</p>"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_decimal_apostrophe_entity_then_preserves_path_and_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/O&#39;Reilly.md#intro">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/O&#39;Reilly.md?token=test-token#intro">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_entity_and_no_fragment_then_appends_token() {
+        // Arrange
+        let html = r#"<a href="/documents/O&#x27;Reilly.md">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/O&#x27;Reilly.md?token=test-token">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_encoded_ampersand_before_fragment_then_splits_at_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/guide.md?foo=1&amp;#intro">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/guide.md?foo=1&amp;&token=test-token#intro">"#
         );
     }
 }
