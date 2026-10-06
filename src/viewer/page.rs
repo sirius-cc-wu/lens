@@ -377,7 +377,10 @@ pub(super) fn content_security_policy() -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::{document_unavailable_page, inject_capability, page};
+    use crate::{markdown::render, source_link::SourceLinkResolver};
 
     const TEST_TOKEN: &str = "test-token";
 
@@ -746,5 +749,61 @@ mod tests {
             injected,
             r#"<a href="/documents/guide.md?foo=1&amp;&token=test-token#intro">"#
         );
+    }
+
+    #[test]
+    fn markdown_code_span_with_document_anchor_text_then_page_adds_no_token_to_code() {
+        // Arrange
+        let markdown = "Here is a code span: `<a href=\"/documents/a.md\">`";
+        let root = std::env::current_dir().expect("test root available");
+        let document_path = root.join("doc.md");
+        let source_links = SourceLinkResolver::new(root);
+
+        // Act
+        let rendered = render(
+            markdown,
+            0,
+            "doc.md",
+            &document_path,
+            &BTreeSet::new(),
+            &source_links,
+        );
+        let html = page("Code Span Test", rendered.html, None, TEST_TOKEN);
+
+        // Assert
+        assert!(
+            html.contains("&lt;a href=&quot;/documents/a.md&quot;&gt;")
+                || html.contains("&lt;a href=\"/documents/a.md\"&gt;")
+        );
+        assert!(!html.contains("/documents/a.md?token="));
+        assert!(!html.contains("/documents/a.md&token="));
+    }
+
+    #[test]
+    fn markdown_raw_anchor_html_then_page_adds_no_token_to_escaped_text() {
+        // Arrange
+        let markdown = "Raw HTML: <a href=\"/documents/a.md\">x</a>";
+        let root = std::env::current_dir().expect("test root available");
+        let document_path = root.join("doc.md");
+        let source_links = SourceLinkResolver::new(root);
+
+        // Act
+        let rendered = render(
+            markdown,
+            0,
+            "doc.md",
+            &document_path,
+            &BTreeSet::new(),
+            &source_links,
+        );
+        let html = page("Raw Anchor Test", rendered.html, None, TEST_TOKEN);
+
+        // Assert
+        assert!(
+            html.contains("&lt;a href=\"/documents/a.md\"&gt;x&lt;/a&gt;")
+                || html.contains("&lt;a href=&quot;/documents/a.md&quot;&gt;x&lt;/a&gt;")
+        );
+        assert!(!html.contains("/documents/a.md?token="));
+        assert!(!html.contains("/documents/a.md&token="));
     }
 }

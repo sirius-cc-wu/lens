@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt::Write as _, path::Path};
 
-use pulldown_cmark::{html, CodeBlockKind, Event, LinkType, Options, Parser, Tag};
+use pulldown_cmark::{html, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 use serde_yaml::{Mapping, Value};
 
 use crate::source_link::{normalize_relative_link, SourceLinkResolver};
@@ -16,6 +16,13 @@ pub struct RenderedDocument {
     pub diagrams: Vec<Diagram>,
 }
 
+const LENS_OPTIONS: Options = Options::ENABLE_TABLES
+    .union(Options::ENABLE_FOOTNOTES)
+    .union(Options::ENABLE_STRIKETHROUGH)
+    .union(Options::ENABLE_TASKLISTS)
+    .union(Options::ENABLE_SMART_PUNCTUATION)
+    .union(Options::ENABLE_HEADING_ATTRIBUTES);
+
 pub fn render(
     markdown: &str,
     document_id: usize,
@@ -25,7 +32,7 @@ pub fn render(
     source_links: &SourceLinkResolver,
 ) -> RenderedDocument {
     let frontmatter = frontmatter(markdown);
-    let parser = Parser::new_ext(frontmatter.body, Options::all());
+    let parser = Parser::new_ext(frontmatter.body, LENS_OPTIONS);
     let mut events = Vec::new();
     let mut diagrams = Vec::new();
     let mut plantuml_source: Option<String> = None;
@@ -35,7 +42,7 @@ pub fn render(
     for event in parser {
         if let Some(source) = plantuml_source.as_mut() {
             match event {
-                Event::End(Tag::CodeBlock(_)) => {
+                Event::End(TagEnd::CodeBlock) => {
                     let source = plantuml_source.take().expect("PlantUML source is active");
                     let diagram_id = diagrams.len();
                     diagrams.push(Diagram {
@@ -54,7 +61,7 @@ pub fn render(
 
         if let Some(source) = mermaid_source.as_mut() {
             match event {
-                Event::End(Tag::CodeBlock(_)) => {
+                Event::End(TagEnd::CodeBlock) => {
                     let source = mermaid_source.take().expect("Mermaid source is active");
                     events.push(Event::Html(mermaid_placeholder(&source).into()));
                 }
@@ -76,15 +83,20 @@ pub fn render(
             {
                 mermaid_source = Some(String::new());
             }
-            Event::Start(Tag::Link(link_type, destination, title)) => {
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                title,
+                id,
+            }) => {
                 let resolved = if link_type == LinkType::Email {
                     ResolvedLink {
-                        destination: destination.to_string(),
+                        destination: dest_url.to_string(),
                         opens_in_vscode: false,
                     }
                 } else {
                     resolve_link(
-                        &destination,
+                        &dest_url,
                         current_document,
                         current_document_path,
                         known_documents,
@@ -92,19 +104,20 @@ pub fn render(
                     )
                 };
                 source_link_stack.push(resolved.opens_in_vscode);
-                events.push(Event::Start(Tag::Link(
+                events.push(Event::Start(Tag::Link {
                     link_type,
-                    resolved.destination.into(),
+                    dest_url: resolved.destination.into(),
                     title,
-                )));
+                    id,
+                }));
             }
-            Event::End(Tag::Link(link_type, destination, title)) => {
+            Event::End(TagEnd::Link) => {
                 if source_link_stack.pop().unwrap_or(false) {
                     events.push(Event::Html(
                         r#"<span class="source-link-indicator"> (opens in VS Code)</span>"#.into(),
                     ));
                 }
-                events.push(Event::End(Tag::Link(link_type, destination, title)));
+                events.push(Event::End(TagEnd::Link));
             }
             Event::Start(Tag::Table(alignments)) => {
                 let width_class = if alignments.len() >= 4 {
@@ -117,11 +130,24 @@ pub fn render(
                 ));
                 events.push(Event::Start(Tag::Table(alignments)));
             }
-            Event::End(Tag::Table(alignments)) => {
-                events.push(Event::End(Tag::Table(alignments)));
+            Event::End(TagEnd::Table) => {
+                events.push(Event::End(TagEnd::Table));
                 events.push(Event::Html("</div>".into()));
             }
-            Event::Html(value) => events.push(Event::Text(value)),
+            Event::Start(Tag::Heading {
+                level,
+                id,
+                classes,
+                attrs: _,
+            }) => {
+                events.push(Event::Start(Tag::Heading {
+                    level,
+                    id,
+                    classes,
+                    attrs: Vec::new(),
+                }));
+            }
+            Event::Html(value) | Event::InlineHtml(value) => events.push(Event::Text(value)),
             event => events.push(event),
         }
     }
@@ -873,6 +899,273 @@ mod tests {
         ));
         assert_eq!(document.html.matches("diagram-open-link").count(), 1);
         assert_eq!(document.html.matches("data-mermaid-open").count(), 1);
+    }
+
+    #[test]
+    fn raw_inline_html_and_html_block_then_escape_verbatim() {
+        // Arrange
+        let markdown = "text <img src=x onerror=alert(1)> text\n\n<div onclick=\"x\">hi</div>";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<img"));
+        assert!(document.html.contains("&lt;img src=x onerror=alert(1)&gt;"));
+        assert!(!document.html.contains("<div onclick"));
+        assert!(document
+            .html
+            .contains("&lt;div onclick=\"x\"&gt;hi&lt;/div&gt;"));
+    }
+
+    #[test]
+    fn inline_raw_html_then_is_escaped() {
+        // Arrange
+        let markdown = "text <img src=x onerror=alert(1)> text";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<img"));
+        assert!(document.html.contains("&lt;img src=x onerror=alert(1)&gt;"));
+    }
+
+    #[test]
+    fn block_raw_html_with_event_handler_then_is_escaped() {
+        // Arrange
+        let markdown = "<div onclick=\"x\">hi</div>";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<div onclick"));
+        assert!(document
+            .html
+            .contains("&lt;div onclick=\"x\"&gt;hi&lt;/div&gt;"));
+    }
+
+    #[test]
+    fn raw_script_tag_in_markdown_then_is_escaped() {
+        // Arrange
+        let markdown = "<script>alert('unsafe')</script>";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<script>"));
+        assert!(document
+            .html
+            .contains("&lt;script&gt;alert('unsafe')&lt;/script&gt;"));
+    }
+
+    #[test]
+    fn forged_math_span_in_raw_markdown_then_is_escaped() {
+        // Arrange
+        let markdown = "Inline <span data-math-inline>x</span> math";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<span data-math-inline>"));
+        assert!(document
+            .html
+            .contains("&lt;span data-math-inline&gt;x&lt;/span&gt;"));
+    }
+
+    #[test]
+    fn heading_attribute_block_with_custom_attributes_then_keeps_only_id_and_classes() {
+        // Arrange
+        let markdown =
+            "# Title {onclick=alert(1) style=position:fixed data-diagram href=/documents/a.md}";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("onclick"));
+        assert!(!document.html.contains("style"));
+        assert!(!document.html.contains("data-diagram"));
+        assert!(!document.html.contains("href"));
+        assert!(document.html.contains("<h1>Title</h1>"));
+    }
+
+    #[test]
+    fn subscript_and_superscript_markers_then_render_literally() {
+        // Arrange
+        let markdown = "H~2~O, x^2^, and ^2^";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<sub>"));
+        assert!(!document.html.contains("<sup>"));
+        assert!(document.html.contains("H~2~O, x^2^, and ^2^"));
+    }
+
+    #[test]
+    fn wikilink_syntax_then_renders_literally() {
+        // Arrange
+        let markdown = "[[Page]]";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<a"));
+        assert!(document.html.contains("[[Page]]"));
+    }
+
+    #[test]
+    fn definition_list_syntax_then_renders_no_definition_list() {
+        // Arrange
+        let markdown = "Term\n: definition";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<dl>"));
+        assert!(!document.html.contains("<dt>"));
+        assert!(!document.html.contains("<dd>"));
+    }
+
+    #[test]
+    fn gfm_alert_marker_then_renders_plain_blockquote() {
+        // Arrange
+        let markdown = "> [!NOTE]\n> text";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("markdown-alert"));
+        assert!(document.html.contains("<blockquote>"));
+    }
+
+    #[test]
+    fn metadata_blocks_plus_and_minus_then_render_literally() {
+        // Arrange
+        let markdown = "Body\n\n+++\ntitle = \"test\"\n+++\n\nMore";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains("+++"));
+        assert!(document.html.contains("title = “test”"));
+    }
+
+    #[test]
+    fn defined_footnote_then_renders_reference_and_definition() {
+        // Arrange
+        let markdown = "Note reference[^1].\n\n[^1]: Note content.";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains("<sup class=\"footnote-reference\"><a href=\"#1\">1</a></sup>"));
+        assert!(document
+            .html
+            .contains("<div class=\"footnote-definition\" id=\"1\"><sup class=\"footnote-definition-label\">1</sup>"));
+        assert!(document.html.contains("<p>Note content.</p>"));
+    }
+
+    #[test]
+    fn undefined_footnote_reference_then_renders_literal_text() {
+        // Arrange
+        let markdown = "Here is an [^undefined] reference.";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<sup class=\"footnote-reference\">"));
+        assert!(document
+            .html
+            .contains("<p>Here is an [^undefined] reference.</p>"));
+    }
+
+    #[test]
+    fn consecutive_footnote_definitions_then_render_as_separate_items() {
+        // Arrange
+        let markdown = "Two notes[^a][^b].\n\n[^a]: First note\n[^b]: Second note";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains("<div class=\"footnote-definition\" id=\"a\">"));
+        assert!(document
+            .html
+            .contains("<div class=\"footnote-definition\" id=\"b\">"));
+        assert!(document.html.contains("<p>First note</p>"));
+        assert!(document.html.contains("<p>Second note</p>"));
+    }
+
+    #[test]
+    fn indented_footnote_continuation_then_stays_inside_footnote() {
+        // Arrange
+        let markdown = "A note[^1].\n\n[^1]: First paragraph.\n\n    Continuation paragraph.\n\nAfter footnote.";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            "<div class=\"footnote-definition\" id=\"1\"><sup class=\"footnote-definition-label\">1</sup>\n<p>First paragraph.</p>\n<p>Continuation paragraph.</p>\n</div>"
+        ));
+        assert!(document.html.contains("<p>After footnote.</p>"));
+    }
+
+    #[test]
+    fn heading_attribute_block_with_valid_id_and_classes_then_preserves_them() {
+        // Arrange
+        let markdown = "# Title {#intro .lead}";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains("<h1 id=\"intro\" class=\"lead\">Title</h1>"));
+    }
+
+    #[test]
+    fn html_comment_with_math_then_renders_escaped_comment_text() {
+        // Arrange
+        let markdown = "<!-- $x$ -->";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<!--"));
+        assert!(document.html.contains("&lt;!-- $x$ --&gt;"));
+    }
+
+    #[test]
+    fn strikethrough_tasklist_and_smart_quotes_then_render_as_before() {
+        // Arrange
+        let markdown = "~~strike~~\n\n- [ ] task\n\n\"quoted\"";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains("<del>strike</del>"));
+        assert!(document.html.contains(r#"type="checkbox""#));
+        assert!(document.html.contains("“quoted”"));
     }
 
     fn temporary_source_link_root(name: &str) -> PathBuf {
