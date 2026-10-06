@@ -90,21 +90,29 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - Retain `Options::all()` temporarily to observe red test failures for I1, I3, and I4.
 - [ ] **2.3** Write *red-first tests* in `src/markdown.rs` and observe failures:
   - `inline_raw_html_then_is_escaped` (fails under 0.13 before I1)
+  - `block_raw_html_with_event_handler_then_is_escaped` (fails under 0.13 before I1)
+  - `raw_script_tag_in_markdown_then_is_escaped` (R5: fails before I1)
+  - `forged_math_span_in_raw_markdown_then_is_escaped` (R5: `<span data-math-inline>x</span>` fails before I1)
   - `heading_attribute_block_with_custom_attributes_then_keeps_only_id_and_classes` (fails under 0.13 before I4)
   - `subscript_and_superscript_markers_then_render_literally` (fails under `Options::all()` before I3)
   - `wikilink_syntax_then_renders_literally` (fails before I3)
+  - `definition_list_syntax_then_renders_no_definition_list` (fails before I3)
+  - `gfm_alert_marker_then_renders_plain_blockquote` (fails before I3)
   - `metadata_blocks_plus_and_minus_then_render_literally` (fails before I3)
-  - `forged_math_span_in_raw_markdown_then_is_escaped` (R5: `<span data-math-inline>x</span>` fails before I1)
 - [ ] **2.4** Implement controls:
   - Define `const LENS_OPTIONS: Options` using `.union()` to pin the 6 baseline flags (I3).
   - I1: `Event::Html(v) | Event::InlineHtml(v) => events.push(Event::Text(v))`.
   - I4: `Event::Start(Tag::Heading { level, id, classes, attrs: _ })` pushes `attrs: Vec::new()`.
-- [ ] **2.5** Characterization & D9 Footnote tests:
-  - `defined_footnote_then_renders_reference_and_definition`
-  - `undefined_footnote_reference_then_renders_literal_text` (D9)
-  - `consecutive_footnote_definitions_then_render_as_separate_items` (D9)
-  - `indented_footnote_continuation_then_stays_inside_footnote` (D9)
-  - `strikethrough_tasklist_and_smart_quotes_then_render_as_before`
+- [ ] **2.5** New accepted behavior (D9) and characterization tests:
+  - D9 Footnote behavior tests:
+    - `defined_footnote_then_renders_reference_and_definition`
+    - `undefined_footnote_reference_then_renders_literal_text` (D9)
+    - `consecutive_footnote_definitions_then_render_as_separate_items` (D9)
+    - `indented_footnote_continuation_then_stays_inside_footnote` (D9)
+  - Characterization / positive tests:
+    - `heading_attribute_block_with_valid_id_and_classes_then_preserves_them` (R10)
+    - `html_comment_with_math_then_renders_escaped_comment_text` (R5)
+    - `strikethrough_tasklist_and_smart_quotes_then_render_as_before`
   - End-to-end tests in `page.rs`:
     - `markdown_code_span_with_document_anchor_text_then_page_adds_no_token_to_code` (R6)
     - `markdown_raw_anchor_html_then_page_adds_no_token_to_escaped_text` (R6)
@@ -119,7 +127,7 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
 
 **Files:** `src/markdown.rs`
 
-- [ ] **3.1** Write *red-first tests* in `src/markdown.rs` (they fail while `ENABLE_MATH` is disabled):
+- [ ] **3.1** Write *red-first tests* in `src/markdown.rs` (these test new math mapping and fail while `ENABLE_MATH` is disabled):
   - R1 & Accepted Behaviors:
     - `inline_math_with_underscores_then_emits_span_with_verbatim_tex`
     - `inline_math_with_asterisks_then_emits_no_emphasis`
@@ -128,24 +136,17 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
     - `math_in_blockquote_and_list_item_then_emits_spans_in_place` (R1)
     - `currency_range_without_escapes_then_renders_math_per_parser_rule` (D1)
     - `digit_after_closing_dollar_then_renders_math_followed_by_digit` (D2)
-    - `table_with_unescaped_pipe_in_math_then_splits_cell_per_parser_rule` (D3 pin test)
     - `shell_expression_in_prose_then_renders_math_per_parser_rule` (D6)
-    - `display_math_with_block_starter_then_terminates_paragraph` (D7 pin test)
   - R2:
     - `math_tex_with_html_characters_then_escapes_span_text`
     - `display_math_in_table_cell_then_emits_display_span_inside_cell`
     - `display_math_paragraph_then_contains_no_block_element_inside_paragraph`
-  - R3:
-    - `image_alt_with_inline_math_then_contains_literal_dollar_source`
-    - `image_alt_with_display_math_then_contains_literal_double_dollar_source`
-    - `image_alt_with_html_and_math_then_escapes_without_math_span` (R3 row 3)
   - R4:
     - `fenced_math_block_then_emits_math_block_container_with_escaped_source`
     - `fenced_math_block_with_mixed_case_info_then_emits_math_block_container`
     - `fenced_math_block_inside_list_item_and_blockquote_then_emits_container_inside`
-    - `fenced_math_extra_block_then_remains_code_block` (R4)
     - `fenced_math_source_with_script_tag_then_escapes_source`
-- [ ] **3.2** Characterization / negative tests:
+- [ ] **3.2** Characterization / preserved behavior tests (demonstrate established behavior passes before and after):
   - `spaced_dollar_delimiters_then_render_literal_text`
   - `currency_amounts_then_render_literal_text`
   - `escaped_dollar_signs_then_render_literal_dollars`
@@ -153,6 +154,13 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - `nested_list_and_blockquote_fences_with_dollar_math_then_emit_no_math_span`
   - `link_destination_and_autolink_with_dollars_then_preserve_urls`
   - `diagram_fences_with_dollar_math_then_preserve_source_without_math_span`
+  - `table_with_unescaped_pipe_in_math_then_splits_cell_per_parser_rule` (D3 pin test)
+  - `table_with_escaped_pipe_in_math_then_preserves_cell_and_strips_escape` (D3 escaped pipe pin test)
+  - `display_math_with_block_starter_then_terminates_paragraph` (D7 pin test)
+  - `image_alt_with_inline_math_then_contains_literal_dollar_source` (R3)
+  - `image_alt_with_display_math_then_contains_literal_double_dollar_source` (R3)
+  - `image_alt_with_html_and_math_then_escapes_without_math_span` (R3 row 3)
+  - `fenced_math_extra_block_then_remains_code_block` (R4)
 - [ ] **3.3** Implement mapping:
   - Add `ENABLE_MATH` to `LENS_OPTIONS`.
   - Track `image_depth` on `Tag::Image` / `TagEnd::Image`.
@@ -176,12 +184,12 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - Confirm CSS references only `data:font/woff2;base64` URIs.
 - [ ] **4.2** In `page.rs` and `routes.rs`:
   - Expose `/katex.js` and `/katex.css` with token auth.
-  - Update CSP: `default-src 'self'; base-uri 'none'; font-src 'self' data:; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'`.
+  - Update CSP: `default-src 'self'; base-uri 'none'; font-src 'self' data:; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'`. (Authorized pre-existing assertion update in `routes.rs:424`).
   - Inject `<link rel="stylesheet" href="/katex.css?token={}">` and `<script src="/katex.js?token={}"></script>`.
 - [ ] **4.3** In `app.js` and `app.css`:
   - Implement `renderMath()` reading `textContent` before render.
   - Options per formula: `{displayMode, throwOnError: false, trust: false, maxSize: 500, maxExpand: 1000, strict: "warn"}`, no shared `macros`.
-  - Phrasing-safe error fallbacks (G1-M1): for spans, replace children with `<span class="math-error" title="Formula rendering failed">Formula error: <code>{source}</code></span>`. For blocks, hide `.math-target`, un-hide `.math-error`, and set `.math-source` `open = true`.
+  - Phrasing-safe error fallbacks (G1-M1): for spans, replace children via `replaceChildren` with `<span class="math-error" title="Formula rendering failed">Formula error: <code>{source}</code></span>`. For blocks, hide `.math-target`, un-hide `.math-error`, and set `.math-source` `open = true`.
   - Guard with `const engine = window.katex; if (!engine || typeof engine.render !== 'function') return;` (R11 Mode C).
   - Add styles for math spans and phrasing error notices in `app.css`.
 - [ ] **4.4** Server & Route tests:
@@ -190,6 +198,7 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - `unauthenticated_katex_asset_request_then_returns_unauthorized`
   - `document_page_then_loads_katex_assets_before_app_assets`
   - `katex_stylesheet_then_references_only_inlined_data_fonts`
+  - `document_request_then_sets_restrictive_content_security_policy` (asserts exact updated CSP with `font-src 'self' data:`)
 - [ ] **4.5** Core browser qualification tests in `tests/browser/lens.spec.mjs` (G1-M2, F-M5):
   - `inline_and_display_math_rendering_then_produces_katex_elements`
   - `untrusted_href_math_formula_then_renders_no_anchor_element`

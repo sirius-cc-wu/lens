@@ -69,7 +69,7 @@ Lens treats exactly the `Event::InlineMath` and `Event::DisplayMath` events from
 | Mermaid or PlantUML fence containing `$a$` | Diagram source keeps `$a$`; no span |
 | `Range $5-$10` (D1) | Span with text `5-`. **Accepted** |
 | `$y$2` (D2) | Span `y`, then text `2`. **Accepted** |
-| `\| $|x|$ \|` in a table (D3) | Cell splits at unescaped `\|`. **Accepted.** Authors write `\lvert x \rvert` or `\Vert` |
+| Table cell containing unescaped pipe (D3) | Cell splits on unescaped pipe. **Accepted.** Authors write `\lvert x \rvert` or `\Vert` |
 | `$(CC)$(FLAGS)` in prose (D6) | Span `(CC)`, then text `(FLAGS)`. **Accepted** |
 | Block starter line inside `$$...$$` (D7) | Paragraph ends; no display math. **Accepted.** Authors use `aligned` or indent 4+ spaces |
 | Footnotes under 0.13 `ENABLE_FOOTNOTES` (D9) | GitHub-compatible footnote semantics. **Accepted** |
@@ -152,7 +152,7 @@ A fenced block whose info string trims to `math` (case-insensitive) emits:
   - The source is read from text content before rendering: the span's own text, or the block's `.math-source code`.
   - Each call gets a fresh options object: `{displayMode, throwOnError: false, trust: false, maxSize: 500, maxExpand: 1000, strict: "warn"}`, with no `macros` option.
 - When KaTeX throws, or its output contains `.katex-error`:
-  - **Spans** are replaced with a strictly phrasing-safe fallback: `<span class="math-error" title="Formula rendering failed">Formula error: <code>{source}</code></span>`. CSS controls styling (`display: inline-block` or `display: block`). Spans never insert block elements (`<div>`, `<p>`, `<details>`) that violate phrasing content in `<p>`, `<td>`, or headings.
+  - **Spans** have their children replaced via `replaceChildren` with a strictly phrasing-safe fallback: `<span class="math-error" title="Formula rendering failed">Formula error: <code>{source}</code></span>`. CSS controls styling (`display: inline-block` or `display: block`). Spans never insert block elements (`<div>`, `<p>`, `<details>`) that violate phrasing content in `<p>`, `<td>`, or headings.
   - **Blocks** hide `.math-target`, un-hide `.math-error`, and set `.math-source` `open = true`.
 - A malformed formula never blanks the document or blocks Mermaid or PlantUML.
 

@@ -20,7 +20,11 @@ Reviewed architectural deliverables for client-side mathematical formula renderi
 
 Initial adversarial review by GPT-6.1 Sol and Claude Sonnet 5.5 confirmed that the fundamental architectural decision—replacing the 1,106-line pre-parser with `pulldown-cmark 0.13.4`'s native `ENABLE_MATH`, enforcing Invariants I1–I4, and structuring vertical slices with Slice 1 injector hardening—is sound and robust.
 
-Both reviewers identified actionable specification and task board defects that have now been fully reconciled:
+Both reviewers identified actionable specification and task board defects that have now been fully reconciled. A subsequent delta review confirmed:
+- **Claude Sonnet 5.5**: **`VERIFIED (Design Approved)`** — all findings (G1-H1, G1-M1, G1-M2, G1-M3, F-H1, F-H2, F-M2, F-M3, F-M4) completely and accurately addressed.
+- **GPT-6.1 Sol**: **`Approved on Architecture & Invariants`** with two minor documentation polish items resolved immediately:
+  - ADR-027 §6.1 D3 table example formatted as fenced code block to eliminate markdown pipe collision.
+  - Iteration C19 Slice 3 explicitly segmented into 3.1 Red-First tests (fail without `ENABLE_MATH`) and 3.2 Characterization / Preserved Behavior tests (pass before and after).
 
 ### Actionable Review Findings & Resolutions
 

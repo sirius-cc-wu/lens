@@ -99,13 +99,37 @@ These follow from §1. They are documented for authors and pinned by tests, but 
 | :--- | :--- | :--- | :--- |
 | D1 | `Range $5-$10` | `5-` renders as math | Write `\$5-\$10` |
 | D2 | `$y$2` | `y` renders as math, followed by `2` | None needed |
-| D3 | `\| $|x|$ \|` in a table | The cell splits at unescaped `\|` (GitHub behaves the same). Escaping as `$\|x\|$` strips the backslash in TeX yielding `|x|`. | Use `\lvert x \rvert` or `\Vert` for norms |
+| D3 | Table cell containing pipe | Cell splits on unescaped pipe | See §6.1 below; use `\lvert x \rvert` or `\Vert` |
 | D4 | ```` ```math ```` | Intercepted by Lens as a `math-block` (§2) | None |
 | D5 | `$$\verb\|$x$\|$$` | Fragments | Avoid `$` inside `\verb` |
 | D6 | `$(CC)$(FLAGS)` written in prose | `(CC)` renders as math | Put shell and Make expressions in code spans |
 | D7 | A line starting with a block marker (`- `, `+ `, `> `, `1.`, `#`, `===`, or blank line) inside `$$ … $$` | The paragraph ends; no display math | Keep display math free of block markers, use `\begin{aligned} ... \end{aligned}`, or indent continuation lines 4+ spaces |
 | D8 | `$x$` in YAML frontmatter | Literal | None |
 | D9 | Footnote syntax under 0.13 `ENABLE_FOOTNOTES` | GitHub-compatible: consecutive `[^a]:` lines separate; undefined `[^x]` renders as literal text; indented continuation paragraphs stay inside footnote | Follow standard GitHub Flavored Markdown footnote conventions |
+
+#### 6.1 Table Pipes in Mathematical Formulas (D3 Guidance)
+
+In Markdown tables, unescaped pipe characters act as table cell delimiters before math delimiters are parsed:
+
+```markdown
+| Parameter | Formula | Description |
+| :--- | :--- | :--- |
+| Normal | $|x|$ | Absolute value |
+```
+
+The unescaped `|` inside `$|x|$` splits the table cell into two columns.
+If an author escapes the pipe as `\|`:
+
+```markdown
+| Parameter | Formula | Description |
+| :--- | :--- | :--- |
+| Normal | $\|x\|$ | Absolute value |
+```
+
+Markdown table syntax processes the `\|` escape by stripping the backslash, producing raw TeX `|x|` (single bar).
+**Recommended practice:** For absolute values and norms inside table cells, use LaTeX commands that contain no pipe characters:
+- Absolute value: `$\lvert x \rvert$`
+- Norm: `$\Vert x \Vert$`
 
 ## Alternatives considered
 
