@@ -1328,39 +1328,6 @@ test("katex_script_unavailable_then_shows_raw_tex_and_renders_rest_of_document",
   }
 });
 
-test("missing_katex_script_then_raw_math_is_visible_and_mermaid_renders", async ({ page }) => {
-  // Arrange
-  const readme = [
-    "# Missing KaTeX Test",
-    "",
-    "Math: $T_{frame}$",
-    "",
-    "```math",
-    "\\sum_{i=1}^n i",
-    "```",
-    "",
-    "```mermaid",
-    "flowchart TD",
-    "Start --> Stop",
-    "```",
-  ].join("\n");
-  const fixture = await startBrowserFixture({ readme });
-
-  try {
-    // Act
-    await page.route("**/katex.js*", (route) => route.abort());
-    await page.goto(fixture.lens.url);
-
-    // Assert
-    await expect(page.getByRole("heading", { level: 1, name: "Missing KaTeX Test" })).toBeVisible();
-    await expect(page.locator(".math-inline")).toHaveText("T_{frame}");
-    await expect(page.locator(".math-block .math-error")).toBeHidden();
-    await expect(page.locator(".mermaid-target svg")).toBeVisible();
-  } finally {
-    await fixture.stop();
-  }
-});
-
 test("page_with_katex_element_id_when_engine_missing_then_does_not_throw", async ({ page }) => {
   // Arrange
   const readme = [
