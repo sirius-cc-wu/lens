@@ -771,10 +771,7 @@ mod tests {
         let html = page("Code Span Test", rendered.html, None, TEST_TOKEN);
 
         // Assert
-        assert!(
-            html.contains("&lt;a href=&quot;/documents/a.md&quot;&gt;")
-                || html.contains("&lt;a href=\"/documents/a.md\"&gt;")
-        );
+        assert!(html.contains("&lt;a href=\"/documents/a.md\"&gt;"));
         assert!(!html.contains("/documents/a.md?token="));
         assert!(!html.contains("/documents/a.md&token="));
     }
@@ -799,10 +796,7 @@ mod tests {
         let html = page("Raw Anchor Test", rendered.html, None, TEST_TOKEN);
 
         // Assert
-        assert!(
-            html.contains("&lt;a href=\"/documents/a.md\"&gt;x&lt;/a&gt;")
-                || html.contains("&lt;a href=&quot;/documents/a.md&quot;&gt;x&lt;/a&gt;")
-        );
+        assert!(html.contains("&lt;a href=\"/documents/a.md\"&gt;x&lt;/a&gt;"));
         assert!(!html.contains("/documents/a.md?token="));
         assert!(!html.contains("/documents/a.md&token="));
     }

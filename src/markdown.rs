@@ -996,7 +996,7 @@ mod tests {
     #[test]
     fn subscript_and_superscript_markers_then_render_literally() {
         // Arrange
-        let markdown = "H~2~O, x^2^, and ^2^";
+        let markdown = "~sub~ and ^sup^ and H~2~O, x^2^";
 
         // Act
         let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
@@ -1004,7 +1004,8 @@ mod tests {
         // Assert
         assert!(!document.html.contains("<sub>"));
         assert!(!document.html.contains("<sup>"));
-        assert!(document.html.contains("H~2~O, x^2^, and ^2^"));
+        assert!(document.html.contains("<del>sub</del>"));
+        assert!(document.html.contains("^sup^ and H~2~O, x^2^"));
     }
 
     #[test]
@@ -1050,14 +1051,19 @@ mod tests {
     #[test]
     fn metadata_blocks_plus_and_minus_then_render_literally() {
         // Arrange
-        let markdown = "Body\n\n+++\ntitle = \"test\"\n+++\n\nMore";
+        let plus_markdown = "Body\n\n+++\ntitle = \"test\"\n+++\n\nMore";
+        let minus_markdown = "Body\n\n---\ntitle: test\n---\n\nMore";
 
         // Act
-        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+        let plus_doc = render_test(plus_markdown, 0, "document.md", &BTreeSet::new());
+        let minus_doc = render_test(minus_markdown, 0, "document.md", &BTreeSet::new());
 
         // Assert
-        assert!(document.html.contains("+++"));
-        assert!(document.html.contains("title = “test”"));
+        assert!(plus_doc.html.contains("+++"));
+        assert!(plus_doc.html.contains("title = “test”"));
+        assert!(!minus_doc.html.contains("document-metadata"));
+        assert!(minus_doc.html.contains("title: test"));
+        assert!(minus_doc.html.contains("<hr"));
     }
 
     #[test]
