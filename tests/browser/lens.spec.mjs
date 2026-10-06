@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -1387,6 +1387,212 @@ test("math_rendering_then_makes_zero_external_network_requests", async ({ page }
     await expect(page.locator(".katex")).toHaveCount(3);
     expect(offOriginRequests).toEqual([]);
   } finally {
+    await fixture.stop();
+  }
+});
+
+test("math_specification_fixture_then_renders_13_katex_formulas", async ({ page }) => {
+  // Arrange
+  const readme = await readFile(join(process.cwd(), "tests/fixtures/math-specification.md"), "utf8");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Mathematical Specification & Timing Analysis" }),
+    ).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(13);
+    await expect(page.locator(".math-inline .katex")).toHaveCount(10);
+    await expect(page.locator(".math-display .katex-display")).toHaveCount(2);
+    await expect(page.locator(".math-block .katex-display")).toHaveCount(1);
+    await expect(page.locator(".katex-display .mtable")).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("table_cell_with_lvert_absolute_value_then_renders_math_in_single_cell", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Table Cell Absolute Value Test",
+    "",
+    "| Formula | Description |",
+    "| --- | --- |",
+    "| $\\lvert x \\rvert$ | Absolute value |",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Table Cell Absolute Value Test" })).toBeVisible();
+    const rows = page.locator("article table tbody tr");
+    await expect(rows).toHaveCount(1);
+    const cells = rows.first().locator("td");
+    await expect(cells).toHaveCount(2);
+    await expect(cells.first().locator(".katex")).toBeVisible();
+    await expect(cells.nth(1)).toHaveText("Absolute value");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("currency_range_with_escapes_then_renders_literal_dollars", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Currency Guidance Test",
+    "",
+    "Price range: \\$5-\\$10. Unescaped: $10 and $20.",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Currency Guidance Test" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(0);
+    await expect(page.locator("article")).toContainText("Price range: $5-$10. Unescaped: $10 and $20.");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("mixed_document_with_mermaid_and_math_then_renders_both_cleanly", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Mixed Document Test",
+    "",
+    "Inline formula: $a^2 + b^2 = c^2$.",
+    "",
+    "Display formula:",
+    "$$E = mc^2$$",
+    "",
+    "```math",
+    "\\int_0^1 x\\,dx = \\frac{1}{2}",
+    "```",
+    "",
+    "```mermaid",
+    "flowchart TD",
+    "  A[Start] --> B[End]",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Mixed Document Test" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(3);
+    await expect(page.locator(".mermaid-target svg")).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("live_document_refresh_with_math_then_updates_formulas_automatically", async ({ page }) => {
+  // Arrange
+  const readme = "# Live Math\n\nInitial: $E = mc^2$\n";
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Live Math" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(1);
+    await expect(page.locator("article")).toContainText("Initial:");
+
+    // Act
+    await writeFile(
+      join(fixture.repository.directory, "README.md"),
+      "# Live Math\n\nUpdated: $E = mc^2$ and $F = ma$\n",
+    );
+
+    // Assert
+    await expect(page.locator("article")).toContainText("Updated:");
+    await expect(page.locator(".katex")).toHaveCount(2);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("image_alt_with_math_then_exposes_literal_alt_text", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Image Alt Math Test",
+    "",
+    "![Formula: $E = mc^2$](/diagrams/test.svg)",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Image Alt Math Test" })).toBeVisible();
+    const image = page.locator("article img");
+    await expect(image).toHaveAttribute("alt", "Formula: $E = mc^2$");
+    await expect(page.locator(".katex")).toHaveCount(0);
+    await expect(page.locator(".math-inline, .math-display, .math-block")).toHaveCount(0);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("javascript_disabled_then_preserves_readable_math_and_diagram_sources", async ({ browser }) => {
+  // Arrange
+  const readme = [
+    "# No-JS Degradation Test",
+    "",
+    "Inline: $E = mc^2$",
+    "",
+    "Display:",
+    "$$\\sum i$$",
+    "",
+    "```math",
+    "x + y",
+    "```",
+    "",
+    "```plantuml",
+    "@startuml",
+    "Alice -> Bob: hello",
+    "@enduml",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "No-JS Degradation Test" })).toBeVisible();
+    await expect(page.locator(".math-inline")).toBeVisible();
+    await expect(page.locator(".math-inline")).toHaveText("E = mc^2");
+    await expect(page.locator(".math-display")).toBeVisible();
+    await expect(page.locator(".math-display")).toHaveText("\\sum i");
+
+    const mathBlockSource = page.locator(".math-block .math-source");
+    await expect(mathBlockSource).toBeVisible();
+    await expect(mathBlockSource.locator("code")).toContainText("x + y");
+
+    const plantumlImg = page.locator('img[src*="/diagrams/"]');
+    await expect(plantumlImg).toBeVisible();
+  } finally {
+    await context.close();
     await fixture.stop();
   }
 });
