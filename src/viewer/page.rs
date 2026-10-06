@@ -80,58 +80,292 @@ pub(super) fn document_unavailable_page(session_token: &str) -> String {
     )
 }
 
+struct CapabilityAttribute {
+    tag: &'static str,
+    attr: &'static str,
+    url_prefix: &'static str,
+}
+
+const CAPABILITY_ATTRIBUTES: &[CapabilityAttribute] = &[
+    CapabilityAttribute {
+        tag: "a",
+        attr: "href",
+        url_prefix: "/documents/",
+    },
+    CapabilityAttribute {
+        tag: "img",
+        attr: "src",
+        url_prefix: "/diagrams/",
+    },
+];
+
 pub(super) fn inject_capability(html: &str, token: &str) -> String {
-    let mut result = String::with_capacity(html.len() + 128);
-    let mut cursor = 0;
+    scan(html, token)
+}
 
-    while cursor < html.len() {
-        let remainder = &html[cursor..];
-        let next_match = [
-            remainder
-                .find(r#"href="/documents/"#)
-                .map(|pos| (pos, 6, '"')),
-            remainder
-                .find(r#"src="/diagrams/"#)
-                .map(|pos| (pos, 5, '"')),
-        ]
-        .into_iter()
-        .flatten()
-        .min_by_key(|&(pos, _, _)| pos);
+fn is_capability_attribute(tag: &str, attr: &str, url: &str) -> bool {
+    CAPABILITY_ATTRIBUTES.iter().any(|cap| {
+        tag.eq_ignore_ascii_case(cap.tag)
+            && attr.eq_ignore_ascii_case(cap.attr)
+            && url.starts_with(cap.url_prefix)
+    })
+}
 
-        match next_match {
-            Some((pos, prefix_len, quote)) => {
-                let match_start = cursor + pos;
-                let url_start = match_start + prefix_len;
-                result.push_str(&html[cursor..url_start]);
+fn find_fragment_delimiter(url: &str) -> Option<usize> {
+    url.match_indices('#').find_map(|(idx, _)| {
+        if idx > 0 && url.as_bytes()[idx - 1] == b'&' {
+            None
+        } else {
+            Some(idx)
+        }
+    })
+}
 
-                if let Some(quote_offset) = html[url_start..].find(quote) {
-                    let url_end = url_start + quote_offset;
-                    let url = &html[url_start..url_end];
-                    let (base, fragment) = match url.split_once('#') {
-                        Some((b, f)) => (b, Some(f)),
-                        None => (url, None),
-                    };
-                    result.push_str(base);
-                    if base.contains('?') {
-                        result.push_str("&token=");
-                    } else {
-                        result.push_str("?token=");
-                    }
-                    result.push_str(token);
-                    if let Some(f) = fragment {
-                        result.push('#');
-                        result.push_str(f);
-                    }
-                    cursor = url_end;
-                } else {
-                    cursor = url_start;
+fn push_capability_url(result: &mut String, url: &str, token: &str) {
+    let fragment_start = find_fragment_delimiter(url);
+    let (base, fragment) = match fragment_start {
+        Some(pos) => (&url[..pos], Some(&url[pos + 1..])),
+        None => (url, None),
+    };
+    result.push_str(base);
+    if base.contains('?') {
+        result.push_str("&token=");
+    } else {
+        result.push_str("?token=");
+    }
+    result.push_str(token);
+    if let Some(f) = fragment {
+        result.push('#');
+        result.push_str(f);
+    }
+}
+
+fn find_tag_end(html: &str, start: usize) -> Option<usize> {
+    let bytes = html.as_bytes();
+    let mut i = start;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'>' => return Some(i + 1),
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += 1;
+                }
+                if i < bytes.len() {
+                    i += 1;
                 }
             }
-            None => {
-                result.push_str(&html[cursor..]);
+            b'\'' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'\'' {
+                    i += 1;
+                }
+                if i < bytes.len() {
+                    i += 1;
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+fn scan(html: &str, token: &str) -> String {
+    let mut result = String::with_capacity(html.len() + 128);
+    let bytes = html.as_bytes();
+    let mut cursor = 0;
+
+    while cursor < bytes.len() {
+        let Some(rel_lt) = bytes[cursor..].iter().position(|&b| b == b'<') else {
+            result.push_str(&html[cursor..]);
+            break;
+        };
+
+        let tag_start = cursor + rel_lt;
+        result.push_str(&html[cursor..tag_start]);
+
+        let after_lt = tag_start + 1;
+        if after_lt >= bytes.len() {
+            result.push('<');
+            break;
+        }
+
+        if html[after_lt..].starts_with("!--") {
+            if let Some(end_offset) = html[after_lt + 3..].find("-->") {
+                let end = after_lt + 3 + end_offset + 3;
+                result.push_str(&html[tag_start..end]);
+                cursor = end;
+            } else {
+                result.push_str(&html[tag_start..]);
                 break;
             }
+            continue;
         }
+
+        if bytes[after_lt] == b'/' || bytes[after_lt] == b'!' || bytes[after_lt] == b'?' {
+            if let Some(gt_offset) = bytes[after_lt..].iter().position(|&b| b == b'>') {
+                let end = after_lt + gt_offset + 1;
+                result.push_str(&html[tag_start..end]);
+                cursor = end;
+            } else {
+                result.push_str(&html[tag_start..]);
+                break;
+            }
+            continue;
+        }
+
+        if !bytes[after_lt].is_ascii_alphabetic() {
+            result.push('<');
+            cursor = after_lt;
+            continue;
+        }
+
+        let mut name_end = after_lt + 1;
+        while name_end < bytes.len()
+            && !bytes[name_end].is_ascii_whitespace()
+            && bytes[name_end] != b'>'
+            && bytes[name_end] != b'/'
+        {
+            name_end += 1;
+        }
+        let tag_name = &html[after_lt..name_end];
+
+        let Some(tag_end) = find_tag_end(html, name_end) else {
+            result.push_str(&html[tag_start..]);
+            break;
+        };
+
+        let matches_capability_tag = CAPABILITY_ATTRIBUTES
+            .iter()
+            .any(|cap| tag_name.eq_ignore_ascii_case(cap.tag));
+
+        if !matches_capability_tag {
+            result.push_str(&html[tag_start..tag_end]);
+            cursor = tag_end;
+            continue;
+        }
+
+        result.push_str(&html[tag_start..name_end]);
+        let mut idx = name_end;
+
+        while idx < tag_end {
+            let ws_start = idx;
+            while idx < tag_end && bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            result.push_str(&html[ws_start..idx]);
+            if idx >= tag_end {
+                break;
+            }
+
+            if bytes[idx] == b'>' {
+                result.push('>');
+                break;
+            }
+            if bytes[idx] == b'/' {
+                if idx + 1 < tag_end && bytes[idx + 1] == b'>' {
+                    result.push_str("/>");
+                    break;
+                } else {
+                    result.push('/');
+                    idx += 1;
+                    continue;
+                }
+            }
+
+            let attr_name_start = idx;
+            while idx < tag_end
+                && !bytes[idx].is_ascii_whitespace()
+                && bytes[idx] != b'='
+                && bytes[idx] != b'>'
+                && bytes[idx] != b'/'
+                && bytes[idx] != b'"'
+                && bytes[idx] != b'\''
+            {
+                idx += 1;
+            }
+            if idx == attr_name_start {
+                result.push(bytes[idx] as char);
+                idx += 1;
+                continue;
+            }
+            let attr_name = &html[attr_name_start..idx];
+            result.push_str(attr_name);
+
+            let ws_eq_start = idx;
+            while idx < tag_end && bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+
+            if idx >= tag_end || bytes[idx] != b'=' {
+                result.push_str(&html[ws_eq_start..idx]);
+                continue;
+            }
+
+            result.push_str(&html[ws_eq_start..idx + 1]);
+            idx += 1;
+
+            let ws_val_start = idx;
+            while idx < tag_end && bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            result.push_str(&html[ws_val_start..idx]);
+            if idx >= tag_end {
+                break;
+            }
+
+            if bytes[idx] == b'"' {
+                result.push('"');
+                let val_start = idx + 1;
+                let mut val_end = val_start;
+                while val_end < tag_end && bytes[val_end] != b'"' {
+                    val_end += 1;
+                }
+                let val = &html[val_start..val_end];
+                if is_capability_attribute(tag_name, attr_name, val) {
+                    push_capability_url(&mut result, val, token);
+                } else {
+                    result.push_str(val);
+                }
+                if val_end < tag_end && bytes[val_end] == b'"' {
+                    result.push('"');
+                    idx = val_end + 1;
+                } else {
+                    idx = val_end;
+                }
+            } else if bytes[idx] == b'\'' {
+                result.push('\'');
+                let val_start = idx + 1;
+                let mut val_end = val_start;
+                while val_end < tag_end && bytes[val_end] != b'\'' {
+                    val_end += 1;
+                }
+                let val = &html[val_start..val_end];
+                if is_capability_attribute(tag_name, attr_name, val) {
+                    push_capability_url(&mut result, val, token);
+                } else {
+                    result.push_str(val);
+                }
+                if val_end < tag_end && bytes[val_end] == b'\'' {
+                    result.push('\'');
+                    idx = val_end + 1;
+                } else {
+                    idx = val_end;
+                }
+            } else {
+                let val_start = idx;
+                while idx < tag_end && !bytes[idx].is_ascii_whitespace() && bytes[idx] != b'>' {
+                    idx += 1;
+                }
+                let val = &html[val_start..idx];
+                if is_capability_attribute(tag_name, attr_name, val) {
+                    push_capability_url(&mut result, val, token);
+                } else {
+                    result.push_str(val);
+                }
+            }
+        }
+        cursor = tag_end;
     }
 
     result
@@ -143,7 +377,10 @@ pub(super) fn content_security_policy() -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::BTreeSet, path::PathBuf};
+
     use super::{document_unavailable_page, inject_capability, page};
+    use crate::{markdown::render, source_link::SourceLinkResolver};
 
     const TEST_TOKEN: &str = "test-token";
 
@@ -234,5 +471,283 @@ mod tests {
         assert!(page.contains("<title>Lens: Document unavailable</title>"));
         assert!(page.contains(expected_message));
         assert!(page.contains(r#"href="/?token=test-token""#));
+    }
+
+    fn render_markdown(markdown: &str) -> String {
+        let root = PathBuf::from("/");
+        let resolver = SourceLinkResolver::new(root);
+        let rendered = render(
+            markdown,
+            0,
+            "test.md",
+            std::path::Path::new("test.md"),
+            &BTreeSet::new(),
+            &resolver,
+        );
+        rendered.html
+    }
+
+    #[test]
+    fn document_page_injects_script_and_stylesheet_tokens_only_in_head_and_body_tags() {
+        // Arrange
+        let content = "<p>Standard article content.</p>";
+
+        // Act
+        let rendered = page("Doc", content.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"<link rel="stylesheet" href="/app.css?token=test-token">"#));
+        assert!(rendered.contains(r#"<script src="/mermaid.js?token=test-token"></script>"#));
+        assert!(rendered.contains(r#"<script src="/app.js?token=test-token"></script>"#));
+        assert!(rendered.contains("<article><p>Standard article content.</p></article>"));
+    }
+
+    #[test]
+    fn document_page_with_head_token_in_prose_does_not_inject_script() {
+        // Arrange
+        let html = r#"<p>head token in prose: <script src="/diagrams/app.js"></script></p>"#;
+
+        // Act
+        let rendered = page("Head Token", html.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"<script src="/diagrams/app.js"></script>"#));
+        assert!(!rendered.contains(r#"/diagrams/app.js?token="#));
+    }
+
+    #[test]
+    fn document_page_with_link_tag_in_code_block_does_not_inject_stylesheet() {
+        // Arrange
+        let html = r#"<pre><code><link rel="stylesheet" href="/documents/style.css"></code></pre>"#;
+
+        // Act
+        let rendered = page("Code Block", html.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(
+            r#"<pre><code><link rel="stylesheet" href="/documents/style.css"></code></pre>"#
+        ));
+        assert!(!rendered.contains("/documents/style.css?token="));
+    }
+
+    #[test]
+    fn document_page_with_external_links_does_not_inject_tokens() {
+        // Arrange
+        let content = r#"<p><a href="https://example.com/documents/doc.md">External</a></p>"#;
+
+        // Act
+        let rendered = page("External", content.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"<a href="https://example.com/documents/doc.md">External</a>"#));
+        assert!(!rendered.contains("https://example.com/documents/doc.md?token="));
+    }
+
+    #[test]
+    fn document_page_with_query_and_fragment_in_local_link_preserves_both() {
+        // Arrange
+        let content = r#"<p><a href="/documents/guide.md?view=full#chapter-1">Guide</a></p>"#;
+
+        // Act
+        let rendered = page("Query & Fragment", content.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(
+            rendered.contains(r#"href="/documents/guide.md?view=full&token=test-token#chapter-1""#)
+        );
+    }
+
+    #[test]
+    fn document_page_with_apostrophe_entity_in_local_link_preserves_entity_and_fragment() {
+        // Arrange
+        let html = r#"<p><a href="/documents/O&#x27;Reilly.md#intro">Book</a></p>"#;
+
+        // Act
+        let rendered = page("Entity Test", html.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"href="/documents/O&#x27;Reilly.md?token=test-token#intro""#));
+        assert!(!rendered.contains(r#"href="/documents/O&?token="#));
+    }
+
+    #[test]
+    fn markdown_table_with_dollars_in_cells_then_preserves_table_structure() {
+        // Arrange
+        let markdown = "| Price | Cost |\n| --- | --- |\n| $10 | $20 |";
+        let html = render_markdown(markdown);
+
+        // Act
+        let rendered = page("Table", html, None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains("<table>"));
+        assert!(rendered.contains("<td>$10</td>"));
+        assert!(rendered.contains("<td>$20</td>"));
+    }
+
+    #[test]
+    fn autolink_and_email_autolink_with_dollars_then_preserve_literal_urls() {
+        // Arrange
+        let markdown = "<https://example.com/$pricing> <user$name@example.com>";
+        let html = render_markdown(markdown);
+
+        // Act
+        let rendered = page("Autolinks", html, None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"href="https://example.com/$pricing""#));
+        assert!(rendered.contains(r#"href="mailto:user$name@example.com""#));
+        assert!(!rendered.contains("https://example.com/$pricing?token="));
+        assert!(!rendered.contains("user$name@example.com?token="));
+    }
+
+    #[test]
+    fn body_text_resembling_document_attribute_then_remains_byte_identical() {
+        // Arrange
+        let html = r#"<p>href="/documents/a.md"</p>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn code_text_resembling_anchor_markup_then_remains_byte_identical() {
+        // Arrange
+        let html = r#"<pre><code>&lt;a href="/documents/a.md"&gt;</code></pre>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn attribute_name_ending_in_href_then_is_not_rewritten() {
+        // Arrange
+        let html = r#"<a title="x" data-href="/documents/a.md" href="https://example.com">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn capability_attribute_on_other_element_then_is_not_rewritten() {
+        // Arrange
+        let html = r#"<link href="/documents/a.md"><h1 src="/diagrams/0/0">Title</h1>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn document_link_with_apostrophe_then_preserves_path_and_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/O&#x27;Reilly.md#intro">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/O&#x27;Reilly.md?token=test-token#intro">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_fragment_then_inserts_token_before_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/guide.md#install">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/guide.md?token=test-token#install">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_existing_query_then_appends_token_with_ampersand() {
+        // Arrange
+        let html = r#"<a href="/documents/guide.md?preview=true">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/guide.md?preview=true&token=test-token">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_query_and_fragment_then_preserves_query_and_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/guide.md?preview=true#install">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/guide.md?preview=true&token=test-token#install">"#
+        );
+    }
+
+    #[test]
+    fn diagram_image_with_trailing_boolean_attribute_then_appends_token() {
+        // Arrange
+        let html = r#"<img src="/diagrams/0/0" alt="d" data-diagram>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<img src="/diagrams/0/0?token=test-token" alt="d" data-diagram>"#
+        );
+    }
+
+    #[test]
+    fn truncated_tag_then_copies_remainder_unchanged() {
+        // Arrange
+        let html = r#"<a href="/documents/a.md""#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn non_ascii_text_around_tags_then_is_preserved() {
+        // Arrange
+        let html = r#"<p>你好 <a href="/documents/指南.md#安装">安装</a> 世界 🚀</p>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<p>你好 <a href="/documents/指南.md?token=test-token#安装">安装</a> 世界 🚀</p>"#
+        );
     }
 }
