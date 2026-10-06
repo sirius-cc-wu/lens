@@ -84,11 +84,11 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
 
 **Files:** `Cargo.toml`, `Cargo.lock`, `src/markdown.rs`, `src/viewer/page.rs` (end-to-end tests only)
 
-- [ ] **2.1** In `Cargo.toml`: `pulldown-cmark = { version = "=0.13.4", default-features = false, features = ["html"] }`. Update lockfile with `cargo update -p pulldown-cmark --precise 0.13.4` **only**.
-- [ ] **2.2** Migrate API to compile:
+- [x] **2.1** In `Cargo.toml`: `pulldown-cmark = { version = "=0.13.4", default-features = false, features = ["html"] }`. Update lockfile with `cargo update -p pulldown-cmark --precise 0.13.4` **only**.
+- [x] **2.2** Migrate API to compile:
   - `Tag::Link { link_type, dest_url, title, id }`, `End(TagEnd::Link)`, `End(TagEnd::CodeBlock)`, `Start(Tag::Table(a))` and `End(TagEnd::Table)`.
   - Retain `Options::all()` temporarily to observe red test failures for I1, I3, and I4.
-- [ ] **2.3** Write *red-first tests* in `src/markdown.rs` and observe failures:
+- [x] **2.3** Write *red-first tests* in `src/markdown.rs` and observe failures:
   - `inline_raw_html_then_is_escaped` (fails under 0.13 before I1)
   - `block_raw_html_with_event_handler_then_is_escaped` (fails under 0.13 before I1)
   - `raw_script_tag_in_markdown_then_is_escaped` (R5: fails before I1)
@@ -99,11 +99,11 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - `definition_list_syntax_then_renders_no_definition_list` (fails before I3)
   - `gfm_alert_marker_then_renders_plain_blockquote` (fails before I3)
   - `metadata_blocks_plus_and_minus_then_render_literally` (fails before I3)
-- [ ] **2.4** Implement controls:
+- [x] **2.4** Implement controls:
   - Define `const LENS_OPTIONS: Options` using `.union()` to pin the 6 baseline flags (I3).
   - I1: `Event::Html(v) | Event::InlineHtml(v) => events.push(Event::Text(v))`.
   - I4: `Event::Start(Tag::Heading { level, id, classes, attrs: _ })` pushes `attrs: Vec::new()`.
-- [ ] **2.5** New accepted behavior (D9) and characterization tests:
+- [x] **2.5** New accepted behavior (D9) and characterization tests:
   - D9 Footnote behavior tests:
     - `defined_footnote_then_renders_reference_and_definition`
     - `undefined_footnote_reference_then_renders_literal_text` (D9)
@@ -116,7 +116,7 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - End-to-end tests in `page.rs`:
     - `markdown_code_span_with_document_anchor_text_then_page_adds_no_token_to_code` (R6)
     - `markdown_raw_anchor_html_then_page_adds_no_token_to_escaped_text` (R6)
-- **Commit:** `build: upgrade pulldown-cmark to 0.13.4 with pinned options and escaped inline HTML`
+- **Commit:** `feat(markdown): upgrade pulldown-cmark to 0.13.4 with security controls (I1, I3, I4, D9)` (`0a00c85`, remediated in `057b868`)
 - **Stage:** `git add Cargo.toml Cargo.lock src/markdown.rs src/viewer/page.rs`
 
 ---
