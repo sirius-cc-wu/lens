@@ -4,6 +4,10 @@ const APP_SCRIPT: &str = include_str!("assets/app.js");
 const APP_STYLESHEET: &str = include_str!("assets/app.css");
 // Bundled Mermaid 11.17.2 from https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js
 const MERMAID_SCRIPT: &str = include_str!("assets/mermaid.min.js");
+// Bundled KaTeX 0.16.22 from https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js
+const KATEX_SCRIPT: &str = include_str!("assets/katex.min.js");
+// Bundled KaTeX 0.16.22 stylesheet with WOFF2 fonts inlined as data URIs
+const KATEX_STYLESHEET: &str = include_str!("assets/katex.min.css");
 
 pub(super) fn app_script() -> &'static str {
     embedded_asset(APP_SCRIPT)
@@ -15,6 +19,14 @@ pub(super) fn app_stylesheet() -> &'static str {
 
 pub(super) fn mermaid_script() -> &'static str {
     embedded_asset(MERMAID_SCRIPT)
+}
+
+pub(super) fn katex_script() -> &'static str {
+    embedded_asset(KATEX_SCRIPT)
+}
+
+pub(super) fn katex_stylesheet() -> &'static str {
+    embedded_asset(KATEX_STYLESHEET)
 }
 
 fn embedded_asset(asset: &'static str) -> &'static str {
@@ -39,6 +51,7 @@ pub(super) fn page(
         })
         .unwrap_or_default();
     let document_html = inject_capability(&document_html, session_token);
+    let escaped_title = escape_html(title);
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -46,26 +59,22 @@ pub(super) fn page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Lens: {}</title>
-  <link rel="stylesheet" href="/app.css?token={}">
+  <title>Lens: {escaped_title}</title>
+  <link rel="stylesheet" href="/katex.css?token={session_token}">
+  <link rel="stylesheet" href="/app.css?token={session_token}">
 </head>
 <body>
-  <main{refresh_attributes} data-session-token="{}">
+  <main{refresh_attributes} data-session-token="{session_token}">
     <section class="document-content">
-      <header class="document-header"><p class="eyebrow">Lens</p><h1>{}</h1></header>
+      <header class="document-header"><p class="eyebrow">Lens</p><h1>{escaped_title}</h1></header>
       <article>{document_html}</article>
     </section>
   </main>
-  <script src="/mermaid.js?token={}"></script>
-  <script src="/app.js?token={}"></script>
+  <script src="/katex.js?token={session_token}"></script>
+  <script src="/mermaid.js?token={session_token}"></script>
+  <script src="/app.js?token={session_token}"></script>
 </body>
-</html>"#,
-        escape_html(title),
-        session_token,
-        session_token,
-        escape_html(title),
-        session_token,
-        session_token,
+</html>"#
     )
 }
 
@@ -372,14 +381,14 @@ fn scan(html: &str, token: &str) -> String {
 }
 
 pub(super) fn content_security_policy() -> &'static str {
-    "default-src 'self'; base-uri 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    "default-src 'self'; base-uri 'none'; font-src 'self' data:; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{document_unavailable_page, inject_capability, page};
+    use super::{document_unavailable_page, inject_capability, katex_stylesheet, page};
     use crate::{markdown::render, source_link::SourceLinkResolver};
 
     const TEST_TOKEN: &str = "test-token";
@@ -439,10 +448,35 @@ mod tests {
 
         // Assert
         assert!(rendered.contains(r#"<meta name="referrer" content="no-referrer">"#));
+        assert!(rendered.contains(r#"<link rel="stylesheet" href="/katex.css?token=test-token">"#));
         assert!(rendered.contains(r#"<link rel="stylesheet" href="/app.css?token=test-token">"#));
+        assert!(rendered.contains(r#"<script src="/katex.js?token=test-token"></script>"#));
         assert!(rendered.contains(r#"<script src="/mermaid.js?token=test-token"></script>"#));
         assert!(rendered.contains(r#"<script src="/app.js?token=test-token"></script>"#));
         assert!(rendered.contains(r#"data-session-token="test-token""#));
+    }
+
+    #[test]
+    fn katex_stylesheet_then_references_only_inlined_data_fonts() {
+        // Arrange
+        let stylesheet = katex_stylesheet();
+
+        // Act & Assert
+        let mut count = 0;
+        for part in stylesheet.split("url(").skip(1) {
+            if let Some(url_content) = part.split(')').next() {
+                let trimmed = url_content.trim().trim_matches('"').trim_matches('\'');
+                assert!(
+                    trimmed.starts_with("data:font/woff2;base64,"),
+                    "All fonts in KaTeX CSS must be inlined data: URIs, found: {trimmed}"
+                );
+                count += 1;
+            }
+        }
+        assert_eq!(
+            count, 20,
+            "Expected exactly 20 inlined font URLs in KaTeX stylesheet"
+        );
     }
 
     #[test]
@@ -799,5 +833,44 @@ mod tests {
         assert!(html.contains("&lt;a href=\"/documents/a.md\"&gt;x&lt;/a&gt;"));
         assert!(!html.contains("/documents/a.md?token="));
         assert!(!html.contains("/documents/a.md&token="));
+    }
+
+    #[test]
+    fn document_page_then_loads_katex_assets_before_app_assets() {
+        // Arrange
+        let content = "<p>Formula content</p>";
+
+        // Act
+        let rendered = page("Test", content.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        let katex_css_pos = rendered
+            .find(r#"href="/katex.css?token=test-token""#)
+            .expect("katex css link present");
+        let app_css_pos = rendered
+            .find(r#"href="/app.css?token=test-token""#)
+            .expect("app css link present");
+        assert!(
+            katex_css_pos < app_css_pos,
+            "katex.css should appear before app.css"
+        );
+
+        let katex_js_pos = rendered
+            .find(r#"src="/katex.js?token=test-token""#)
+            .expect("katex js script present");
+        let mermaid_js_pos = rendered
+            .find(r#"src="/mermaid.js?token=test-token""#)
+            .expect("mermaid js script present");
+        let app_js_pos = rendered
+            .find(r#"src="/app.js?token=test-token""#)
+            .expect("app js script present");
+        assert!(
+            katex_js_pos < mermaid_js_pos,
+            "katex.js should appear before mermaid.js"
+        );
+        assert!(
+            mermaid_js_pos < app_js_pos,
+            "mermaid.js should appear before app.js"
+        );
     }
 }

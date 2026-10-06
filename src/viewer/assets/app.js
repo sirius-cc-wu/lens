@@ -35,6 +35,101 @@ function prepareStandaloneSvg(svgText) {
   return new XMLSerializer().serializeToString(svgEl);
 }
 
+function createSpanMathError(source) {
+  const container = document.createElement('span');
+  container.className = 'math-error';
+  container.title = 'Formula rendering failed';
+  container.appendChild(document.createTextNode('Formula error: '));
+  const code = document.createElement('code');
+  code.textContent = source;
+  container.appendChild(code);
+  return container;
+}
+
+function renderMathSpan(el, displayMode) {
+  const source = el.textContent;
+  try {
+    window.katex.render(source, el, {
+      displayMode,
+      throwOnError: false,
+      trust: false,
+      maxSize: 500,
+      maxExpand: 1000,
+      strict: 'warn',
+    });
+    if (el.querySelector('.katex-error')) {
+      el.replaceChildren(createSpanMathError(source));
+    }
+  } catch (_error) {
+    el.replaceChildren(createSpanMathError(source));
+  }
+}
+
+function renderMathBlock(container) {
+  const target = container.querySelector('.math-target') || container;
+  const errorMsg = container.querySelector('.math-error');
+  const details = container.querySelector('.math-source');
+  const codeEl = details ? details.querySelector('code') : null;
+  const source = codeEl ? codeEl.textContent : '';
+
+  try {
+    window.katex.render(source, target, {
+      displayMode: true,
+      throwOnError: false,
+      trust: false,
+      maxSize: 500,
+      maxExpand: 1000,
+      strict: 'warn',
+    });
+    if (target.querySelector('.katex-error')) {
+      if (target !== container) target.hidden = true;
+      if (errorMsg) errorMsg.hidden = false;
+      if (details) {
+        details.hidden = false;
+        details.open = true;
+      }
+    } else {
+      if (target !== container) target.hidden = false;
+      if (errorMsg) errorMsg.hidden = true;
+    }
+  } catch (_error) {
+    if (target !== container) target.hidden = true;
+    if (errorMsg) errorMsg.hidden = false;
+    if (details) {
+      details.hidden = false;
+      details.open = true;
+    }
+  }
+}
+
+function renderMath(root = document) {
+  const engine = window.katex;
+  if (!engine || typeof engine.render !== 'function') return;
+
+  for (const el of root.querySelectorAll('[data-math-inline]')) {
+    renderMathSpan(el, false);
+  }
+  for (const el of root.querySelectorAll('[data-math-display]')) {
+    renderMathSpan(el, true);
+  }
+  for (const el of root.querySelectorAll('[data-math-block]')) {
+    renderMathBlock(el);
+  }
+}
+
+window.renderMath = renderMath;
+document.addEventListener('lens:refresh', () => {
+  try {
+    renderMath();
+  } catch (_e) {}
+});
+
+try {
+  renderMath();
+} catch (_error) {
+  // A malformed formula or render failure never blanks the document or blocks diagrams.
+}
+
 if (typeof mermaid !== 'undefined') {
   mermaid.initialize({
     startOnLoad: false,

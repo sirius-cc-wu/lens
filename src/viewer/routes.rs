@@ -12,7 +12,7 @@ use axum::{
 use super::{
     page::{
         app_script, app_stylesheet, content_security_policy, document_unavailable_page,
-        mermaid_script, page,
+        katex_script, katex_stylesheet, mermaid_script, page,
     },
     rendering::request_diagram,
     state::ViewerState,
@@ -25,6 +25,8 @@ pub(super) fn router(state: Arc<ViewerState>) -> Router {
         .route("/revisions/*document_id", get(document_revision))
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
+        .route("/katex.css", get(katex_stylesheet_route))
+        .route("/katex.js", get(katex_script_route))
         .route("/mermaid.js", get(mermaid_script_route))
         .route("/diagrams/:document_id/:diagram_id", get(diagram))
         .fallback(not_found)
@@ -133,6 +135,20 @@ async fn mermaid_script_route() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         mermaid_script(),
+    )
+}
+
+async fn katex_stylesheet_route() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        katex_stylesheet(),
+    )
+}
+
+async fn katex_script_route() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        katex_script(),
     )
 }
 
@@ -421,7 +437,7 @@ mod tests {
                 .headers()
                 .get("content-security-policy")
                 .expect("CSP should be set"),
-            "default-src 'self'; base-uri 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+            "default-src 'self'; base-uri 'none'; font-src 'self' data:; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
         );
     }
 
@@ -443,5 +459,103 @@ mod tests {
                 .expect("content type should be set"),
             "text/javascript; charset=utf-8"
         );
+    }
+
+    #[tokio::test]
+    async fn authenticated_katex_script_request_then_returns_javascript_content() {
+        // Arrange
+        let app = test_router();
+        let request = authed_request("/katex.js");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .expect("content type should be set"),
+            "text/javascript; charset=utf-8"
+        );
+    }
+
+    #[tokio::test]
+    async fn authenticated_katex_stylesheet_request_then_returns_css_content() {
+        // Arrange
+        let app = test_router();
+        let request = authed_request("/katex.css");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .expect("content type should be set"),
+            "text/css; charset=utf-8"
+        );
+    }
+
+    #[tokio::test]
+    async fn authenticated_katex_asset_requests_then_return_assets_with_immutable_cache() {
+        // Arrange
+        let app = test_router();
+
+        // Act & Assert
+        let js_response = app
+            .clone()
+            .oneshot(authed_request("/katex.js"))
+            .await
+            .expect("router should respond");
+        assert_eq!(js_response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            js_response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .expect("content type should be set"),
+            "text/javascript; charset=utf-8"
+        );
+
+        let css_response = app
+            .oneshot(authed_request("/katex.css"))
+            .await
+            .expect("router should respond");
+        assert_eq!(css_response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            css_response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .expect("content type should be set"),
+            "text/css; charset=utf-8"
+        );
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_katex_asset_request_then_returns_unauthorized() {
+        // Arrange
+        let app = test_router();
+
+        // Act & Assert
+        for path in ["/katex.js", "/katex.css"] {
+            let request = Request::builder()
+                .uri(path)
+                .body(Body::empty())
+                .expect("test request should build");
+            let response = app
+                .clone()
+                .oneshot(request)
+                .await
+                .expect("router should respond");
+            assert_eq!(
+                response.status(),
+                axum::http::StatusCode::UNAUTHORIZED,
+                "unauthenticated request to {path} should be rejected"
+            );
+        }
     }
 }
