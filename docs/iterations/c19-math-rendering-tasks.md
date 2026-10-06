@@ -178,28 +178,28 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
 
 **Files:** `src/viewer/assets/katex.min.js`, `src/viewer/assets/katex.min.css`, `src/viewer/assets/app.js`, `src/viewer/assets/app.css`, `src/viewer/page.rs`, `src/viewer/routes.rs`, `tests/browser/lens.spec.mjs`
 
-- [ ] **4.1** Vendor assets and verify SHA-256 against ADR-027:
+- [x] **4.1** Vendor assets and verify SHA-256 against ADR-027:
   - `katex.min.js`: `e8d885505949f3a5f4abdd5dd0d53696bd1371ad26ffbf4f310dcd77c8cdae89`
   - `katex.min.css`: `05f52c1d80561bc3d1024881edd88c25e49352d4ee08493d2f912c27d2ef7a12`
   - Confirm CSS references only `data:font/woff2;base64` URIs.
-- [ ] **4.2** In `page.rs` and `routes.rs`:
+- [x] **4.2** In `page.rs` and `routes.rs`:
   - Expose `/katex.js` and `/katex.css` with token auth.
   - Update CSP: `default-src 'self'; base-uri 'none'; font-src 'self' data:; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'`. (Authorized pre-existing assertion update in `routes.rs:424`).
   - Inject `<link rel="stylesheet" href="/katex.css?token={}">` and `<script src="/katex.js?token={}"></script>`.
-- [ ] **4.3** In `app.js` and `app.css`:
+- [x] **4.3** In `app.js` and `app.css`:
   - Implement `renderMath()` reading `textContent` before render.
   - Options per formula: `{displayMode, throwOnError: false, trust: false, maxSize: 500, maxExpand: 1000, strict: "warn"}`, no shared `macros`.
   - Phrasing-safe error fallbacks (G1-M1): for spans, replace children via `replaceChildren` with `<span class="math-error" title="Formula rendering failed">Formula error: <code>{source}</code></span>`. For blocks, hide `.math-target`, un-hide `.math-error`, and set `.math-source` `open = true`.
   - Guard with `const engine = window.katex; if (!engine || typeof engine.render !== 'function') return;` (R11 Mode C).
   - Add styles for math spans and phrasing error notices in `app.css`.
-- [ ] **4.4** Server & Route tests:
+- [x] **4.4** Server & Route tests:
   - `authenticated_katex_script_request_then_returns_javascript_content`
   - `authenticated_katex_stylesheet_request_then_returns_css_content`
   - `unauthenticated_katex_asset_request_then_returns_unauthorized`
   - `document_page_then_loads_katex_assets_before_app_assets`
   - `katex_stylesheet_then_references_only_inlined_data_fonts`
   - `document_request_then_sets_restrictive_content_security_policy` (asserts exact updated CSP with `font-src 'self' data:`)
-- [ ] **4.5** Core browser qualification tests in `tests/browser/lens.spec.mjs` (G1-M2, F-M5):
+- [x] **4.5** Core browser qualification tests in `tests/browser/lens.spec.mjs` (G1-M2, F-M5):
   - `inline_and_display_math_rendering_then_produces_katex_elements`
   - `untrusted_href_math_formula_then_renders_no_anchor_element`
   - `math_dimension_limit_exceeded_then_clamps_rule_size_safely`
@@ -208,7 +208,7 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - `katex_script_unavailable_then_shows_raw_tex_and_renders_rest_of_document` (R11 Mode A)
   - `page_with_katex_element_id_when_engine_missing_then_does_not_throw` (R11 Mode C)
   - `math_rendering_then_makes_zero_external_network_requests`
-- **Commit:** `feat: render math offline with bundled KaTeX 0.16.22 and qualify client safety`
+- **Commit:** `feat(viewer): bundle KaTeX assets, loopback routes, CSP, client rendering, and browser qualification (Slice 4)` (`89f9ee1`, remediated in `02d7b47` and `c91d750`)
 - **Stage:** `git add src/viewer/assets/katex.min.js src/viewer/assets/katex.min.css src/viewer/assets/app.js src/viewer/assets/app.css src/viewer/page.rs src/viewer/routes.rs tests/browser/lens.spec.mjs`
 
 ---
