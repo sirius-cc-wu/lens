@@ -66,7 +66,7 @@ function renderMathSpan(el, displayMode) {
 }
 
 function renderMathBlock(container) {
-  const target = container.querySelector('.math-target') || container;
+  const target = container.querySelector('.math-target');
   const errorMsg = container.querySelector('.math-error');
   const details = container.querySelector('.math-source');
   const codeEl = details ? details.querySelector('code') : null;
@@ -82,47 +82,31 @@ function renderMathBlock(container) {
       strict: 'warn',
     });
     if (target.querySelector('.katex-error')) {
-      if (target !== container) target.hidden = true;
+      target.hidden = true;
       if (errorMsg) errorMsg.hidden = false;
-      if (details) {
-        details.hidden = false;
-        details.open = true;
-      }
-    } else {
-      if (target !== container) target.hidden = false;
-      if (errorMsg) errorMsg.hidden = true;
+      if (details) details.open = true;
     }
   } catch (_error) {
-    if (target !== container) target.hidden = true;
+    target.hidden = true;
     if (errorMsg) errorMsg.hidden = false;
-    if (details) {
-      details.hidden = false;
-      details.open = true;
-    }
+    if (details) details.open = true;
   }
 }
 
-function renderMath(root = document) {
+function renderMath() {
   const engine = window.katex;
   if (!engine || typeof engine.render !== 'function') return;
 
-  for (const el of root.querySelectorAll('[data-math-inline]')) {
+  for (const el of document.querySelectorAll('[data-math-inline]')) {
     renderMathSpan(el, false);
   }
-  for (const el of root.querySelectorAll('[data-math-display]')) {
+  for (const el of document.querySelectorAll('[data-math-display]')) {
     renderMathSpan(el, true);
   }
-  for (const el of root.querySelectorAll('[data-math-block]')) {
+  for (const el of document.querySelectorAll('[data-math-block]')) {
     renderMathBlock(el);
   }
 }
-
-window.renderMath = renderMath;
-document.addEventListener('lens:refresh', () => {
-  try {
-    renderMath();
-  } catch (_e) {}
-});
 
 try {
   renderMath();

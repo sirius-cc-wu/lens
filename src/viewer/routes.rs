@@ -248,6 +248,18 @@ mod tests {
             .expect("test request should build")
     }
 
+    async fn response_body_string(response: axum::response::Response) -> String {
+        use axum::body::HttpBody;
+
+        let mut body = response.into_body();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = body.data().await {
+            let chunk = chunk.expect("reading response body chunk should succeed");
+            bytes.extend_from_slice(&chunk);
+        }
+        String::from_utf8(bytes).expect("response body should be valid utf-8")
+    }
+
     fn test_document(identifier: &str, source: &str) -> MarkdownDocument {
         MarkdownDocument {
             identifier: identifier.to_owned(),
@@ -479,6 +491,8 @@ mod tests {
                 .expect("content type should be set"),
             "text/javascript; charset=utf-8"
         );
+        let body = response_body_string(response).await;
+        assert!(body.contains("0.16.22"));
     }
 
     #[tokio::test]
@@ -499,40 +513,8 @@ mod tests {
                 .expect("content type should be set"),
             "text/css; charset=utf-8"
         );
-    }
-
-    #[tokio::test]
-    async fn authenticated_katex_asset_requests_then_return_assets_with_immutable_cache() {
-        // Arrange
-        let app = test_router();
-
-        // Act & Assert
-        let js_response = app
-            .clone()
-            .oneshot(authed_request("/katex.js"))
-            .await
-            .expect("router should respond");
-        assert_eq!(js_response.status(), axum::http::StatusCode::OK);
-        assert_eq!(
-            js_response
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .expect("content type should be set"),
-            "text/javascript; charset=utf-8"
-        );
-
-        let css_response = app
-            .oneshot(authed_request("/katex.css"))
-            .await
-            .expect("router should respond");
-        assert_eq!(css_response.status(), axum::http::StatusCode::OK);
-        assert_eq!(
-            css_response
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .expect("content type should be set"),
-            "text/css; charset=utf-8"
-        );
+        let body = response_body_string(response).await;
+        assert!(body.contains("@font-face"));
     }
 
     #[tokio::test]
