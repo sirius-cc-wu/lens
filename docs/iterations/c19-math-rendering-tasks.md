@@ -127,7 +127,7 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
 
 **Files:** `src/markdown.rs`
 
-- [ ] **3.1** Write *red-first tests* in `src/markdown.rs` (these test new math mapping and fail while `ENABLE_MATH` is disabled):
+- [x] **3.1** Write *red-first tests* in `src/markdown.rs` (these test new math mapping and fail while `ENABLE_MATH` is disabled):
   - R1 & Accepted Behaviors:
     - `inline_math_with_underscores_then_emits_span_with_verbatim_tex`
     - `inline_math_with_asterisks_then_emits_no_emphasis`
@@ -146,7 +146,7 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
     - `fenced_math_block_with_mixed_case_info_then_emits_math_block_container`
     - `fenced_math_block_inside_list_item_and_blockquote_then_emits_container_inside`
     - `fenced_math_source_with_script_tag_then_escapes_source`
-- [ ] **3.2** Characterization / preserved behavior tests (demonstrate established behavior passes before and after):
+- [x] **3.2** Characterization / preserved behavior tests (demonstrate established behavior passes before and after):
   - `spaced_dollar_delimiters_then_render_literal_text`
   - `currency_amounts_then_render_literal_text`
   - `escaped_dollar_signs_then_render_literal_dollars`
@@ -161,13 +161,13 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - `image_alt_with_display_math_then_contains_literal_double_dollar_source` (R3)
   - `image_alt_with_html_and_math_then_escapes_without_math_span` (R3 row 3)
   - `fenced_math_extra_block_then_remains_code_block` (R4)
-- [ ] **3.3** Implement mapping:
+- [x] **3.3** Implement mapping:
   - Add `ENABLE_MATH` to `LENS_OPTIONS`.
   - Track `image_depth` on `Tag::Image` / `TagEnd::Image`.
   - `InlineMath(tex) if image_depth == 0` -> `<span class="math-inline" data-math-inline>{escape_html(tex)}</span>`.
   - `DisplayMath(tex) if image_depth == 0` -> `<span class="math-display" data-math-display>{escape_html(tex)}</span>`.
   - Intercept ```` ```math ```` (exact trimmed case-insensitive match) emitting `math_block_placeholder` with unhidden `<details class="math-source">`.
-- **Commit:** `feat: map native parser math events to Lens math containers`
+- **Commit:** `feat(markdown): map pulldown-cmark native math events to Lens math containers (R1-R4)` (`f43154d`)
 - **Stage:** `git add src/markdown.rs`
 
 ---
