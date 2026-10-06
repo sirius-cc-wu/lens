@@ -219,12 +219,12 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
 
 **Files:** `tests/fixtures/math-specification.md`, `tests/browser/lens.spec.mjs`, `docs/release-notes.md` (if pending)
 
-- [ ] **5.1** Port fixture `tests/fixtures/math-specification.md`:
+- [x] **5.1** Port fixture `tests/fixtures/math-specification.md`:
   - Include 13 `.katex` formula occurrences (inline, display aligned, fenced code block, table formulas).
   - Add author guidance: `A price range is written as \$5-\$10.` (D1)
   - Add table row: `| Magnitude | $\lvert x \rvert$ | $\le 1$ |` (D3)
   - Add shell expressions in code span: `` `$(CC)$(FLAGS)` `` (D6)
-- [ ] **5.2** Browser tests in `tests/browser/lens.spec.mjs`:
+- [x] **5.2** Browser tests in `tests/browser/lens.spec.mjs`:
   - `math_specification_fixture_then_renders_13_katex_formulas`
   - `table_cell_with_lvert_absolute_value_then_renders_math_in_single_cell` (D3 guidance)
   - `currency_range_with_escapes_then_renders_literal_dollars` (D1 guidance)
@@ -232,13 +232,13 @@ Salvage source (read-only): `/home/ccwu/.treehouse/lens-8a0594/1/feat-offline-ma
   - `live_document_refresh_with_math_then_updates_formulas_automatically`
   - `image_alt_with_math_then_exposes_literal_alt_text` (R3)
   - `javascript_disabled_then_preserves_readable_math_and_diagram_sources` (R11 Mode B; G1-M3)
-- [ ] **5.3** Run all gates:
+- [x] **5.3** Run all gates:
   - `cargo fmt --check`
   - `cargo clippy --locked --all-targets --all-features -- -D warnings`
   - `cargo test --locked`
   - `npm run test:browser`
-- **Commit:** `test: verify native math rendering end to end across fixtures and degradation modes`
-- **Stage:** `git add tests/fixtures/math-specification.md tests/browser/lens.spec.mjs docs/release-notes.md`
+- **Commit:** `test(math): verify full fixture matrix, complex integration, and offline degradation (Slice 5)` (`6f3f565`, remediated in `339d345`)
+- **Stage:** `git add tests/fixtures/math-specification.md tests/browser/lens.spec.mjs`
 
 ---
 
@@ -248,9 +248,9 @@ For each slice: commit SHA; staged file list; red/green evidence per named test;
 
 ## Acceptance Checklist
 
-- [ ] I1–I4 each have a passing Rust test cited by ID.
-- [ ] R1–R11 each have at least one passing test.
-- [ ] No `Options::all()`, no `Event::InlineHtml(` construction, and no `$` scanner in `src/` (grep evidence attached).
-- [ ] The CSP string matches R9 exactly, and zero off-origin requests are observed.
-- [ ] Five commits, one per slice, each passing its gates on its own.
-- [ ] PlantUML, Mermaid, links, source links and frontmatter: existing tests pass, with only the allowed assertion edits.
+- [x] I1–I4 each have a passing Rust test cited by ID.
+- [x] R1–R11 each have at least one passing test.
+- [x] No `Options::all()`, no `Event::InlineHtml(` construction, and no `$` scanner in `src/` (grep evidence attached).
+- [x] The CSP string matches R9 exactly, and zero off-origin requests are observed.
+- [x] Five commits, one per slice, each passing its gates on its own.
+- [x] PlantUML, Mermaid, links, source links and frontmatter: existing tests pass, with only the allowed assertion edits.
