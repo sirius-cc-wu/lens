@@ -521,23 +521,36 @@ mod tests {
     async fn unauthenticated_katex_asset_request_then_returns_unauthorized() {
         // Arrange
         let app = test_router();
+        let script_request = Request::builder()
+            .uri("/katex.js")
+            .body(Body::empty())
+            .expect("test request should build");
+        let stylesheet_request = Request::builder()
+            .uri("/katex.css")
+            .body(Body::empty())
+            .expect("test request should build");
 
-        // Act & Assert
-        for path in ["/katex.js", "/katex.css"] {
-            let request = Request::builder()
-                .uri(path)
-                .body(Body::empty())
-                .expect("test request should build");
-            let response = app
-                .clone()
-                .oneshot(request)
-                .await
-                .expect("router should respond");
-            assert_eq!(
-                response.status(),
-                axum::http::StatusCode::UNAUTHORIZED,
-                "unauthenticated request to {path} should be rejected"
-            );
-        }
+        // Act
+        let script_response = app
+            .clone()
+            .oneshot(script_request)
+            .await
+            .expect("router should respond");
+        let stylesheet_response = app
+            .oneshot(stylesheet_request)
+            .await
+            .expect("router should respond");
+
+        // Assert
+        assert_eq!(
+            script_response.status(),
+            axum::http::StatusCode::UNAUTHORIZED,
+            "unauthenticated request to /katex.js should be rejected"
+        );
+        assert_eq!(
+            stylesheet_response.status(),
+            axum::http::StatusCode::UNAUTHORIZED,
+            "unauthenticated request to /katex.css should be rejected"
+        );
     }
 }

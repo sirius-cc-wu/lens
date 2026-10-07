@@ -461,22 +461,26 @@ mod tests {
         // Arrange
         let stylesheet = katex_stylesheet();
 
-        // Act & Assert
-        let mut count = 0;
-        for part in stylesheet.split("url(").skip(1) {
-            if let Some(url_content) = part.split(')').next() {
-                let trimmed = url_content.trim().trim_matches('"').trim_matches('\'');
-                assert!(
-                    trimmed.starts_with("data:font/woff2;base64,"),
-                    "All fonts in KaTeX CSS must be inlined data: URIs, found: {trimmed}"
-                );
-                count += 1;
-            }
-        }
+        // Act
+        let font_urls: Vec<&str> = stylesheet
+            .split("url(")
+            .skip(1)
+            .filter_map(|part| part.split(')').next())
+            .map(|url_content| url_content.trim().trim_matches('"').trim_matches('\''))
+            .collect();
+
+        // Assert
         assert_eq!(
-            count, 20,
+            font_urls.len(),
+            20,
             "Expected exactly 20 inlined font URLs in KaTeX stylesheet"
         );
+        for url in font_urls {
+            assert!(
+                url.starts_with("data:font/woff2;base64,"),
+                "All fonts in KaTeX CSS must be inlined data: URIs, found: {url}"
+            );
+        }
     }
 
     #[test]
