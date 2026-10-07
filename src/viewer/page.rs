@@ -4,6 +4,10 @@ const APP_SCRIPT: &str = include_str!("assets/app.js");
 const APP_STYLESHEET: &str = include_str!("assets/app.css");
 // Bundled Mermaid 11.17.2 from https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js
 const MERMAID_SCRIPT: &str = include_str!("assets/mermaid.min.js");
+// Bundled KaTeX 0.16.22 from https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js
+const KATEX_SCRIPT: &str = include_str!("assets/katex.min.js");
+// Bundled KaTeX 0.16.22 stylesheet with WOFF2 fonts inlined as data URIs
+const KATEX_STYLESHEET: &str = include_str!("assets/katex.min.css");
 
 pub(super) fn app_script() -> &'static str {
     embedded_asset(APP_SCRIPT)
@@ -15,6 +19,14 @@ pub(super) fn app_stylesheet() -> &'static str {
 
 pub(super) fn mermaid_script() -> &'static str {
     embedded_asset(MERMAID_SCRIPT)
+}
+
+pub(super) fn katex_script() -> &'static str {
+    embedded_asset(KATEX_SCRIPT)
+}
+
+pub(super) fn katex_stylesheet() -> &'static str {
+    embedded_asset(KATEX_STYLESHEET)
 }
 
 fn embedded_asset(asset: &'static str) -> &'static str {
@@ -39,6 +51,7 @@ pub(super) fn page(
         })
         .unwrap_or_default();
     let document_html = inject_capability(&document_html, session_token);
+    let escaped_title = escape_html(title);
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -46,26 +59,22 @@ pub(super) fn page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Lens: {}</title>
-  <link rel="stylesheet" href="/app.css?token={}">
+  <title>Lens: {escaped_title}</title>
+  <link rel="stylesheet" href="/katex.css?token={session_token}">
+  <link rel="stylesheet" href="/app.css?token={session_token}">
 </head>
 <body>
-  <main{refresh_attributes} data-session-token="{}">
+  <main{refresh_attributes} data-session-token="{session_token}">
     <section class="document-content">
-      <header class="document-header"><p class="eyebrow">Lens</p><h1>{}</h1></header>
+      <header class="document-header"><p class="eyebrow">Lens</p><h1>{escaped_title}</h1></header>
       <article>{document_html}</article>
     </section>
   </main>
-  <script src="/mermaid.js?token={}"></script>
-  <script src="/app.js?token={}"></script>
+  <script src="/katex.js?token={session_token}"></script>
+  <script src="/mermaid.js?token={session_token}"></script>
+  <script src="/app.js?token={session_token}"></script>
 </body>
-</html>"#,
-        escape_html(title),
-        session_token,
-        session_token,
-        escape_html(title),
-        session_token,
-        session_token,
+</html>"#
     )
 }
 
@@ -80,70 +89,307 @@ pub(super) fn document_unavailable_page(session_token: &str) -> String {
     )
 }
 
+struct CapabilityAttribute {
+    tag: &'static str,
+    attr: &'static str,
+    url_prefix: &'static str,
+}
+
+const CAPABILITY_ATTRIBUTES: &[CapabilityAttribute] = &[
+    CapabilityAttribute {
+        tag: "a",
+        attr: "href",
+        url_prefix: "/documents/",
+    },
+    CapabilityAttribute {
+        tag: "img",
+        attr: "src",
+        url_prefix: "/diagrams/",
+    },
+];
+
 pub(super) fn inject_capability(html: &str, token: &str) -> String {
-    let mut result = String::with_capacity(html.len() + 128);
-    let mut cursor = 0;
+    scan(html, token)
+}
 
-    while cursor < html.len() {
-        let remainder = &html[cursor..];
-        let next_match = [
-            remainder
-                .find(r#"href="/documents/"#)
-                .map(|pos| (pos, 6, '"')),
-            remainder
-                .find(r#"src="/diagrams/"#)
-                .map(|pos| (pos, 5, '"')),
-        ]
-        .into_iter()
-        .flatten()
-        .min_by_key(|&(pos, _, _)| pos);
+fn is_capability_attribute(tag: &str, attr: &str, url: &str) -> bool {
+    CAPABILITY_ATTRIBUTES.iter().any(|cap| {
+        tag.eq_ignore_ascii_case(cap.tag)
+            && attr.eq_ignore_ascii_case(cap.attr)
+            && url.starts_with(cap.url_prefix)
+    })
+}
 
-        match next_match {
-            Some((pos, prefix_len, quote)) => {
-                let match_start = cursor + pos;
-                let url_start = match_start + prefix_len;
-                result.push_str(&html[cursor..url_start]);
+fn find_fragment_delimiter(url: &str) -> Option<usize> {
+    url.match_indices('#').find_map(|(idx, _)| {
+        if idx > 0 && url.as_bytes()[idx - 1] == b'&' {
+            None
+        } else {
+            Some(idx)
+        }
+    })
+}
 
-                if let Some(quote_offset) = html[url_start..].find(quote) {
-                    let url_end = url_start + quote_offset;
-                    let url = &html[url_start..url_end];
-                    let (base, fragment) = match url.split_once('#') {
-                        Some((b, f)) => (b, Some(f)),
-                        None => (url, None),
-                    };
-                    result.push_str(base);
-                    if base.contains('?') {
-                        result.push_str("&token=");
-                    } else {
-                        result.push_str("?token=");
-                    }
-                    result.push_str(token);
-                    if let Some(f) = fragment {
-                        result.push('#');
-                        result.push_str(f);
-                    }
-                    cursor = url_end;
-                } else {
-                    cursor = url_start;
+fn push_capability_url(result: &mut String, url: &str, token: &str) {
+    let fragment_start = find_fragment_delimiter(url);
+    let (base, fragment) = match fragment_start {
+        Some(pos) => (&url[..pos], Some(&url[pos + 1..])),
+        None => (url, None),
+    };
+    result.push_str(base);
+    if base.contains('?') {
+        result.push_str("&token=");
+    } else {
+        result.push_str("?token=");
+    }
+    result.push_str(token);
+    if let Some(f) = fragment {
+        result.push('#');
+        result.push_str(f);
+    }
+}
+
+fn find_tag_end(html: &str, start: usize) -> Option<usize> {
+    let bytes = html.as_bytes();
+    let mut i = start;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'>' => return Some(i + 1),
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += 1;
+                }
+                if i < bytes.len() {
+                    i += 1;
                 }
             }
-            None => {
-                result.push_str(&html[cursor..]);
+            b'\'' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'\'' {
+                    i += 1;
+                }
+                if i < bytes.len() {
+                    i += 1;
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+fn scan(html: &str, token: &str) -> String {
+    let mut result = String::with_capacity(html.len() + 128);
+    let bytes = html.as_bytes();
+    let mut cursor = 0;
+
+    while cursor < bytes.len() {
+        let Some(rel_lt) = bytes[cursor..].iter().position(|&b| b == b'<') else {
+            result.push_str(&html[cursor..]);
+            break;
+        };
+
+        let tag_start = cursor + rel_lt;
+        result.push_str(&html[cursor..tag_start]);
+
+        let after_lt = tag_start + 1;
+        if after_lt >= bytes.len() {
+            result.push('<');
+            break;
+        }
+
+        if html[after_lt..].starts_with("!--") {
+            if let Some(end_offset) = html[after_lt + 3..].find("-->") {
+                let end = after_lt + 3 + end_offset + 3;
+                result.push_str(&html[tag_start..end]);
+                cursor = end;
+            } else {
+                result.push_str(&html[tag_start..]);
                 break;
             }
+            continue;
         }
+
+        if bytes[after_lt] == b'/' || bytes[after_lt] == b'!' || bytes[after_lt] == b'?' {
+            if let Some(gt_offset) = bytes[after_lt..].iter().position(|&b| b == b'>') {
+                let end = after_lt + gt_offset + 1;
+                result.push_str(&html[tag_start..end]);
+                cursor = end;
+            } else {
+                result.push_str(&html[tag_start..]);
+                break;
+            }
+            continue;
+        }
+
+        if !bytes[after_lt].is_ascii_alphabetic() {
+            result.push('<');
+            cursor = after_lt;
+            continue;
+        }
+
+        let mut name_end = after_lt + 1;
+        while name_end < bytes.len()
+            && !bytes[name_end].is_ascii_whitespace()
+            && bytes[name_end] != b'>'
+            && bytes[name_end] != b'/'
+        {
+            name_end += 1;
+        }
+        let tag_name = &html[after_lt..name_end];
+
+        let Some(tag_end) = find_tag_end(html, name_end) else {
+            result.push_str(&html[tag_start..]);
+            break;
+        };
+
+        let matches_capability_tag = CAPABILITY_ATTRIBUTES
+            .iter()
+            .any(|cap| tag_name.eq_ignore_ascii_case(cap.tag));
+
+        if !matches_capability_tag {
+            result.push_str(&html[tag_start..tag_end]);
+            cursor = tag_end;
+            continue;
+        }
+
+        result.push_str(&html[tag_start..name_end]);
+        let mut idx = name_end;
+
+        while idx < tag_end {
+            let ws_start = idx;
+            while idx < tag_end && bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            result.push_str(&html[ws_start..idx]);
+            if idx >= tag_end {
+                break;
+            }
+
+            if bytes[idx] == b'>' {
+                result.push_str(&html[idx..tag_end]);
+                break;
+            }
+            if bytes[idx] == b'/' {
+                if idx + 1 < tag_end && bytes[idx + 1] == b'>' {
+                    result.push_str("/>");
+                    break;
+                } else {
+                    result.push('/');
+                    idx += 1;
+                    continue;
+                }
+            }
+
+            let attr_name_start = idx;
+            while idx < tag_end
+                && !bytes[idx].is_ascii_whitespace()
+                && bytes[idx] != b'='
+                && bytes[idx] != b'>'
+                && bytes[idx] != b'/'
+                && bytes[idx] != b'"'
+                && bytes[idx] != b'\''
+            {
+                idx += 1;
+            }
+            if idx == attr_name_start {
+                result.push(bytes[idx] as char);
+                idx += 1;
+                continue;
+            }
+            let attr_name = &html[attr_name_start..idx];
+            result.push_str(attr_name);
+
+            let ws_eq_start = idx;
+            while idx < tag_end && bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+
+            if idx >= tag_end || bytes[idx] != b'=' {
+                result.push_str(&html[ws_eq_start..idx]);
+                continue;
+            }
+
+            result.push_str(&html[ws_eq_start..idx + 1]);
+            idx += 1;
+
+            let ws_val_start = idx;
+            while idx < tag_end && bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            result.push_str(&html[ws_val_start..idx]);
+            if idx >= tag_end {
+                break;
+            }
+
+            if bytes[idx] == b'"' {
+                result.push('"');
+                let val_start = idx + 1;
+                let mut val_end = val_start;
+                while val_end < tag_end && bytes[val_end] != b'"' {
+                    val_end += 1;
+                }
+                let val = &html[val_start..val_end];
+                if is_capability_attribute(tag_name, attr_name, val) {
+                    push_capability_url(&mut result, val, token);
+                } else {
+                    result.push_str(val);
+                }
+                if val_end < tag_end && bytes[val_end] == b'"' {
+                    result.push('"');
+                    idx = val_end + 1;
+                } else {
+                    idx = val_end;
+                }
+            } else if bytes[idx] == b'\'' {
+                result.push('\'');
+                let val_start = idx + 1;
+                let mut val_end = val_start;
+                while val_end < tag_end && bytes[val_end] != b'\'' {
+                    val_end += 1;
+                }
+                let val = &html[val_start..val_end];
+                if is_capability_attribute(tag_name, attr_name, val) {
+                    push_capability_url(&mut result, val, token);
+                } else {
+                    result.push_str(val);
+                }
+                if val_end < tag_end && bytes[val_end] == b'\'' {
+                    result.push('\'');
+                    idx = val_end + 1;
+                } else {
+                    idx = val_end;
+                }
+            } else {
+                let val_start = idx;
+                while idx < tag_end && !bytes[idx].is_ascii_whitespace() && bytes[idx] != b'>' {
+                    idx += 1;
+                }
+                let val = &html[val_start..idx];
+                if is_capability_attribute(tag_name, attr_name, val) {
+                    push_capability_url(&mut result, val, token);
+                } else {
+                    result.push_str(val);
+                }
+            }
+        }
+        cursor = tag_end;
     }
 
     result
 }
 
 pub(super) fn content_security_policy() -> &'static str {
-    "default-src 'self'; base-uri 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    "default-src 'self'; base-uri 'none'; font-src 'self' data:; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{document_unavailable_page, inject_capability, page};
+    use std::collections::BTreeSet;
+
+    use super::{document_unavailable_page, inject_capability, katex_stylesheet, page};
+    use crate::{markdown::render, source_link::SourceLinkResolver};
 
     const TEST_TOKEN: &str = "test-token";
 
@@ -202,10 +448,39 @@ mod tests {
 
         // Assert
         assert!(rendered.contains(r#"<meta name="referrer" content="no-referrer">"#));
+        assert!(rendered.contains(r#"<link rel="stylesheet" href="/katex.css?token=test-token">"#));
         assert!(rendered.contains(r#"<link rel="stylesheet" href="/app.css?token=test-token">"#));
+        assert!(rendered.contains(r#"<script src="/katex.js?token=test-token"></script>"#));
         assert!(rendered.contains(r#"<script src="/mermaid.js?token=test-token"></script>"#));
         assert!(rendered.contains(r#"<script src="/app.js?token=test-token"></script>"#));
         assert!(rendered.contains(r#"data-session-token="test-token""#));
+    }
+
+    #[test]
+    fn katex_stylesheet_then_references_only_inlined_data_fonts() {
+        // Arrange
+        let stylesheet = katex_stylesheet();
+
+        // Act
+        let font_urls: Vec<&str> = stylesheet
+            .split("url(")
+            .skip(1)
+            .filter_map(|part| part.split(')').next())
+            .map(|url_content| url_content.trim().trim_matches('"').trim_matches('\''))
+            .collect();
+
+        // Assert
+        assert_eq!(
+            font_urls.len(),
+            20,
+            "Expected exactly 20 inlined font URLs in KaTeX stylesheet"
+        );
+        for url in font_urls {
+            assert!(
+                url.starts_with("data:font/woff2;base64,"),
+                "All fonts in KaTeX CSS must be inlined data: URIs, found: {url}"
+            );
+        }
     }
 
     #[test]
@@ -234,5 +509,372 @@ mod tests {
         assert!(page.contains("<title>Lens: Document unavailable</title>"));
         assert!(page.contains(expected_message));
         assert!(page.contains(r#"href="/?token=test-token""#));
+    }
+
+    #[test]
+    fn document_page_then_injects_script_and_stylesheet_tokens_only_in_head_and_body_tags() {
+        // Arrange
+        let content = "<p>Standard article content.</p>";
+
+        // Act
+        let rendered = page("Doc", content.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"<link rel="stylesheet" href="/app.css?token=test-token">"#));
+        assert!(rendered.contains(r#"<script src="/mermaid.js?token=test-token"></script>"#));
+        assert!(rendered.contains(r#"<script src="/app.js?token=test-token"></script>"#));
+        assert!(rendered.contains("<article><p>Standard article content.</p></article>"));
+    }
+
+    #[test]
+    fn document_page_with_head_token_in_prose_then_does_not_inject_script() {
+        // Arrange
+        let html = r#"<p>head token in prose: <script src="/diagrams/app.js"></script></p>"#;
+
+        // Act
+        let rendered = page("Head Token", html.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"<script src="/diagrams/app.js"></script>"#));
+        assert!(!rendered.contains(r#"/diagrams/app.js?token="#));
+    }
+
+    #[test]
+    fn document_page_with_link_tag_in_code_block_then_does_not_inject_stylesheet() {
+        // Arrange
+        let html = r#"<pre><code><link rel="stylesheet" href="/documents/style.css"></code></pre>"#;
+
+        // Act
+        let rendered = page("Code Block", html.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(
+            r#"<pre><code><link rel="stylesheet" href="/documents/style.css"></code></pre>"#
+        ));
+        assert!(!rendered.contains("/documents/style.css?token="));
+    }
+
+    #[test]
+    fn document_page_with_external_links_then_does_not_inject_tokens() {
+        // Arrange
+        let content = r#"<p><a href="https://example.com/documents/doc.md">External</a></p>"#;
+
+        // Act
+        let rendered = page("External", content.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"<a href="https://example.com/documents/doc.md">External</a>"#));
+        assert!(!rendered.contains("https://example.com/documents/doc.md?token="));
+    }
+
+    #[test]
+    fn document_page_with_query_and_fragment_in_local_link_then_preserves_both() {
+        // Arrange
+        let content = r#"<p><a href="/documents/guide.md?view=full#chapter-1">Guide</a></p>"#;
+
+        // Act
+        let rendered = page("Query & Fragment", content.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(
+            rendered.contains(r#"href="/documents/guide.md?view=full&token=test-token#chapter-1""#)
+        );
+    }
+
+    #[test]
+    fn document_page_with_apostrophe_entity_in_local_link_then_preserves_entity_and_fragment() {
+        // Arrange
+        let html = r#"<p><a href="/documents/O&#x27;Reilly.md#intro">Book</a></p>"#;
+
+        // Act
+        let rendered = page("Entity Test", html.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        assert!(rendered.contains(r#"href="/documents/O&#x27;Reilly.md?token=test-token#intro""#));
+        assert!(!rendered.contains(r#"href="/documents/O&?token="#));
+    }
+
+    #[test]
+    fn body_text_resembling_document_attribute_then_remains_byte_identical() {
+        // Arrange
+        let html = r#"<p>href="/documents/a.md"</p>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn code_text_resembling_anchor_markup_then_remains_byte_identical() {
+        // Arrange
+        let html = r#"<pre><code>&lt;a href="/documents/a.md"&gt;</code></pre>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn attribute_name_ending_in_href_then_is_not_rewritten() {
+        // Arrange
+        let html = r#"<a title="x" data-href="/documents/a.md" href="https://example.com">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn capability_attribute_on_other_element_then_is_not_rewritten() {
+        // Arrange
+        let html = r#"<link href="/documents/a.md"><h1 src="/diagrams/0/0">Title</h1>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn document_link_with_apostrophe_then_preserves_path_and_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/O&#x27;Reilly.md#intro">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/O&#x27;Reilly.md?token=test-token#intro">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_fragment_then_inserts_token_before_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/guide.md#install">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/guide.md?token=test-token#install">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_existing_query_then_appends_token_with_ampersand() {
+        // Arrange
+        let html = r#"<a href="/documents/guide.md?preview=true">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/guide.md?preview=true&token=test-token">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_query_and_fragment_then_preserves_query_and_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/guide.md?preview=true#install">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/guide.md?preview=true&token=test-token#install">"#
+        );
+    }
+
+    #[test]
+    fn diagram_image_with_trailing_boolean_attribute_then_appends_token() {
+        // Arrange
+        let html = r#"<img src="/diagrams/0/0" alt="d" data-diagram>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<img src="/diagrams/0/0?token=test-token" alt="d" data-diagram>"#
+        );
+    }
+
+    #[test]
+    fn truncated_tag_then_copies_remainder_unchanged() {
+        // Arrange
+        let html = r#"<a href="/documents/a.md""#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(injected, html);
+    }
+
+    #[test]
+    fn non_ascii_text_around_tags_then_is_preserved() {
+        // Arrange
+        let html = r#"<p>你好 <a href="/documents/指南.md#安装">安装</a> 世界 🚀</p>"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<p>你好 <a href="/documents/指南.md?token=test-token#安装">安装</a> 世界 🚀</p>"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_decimal_apostrophe_entity_then_preserves_path_and_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/O&#39;Reilly.md#intro">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/O&#39;Reilly.md?token=test-token#intro">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_entity_and_no_fragment_then_appends_token() {
+        // Arrange
+        let html = r#"<a href="/documents/O&#x27;Reilly.md">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/O&#x27;Reilly.md?token=test-token">"#
+        );
+    }
+
+    #[test]
+    fn document_link_with_encoded_ampersand_before_fragment_then_splits_at_fragment() {
+        // Arrange
+        let html = r#"<a href="/documents/guide.md?foo=1&amp;#intro">"#;
+
+        // Act
+        let injected = inject_capability(html, TEST_TOKEN);
+
+        // Assert
+        assert_eq!(
+            injected,
+            r#"<a href="/documents/guide.md?foo=1&amp;&token=test-token#intro">"#
+        );
+    }
+
+    #[test]
+    fn markdown_code_span_with_document_anchor_text_then_page_adds_no_token_to_code() {
+        // Arrange
+        let markdown = "Here is a code span: `<a href=\"/documents/a.md\">`";
+        let root = std::env::current_dir().expect("test root available");
+        let document_path = root.join("doc.md");
+        let source_links = SourceLinkResolver::new(root);
+
+        // Act
+        let rendered = render(
+            markdown,
+            0,
+            "doc.md",
+            &document_path,
+            &BTreeSet::new(),
+            &source_links,
+        );
+        let html = page("Code Span Test", rendered.html, None, TEST_TOKEN);
+
+        // Assert
+        assert!(html.contains("&lt;a href=\"/documents/a.md\"&gt;"));
+        assert!(!html.contains("/documents/a.md?token="));
+        assert!(!html.contains("/documents/a.md&token="));
+    }
+
+    #[test]
+    fn markdown_raw_anchor_html_then_page_adds_no_token_to_escaped_text() {
+        // Arrange
+        let markdown = "Raw HTML: <a href=\"/documents/a.md\">x</a>";
+        let root = std::env::current_dir().expect("test root available");
+        let document_path = root.join("doc.md");
+        let source_links = SourceLinkResolver::new(root);
+
+        // Act
+        let rendered = render(
+            markdown,
+            0,
+            "doc.md",
+            &document_path,
+            &BTreeSet::new(),
+            &source_links,
+        );
+        let html = page("Raw Anchor Test", rendered.html, None, TEST_TOKEN);
+
+        // Assert
+        assert!(html.contains("&lt;a href=\"/documents/a.md\"&gt;x&lt;/a&gt;"));
+        assert!(!html.contains("/documents/a.md?token="));
+        assert!(!html.contains("/documents/a.md&token="));
+    }
+
+    #[test]
+    fn document_page_then_loads_katex_assets_before_app_assets() {
+        // Arrange
+        let content = "<p>Formula content</p>";
+
+        // Act
+        let rendered = page("Test", content.to_owned(), None, TEST_TOKEN);
+
+        // Assert
+        let katex_css_pos = rendered
+            .find(r#"href="/katex.css?token=test-token""#)
+            .expect("katex css link present");
+        let app_css_pos = rendered
+            .find(r#"href="/app.css?token=test-token""#)
+            .expect("app css link present");
+        assert!(
+            katex_css_pos < app_css_pos,
+            "katex.css should appear before app.css"
+        );
+
+        let katex_js_pos = rendered
+            .find(r#"src="/katex.js?token=test-token""#)
+            .expect("katex js script present");
+        let mermaid_js_pos = rendered
+            .find(r#"src="/mermaid.js?token=test-token""#)
+            .expect("mermaid js script present");
+        let app_js_pos = rendered
+            .find(r#"src="/app.js?token=test-token""#)
+            .expect("app js script present");
+        assert!(
+            katex_js_pos < mermaid_js_pos,
+            "katex.js should appear before mermaid.js"
+        );
+        assert!(
+            mermaid_js_pos < app_js_pos,
+            "mermaid.js should appear before app.js"
+        );
     }
 }

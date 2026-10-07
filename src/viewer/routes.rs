@@ -12,7 +12,7 @@ use axum::{
 use super::{
     page::{
         app_script, app_stylesheet, content_security_policy, document_unavailable_page,
-        mermaid_script, page,
+        katex_script, katex_stylesheet, mermaid_script, page,
     },
     rendering::request_diagram,
     state::ViewerState,
@@ -25,6 +25,8 @@ pub(super) fn router(state: Arc<ViewerState>) -> Router {
         .route("/revisions/*document_id", get(document_revision))
         .route("/app.css", get(stylesheet))
         .route("/app.js", get(script))
+        .route("/katex.css", get(katex_stylesheet_route))
+        .route("/katex.js", get(katex_script_route))
         .route("/mermaid.js", get(mermaid_script_route))
         .route("/diagrams/:document_id/:diagram_id", get(diagram))
         .fallback(not_found)
@@ -136,6 +138,20 @@ async fn mermaid_script_route() -> impl IntoResponse {
     )
 }
 
+async fn katex_stylesheet_route() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        katex_stylesheet(),
+    )
+}
+
+async fn katex_script_route() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        katex_script(),
+    )
+}
+
 async fn not_found(State(state): State<Arc<ViewerState>>) -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
@@ -230,6 +246,18 @@ mod tests {
             .uri(authed_uri)
             .body(Body::empty())
             .expect("test request should build")
+    }
+
+    async fn response_body_string(response: axum::response::Response) -> String {
+        use axum::body::HttpBody;
+
+        let mut body = response.into_body();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = body.data().await {
+            let chunk = chunk.expect("reading response body chunk should succeed");
+            bytes.extend_from_slice(&chunk);
+        }
+        String::from_utf8(bytes).expect("response body should be valid utf-8")
     }
 
     fn test_document(identifier: &str, source: &str) -> MarkdownDocument {
@@ -421,7 +449,7 @@ mod tests {
                 .headers()
                 .get("content-security-policy")
                 .expect("CSP should be set"),
-            "default-src 'self'; base-uri 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+            "default-src 'self'; base-uri 'none'; font-src 'self' data:; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
         );
     }
 
@@ -442,6 +470,87 @@ mod tests {
                 .get(header::CONTENT_TYPE)
                 .expect("content type should be set"),
             "text/javascript; charset=utf-8"
+        );
+    }
+
+    #[tokio::test]
+    async fn authenticated_katex_script_request_then_returns_javascript_content() {
+        // Arrange
+        let app = test_router();
+        let request = authed_request("/katex.js");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .expect("content type should be set"),
+            "text/javascript; charset=utf-8"
+        );
+        let body = response_body_string(response).await;
+        assert!(body.contains("0.16.22"));
+    }
+
+    #[tokio::test]
+    async fn authenticated_katex_stylesheet_request_then_returns_css_content() {
+        // Arrange
+        let app = test_router();
+        let request = authed_request("/katex.css");
+
+        // Act
+        let response = app.oneshot(request).await.expect("router should respond");
+
+        // Assert
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .expect("content type should be set"),
+            "text/css; charset=utf-8"
+        );
+        let body = response_body_string(response).await;
+        assert!(body.contains("@font-face"));
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_katex_asset_request_then_returns_unauthorized() {
+        // Arrange
+        let app = test_router();
+        let script_request = Request::builder()
+            .uri("/katex.js")
+            .body(Body::empty())
+            .expect("test request should build");
+        let stylesheet_request = Request::builder()
+            .uri("/katex.css")
+            .body(Body::empty())
+            .expect("test request should build");
+
+        // Act
+        let script_response = app
+            .clone()
+            .oneshot(script_request)
+            .await
+            .expect("router should respond");
+        let stylesheet_response = app
+            .oneshot(stylesheet_request)
+            .await
+            .expect("router should respond");
+
+        // Assert
+        assert_eq!(
+            script_response.status(),
+            axum::http::StatusCode::UNAUTHORIZED,
+            "unauthenticated request to /katex.js should be rejected"
+        );
+        assert_eq!(
+            stylesheet_response.status(),
+            axum::http::StatusCode::UNAUTHORIZED,
+            "unauthenticated request to /katex.css should be rejected"
         );
     }
 }

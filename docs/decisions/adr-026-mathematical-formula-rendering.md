@@ -3,16 +3,19 @@ type: "Architecture Decision"
 title: "ADR-026: Offline Mathematical Formula Rendering via Bundled KaTeX and Delimiter Preservation"
 description: "Renders inline and display LaTeX mathematical formulas in Markdown documents using bundled client-side KaTeX with zero external network dependencies, preserving raw LaTeX syntax during Markdown parsing."
 id: "ADR-026"
-status: "accepted"
+status: "partially superseded"
 date: "2026-10-02"
 tags: [architecture, decision, markdown, math, katex, rendering, offline, security]
 ---
 
 # ADR-026: Offline Mathematical Formula Rendering via Bundled KaTeX and Delimiter Preservation
 
-Status: accepted
+Status: partially superseded by [ADR-027](adr-027-native-parser-math-pulldown-cmark-013.md)
 
 Date: 2026-10-02
+
+> [!IMPORTANT]
+> [ADR-027](adr-027-native-parser-math-pulldown-cmark-013.md) replaces §1 (delimiter rules), all of §2 (pre-parser protection, including the Phase 4 container markup), and the attribute-reading part of §5. §3, §4 and the remaining §5 security options stay in force. The bundled KaTeX version is 0.16.22.
 
 ## Context
 

@@ -8,6 +8,18 @@ tags: [release]
 
 # Pending Lens Release Notes
 
+## Offline Mathematical Formula Rendering (KaTeX)
+
+Lens now renders mathematical formulas offline using native `pulldown-cmark` math event mapping and bundled KaTeX 0.16.22 assets.
+
+- **Inline & Display Math**: `$inline$` and `$$display$$` syntax natively parsed and rendered as phrasing-safe containers (`<span class="math-inline">` and `<span class="math-display">`).
+- **Fenced Math Blocks**: ````math code blocks render directly as display mathematics.
+- **Offline Self-Contained Assets**: KaTeX JavaScript, CSS, and inlined WOFF2 font assets are embedded and served directly over authenticated loopback routes with zero external network requests.
+- **Sandboxed Execution & Phrasing Error Fallbacks**: Client-side formula evaluation operates under restrictive Content Security Policy (`font-src 'self' data:`, `default-src 'self'`). Parse and layout errors display inline without breaking document flow or leaking unescaped HTML.
+- **Graceful Degradation**: Documents remain readable with raw LaTeX source when JavaScript is disabled or KaTeX assets are unavailable.
+
+See [ADR-027](decisions/adr-027-native-parser-math-pulldown-cmark-013.md), the [Math Rendering Specification](features/markdown-viewing/math-rendering-spec.md), and the [C19 Construction Tasks](iterations/c19-math-rendering-tasks.md).
+
 ## Changed: Lens Commands Return After Opening a View
 
 An ordinary `lens [TARGET]` command now starts or reuses one background Lens

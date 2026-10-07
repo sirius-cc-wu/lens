@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt::Write as _, path::Path};
 
-use pulldown_cmark::{html, CodeBlockKind, Event, LinkType, Options, Parser, Tag};
+use pulldown_cmark::{html, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 use serde_yaml::{Mapping, Value};
 
 use crate::source_link::{normalize_relative_link, SourceLinkResolver};
@@ -16,6 +16,28 @@ pub struct RenderedDocument {
     pub diagrams: Vec<Diagram>,
 }
 
+enum InterceptedBlock {
+    PlantUml(String),
+    Mermaid(String),
+    Math(String),
+}
+
+impl InterceptedBlock {
+    fn buffer_mut(&mut self) -> &mut String {
+        match self {
+            Self::PlantUml(source) | Self::Mermaid(source) | Self::Math(source) => source,
+        }
+    }
+}
+
+const LENS_OPTIONS: Options = Options::ENABLE_TABLES
+    .union(Options::ENABLE_FOOTNOTES)
+    .union(Options::ENABLE_STRIKETHROUGH)
+    .union(Options::ENABLE_TASKLISTS)
+    .union(Options::ENABLE_SMART_PUNCTUATION)
+    .union(Options::ENABLE_HEADING_ATTRIBUTES)
+    .union(Options::ENABLE_MATH);
+
 pub fn render(
     markdown: &str,
     document_id: usize,
@@ -25,66 +47,99 @@ pub fn render(
     source_links: &SourceLinkResolver,
 ) -> RenderedDocument {
     let frontmatter = frontmatter(markdown);
-    let parser = Parser::new_ext(frontmatter.body, Options::all());
+    let parser = Parser::new_ext(frontmatter.body, LENS_OPTIONS);
     let mut events = Vec::new();
     let mut diagrams = Vec::new();
-    let mut plantuml_source: Option<String> = None;
-    let mut mermaid_source: Option<String> = None;
+    let mut intercepted_block: Option<InterceptedBlock> = None;
     let mut source_link_stack = Vec::new();
+    let mut image_depth: usize = 0;
 
     for event in parser {
-        if let Some(source) = plantuml_source.as_mut() {
+        if let Some(block) = intercepted_block.as_mut() {
             match event {
-                Event::End(Tag::CodeBlock(_)) => {
-                    let source = plantuml_source.take().expect("PlantUML source is active");
-                    let diagram_id = diagrams.len();
-                    diagrams.push(Diagram {
-                        source: source.clone(),
-                    });
-                    events.push(Event::Html(
-                        diagram_placeholder(document_id, diagram_id, &source).into(),
-                    ));
-                }
-                Event::Text(text) | Event::Code(text) => source.push_str(&text),
-                Event::SoftBreak | Event::HardBreak => source.push('\n'),
-                _ => {}
-            }
-            continue;
-        }
-
-        if let Some(source) = mermaid_source.as_mut() {
-            match event {
-                Event::End(Tag::CodeBlock(_)) => {
-                    let source = mermaid_source.take().expect("Mermaid source is active");
-                    events.push(Event::Html(mermaid_placeholder(&source).into()));
-                }
-                Event::Text(text) | Event::Code(text) => source.push_str(&text),
-                Event::SoftBreak | Event::HardBreak => source.push('\n'),
+                Event::End(TagEnd::CodeBlock) => match intercepted_block.take().unwrap() {
+                    InterceptedBlock::PlantUml(source) => {
+                        let diagram_id = diagrams.len();
+                        diagrams.push(Diagram {
+                            source: source.clone(),
+                        });
+                        events.push(Event::Html(
+                            diagram_placeholder(document_id, diagram_id, &source).into(),
+                        ));
+                    }
+                    InterceptedBlock::Mermaid(source) => {
+                        events.push(Event::Html(mermaid_placeholder(&source).into()));
+                    }
+                    InterceptedBlock::Math(source) => {
+                        events.push(Event::Html(math_block_placeholder(&source).into()));
+                    }
+                },
+                Event::Text(text) | Event::Code(text) => block.buffer_mut().push_str(&text),
+                Event::SoftBreak | Event::HardBreak => block.buffer_mut().push('\n'),
                 _ => {}
             }
             continue;
         }
 
         match event {
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(language)))
-                if language.trim().eq_ignore_ascii_case("plantuml") =>
-            {
-                plantuml_source = Some(String::new());
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(language))) => {
+                let tag = language.trim();
+                if tag.eq_ignore_ascii_case("plantuml") {
+                    intercepted_block = Some(InterceptedBlock::PlantUml(String::new()));
+                } else if tag.eq_ignore_ascii_case("mermaid") {
+                    intercepted_block = Some(InterceptedBlock::Mermaid(String::new()));
+                } else if tag.eq_ignore_ascii_case("math") {
+                    intercepted_block = Some(InterceptedBlock::Math(String::new()));
+                } else {
+                    events.push(Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(
+                        language,
+                    ))));
+                }
             }
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(language)))
-                if language.trim().eq_ignore_ascii_case("mermaid") =>
-            {
-                mermaid_source = Some(String::new());
+            Event::Start(Tag::Image { .. }) => {
+                image_depth += 1;
+                events.push(event);
             }
-            Event::Start(Tag::Link(link_type, destination, title)) => {
+            Event::End(TagEnd::Image) => {
+                image_depth = image_depth.saturating_sub(1);
+                events.push(event);
+            }
+            Event::InlineMath(tex) => events.push(if image_depth > 0 {
+                Event::Text(format!("${tex}$").into())
+            } else {
+                Event::Html(
+                    format!(
+                        r#"<span class="math-inline" data-math-inline>{}</span>"#,
+                        escape_html(&tex)
+                    )
+                    .into(),
+                )
+            }),
+            Event::DisplayMath(tex) => events.push(if image_depth > 0 {
+                Event::Text(format!("$${tex}$$").into())
+            } else {
+                Event::Html(
+                    format!(
+                        r#"<span class="math-display" data-math-display>{}</span>"#,
+                        escape_html(&tex)
+                    )
+                    .into(),
+                )
+            }),
+            Event::Start(Tag::Link {
+                link_type,
+                dest_url,
+                title,
+                id,
+            }) => {
                 let resolved = if link_type == LinkType::Email {
                     ResolvedLink {
-                        destination: destination.to_string(),
+                        destination: dest_url.to_string(),
                         opens_in_vscode: false,
                     }
                 } else {
                     resolve_link(
-                        &destination,
+                        &dest_url,
                         current_document,
                         current_document_path,
                         known_documents,
@@ -92,19 +147,20 @@ pub fn render(
                     )
                 };
                 source_link_stack.push(resolved.opens_in_vscode);
-                events.push(Event::Start(Tag::Link(
+                events.push(Event::Start(Tag::Link {
                     link_type,
-                    resolved.destination.into(),
+                    dest_url: resolved.destination.into(),
                     title,
-                )));
+                    id,
+                }));
             }
-            Event::End(Tag::Link(link_type, destination, title)) => {
+            Event::End(TagEnd::Link) => {
                 if source_link_stack.pop().unwrap_or(false) {
                     events.push(Event::Html(
                         r#"<span class="source-link-indicator"> (opens in VS Code)</span>"#.into(),
                     ));
                 }
-                events.push(Event::End(Tag::Link(link_type, destination, title)));
+                events.push(Event::End(TagEnd::Link));
             }
             Event::Start(Tag::Table(alignments)) => {
                 let width_class = if alignments.len() >= 4 {
@@ -117,11 +173,24 @@ pub fn render(
                 ));
                 events.push(Event::Start(Tag::Table(alignments)));
             }
-            Event::End(Tag::Table(alignments)) => {
-                events.push(Event::End(Tag::Table(alignments)));
+            Event::End(TagEnd::Table) => {
+                events.push(Event::End(TagEnd::Table));
                 events.push(Event::Html("</div>".into()));
             }
-            Event::Html(value) => events.push(Event::Text(value)),
+            Event::Start(Tag::Heading {
+                level,
+                id,
+                classes,
+                attrs: _,
+            }) => {
+                events.push(Event::Start(Tag::Heading {
+                    level,
+                    id,
+                    classes,
+                    attrs: Vec::new(),
+                }));
+            }
+            Event::Html(value) | Event::InlineHtml(value) => events.push(Event::Text(value)),
             event => events.push(event),
         }
     }
@@ -317,6 +386,13 @@ fn diagram_placeholder(document_id: usize, diagram_id: usize, source: &str) -> S
 fn mermaid_placeholder(source: &str) -> String {
     format!(
         r#"<figure class="diagram mermaid-diagram" data-mermaid-container><div class="mermaid-target"></div><a class="diagram-open-link" data-mermaid-open target="_blank" rel="noopener noreferrer" hidden>Open SVG</a><p class="diagram-error" hidden>Mermaid rendering failed. The source is shown below.</p><details class="diagram-source"><summary>Mermaid source</summary><pre><code>{}</code></pre></details></figure>"#,
+        escape_html(source),
+    )
+}
+
+fn math_block_placeholder(source: &str) -> String {
+    format!(
+        r#"<div class="math-block" data-math-block><div class="math-target"></div><p class="math-error" hidden>Formula rendering failed. The source is shown below.</p><details class="math-source"><summary>Formula source</summary><pre><code>{}</code></pre></details></div>"#,
         escape_html(source),
     )
 }
@@ -873,6 +949,762 @@ mod tests {
         ));
         assert_eq!(document.html.matches("diagram-open-link").count(), 1);
         assert_eq!(document.html.matches("data-mermaid-open").count(), 1);
+    }
+
+    #[test]
+    fn raw_inline_html_and_html_block_then_escape_verbatim() {
+        // Arrange
+        let markdown = "text <img src=x onerror=alert(1)> text\n\n<div onclick=\"x\">hi</div>";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<img"));
+        assert!(document.html.contains("&lt;img src=x onerror=alert(1)&gt;"));
+        assert!(!document.html.contains("<div onclick"));
+        assert!(document
+            .html
+            .contains("&lt;div onclick=\"x\"&gt;hi&lt;/div&gt;"));
+    }
+
+    #[test]
+    fn inline_raw_html_then_is_escaped() {
+        // Arrange
+        let markdown = "text <img src=x onerror=alert(1)> text";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<img"));
+        assert!(document.html.contains("&lt;img src=x onerror=alert(1)&gt;"));
+    }
+
+    #[test]
+    fn block_raw_html_with_event_handler_then_is_escaped() {
+        // Arrange
+        let markdown = "<div onclick=\"x\">hi</div>";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<div onclick"));
+        assert!(document
+            .html
+            .contains("&lt;div onclick=\"x\"&gt;hi&lt;/div&gt;"));
+    }
+
+    #[test]
+    fn raw_script_tag_in_markdown_then_is_escaped() {
+        // Arrange
+        let markdown = "<script>alert('unsafe')</script>";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<script>"));
+        assert!(document
+            .html
+            .contains("&lt;script&gt;alert('unsafe')&lt;/script&gt;"));
+    }
+
+    #[test]
+    fn forged_math_span_in_raw_markdown_then_is_escaped() {
+        // Arrange
+        let markdown = "Inline <span data-math-inline>x</span> math";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<span data-math-inline>"));
+        assert!(document
+            .html
+            .contains("&lt;span data-math-inline&gt;x&lt;/span&gt;"));
+    }
+
+    #[test]
+    fn heading_attribute_block_with_custom_attributes_then_keeps_only_id_and_classes() {
+        // Arrange
+        let markdown =
+            "# Title {onclick=alert(1) style=position:fixed data-diagram href=/documents/a.md}";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("onclick"));
+        assert!(!document.html.contains("style"));
+        assert!(!document.html.contains("data-diagram"));
+        assert!(!document.html.contains("href"));
+        assert!(document.html.contains("<h1>Title</h1>"));
+    }
+
+    #[test]
+    fn subscript_and_superscript_markers_then_render_literally() {
+        // Arrange
+        let markdown = "~sub~ and ^sup^ and H~2~O, x^2^";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<sub>"));
+        assert!(!document.html.contains("<sup>"));
+        assert!(document.html.contains("<del>sub</del>"));
+        assert!(document.html.contains("^sup^ and H~2~O, x^2^"));
+    }
+
+    #[test]
+    fn wikilink_syntax_then_renders_literally() {
+        // Arrange
+        let markdown = "[[Page]]";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<a"));
+        assert!(document.html.contains("[[Page]]"));
+    }
+
+    #[test]
+    fn definition_list_syntax_then_renders_no_definition_list() {
+        // Arrange
+        let markdown = "Term\n: definition";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<dl>"));
+        assert!(!document.html.contains("<dt>"));
+        assert!(!document.html.contains("<dd>"));
+    }
+
+    #[test]
+    fn gfm_alert_marker_then_renders_plain_blockquote() {
+        // Arrange
+        let markdown = "> [!NOTE]\n> text";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("markdown-alert"));
+        assert!(document.html.contains("<blockquote>"));
+    }
+
+    #[test]
+    fn metadata_blocks_plus_and_minus_then_render_literally() {
+        // Arrange
+        let plus_markdown = "Body\n\n+++\ntitle = \"test\"\n+++\n\nMore";
+        let minus_markdown = "Body\n\n---\ntitle: test\n---\n\nMore";
+
+        // Act
+        let plus_doc = render_test(plus_markdown, 0, "document.md", &BTreeSet::new());
+        let minus_doc = render_test(minus_markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(plus_doc.html.contains("+++"));
+        assert!(plus_doc.html.contains("title = “test”"));
+        assert!(!minus_doc.html.contains("document-metadata"));
+        assert!(minus_doc.html.contains("title: test"));
+        assert!(minus_doc.html.contains("<hr"));
+    }
+
+    #[test]
+    fn defined_footnote_then_renders_reference_and_definition() {
+        // Arrange
+        let markdown = "Note reference[^1].\n\n[^1]: Note content.";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains("<sup class=\"footnote-reference\"><a href=\"#1\">1</a></sup>"));
+        assert!(document
+            .html
+            .contains("<div class=\"footnote-definition\" id=\"1\"><sup class=\"footnote-definition-label\">1</sup>"));
+        assert!(document.html.contains("<p>Note content.</p>"));
+    }
+
+    #[test]
+    fn undefined_footnote_reference_then_renders_literal_text() {
+        // Arrange
+        let markdown = "Here is an [^undefined] reference.";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<sup class=\"footnote-reference\">"));
+        assert!(document
+            .html
+            .contains("<p>Here is an [^undefined] reference.</p>"));
+    }
+
+    #[test]
+    fn consecutive_footnote_definitions_then_render_as_separate_items() {
+        // Arrange
+        let markdown = "Two notes[^a][^b].\n\n[^a]: First note\n[^b]: Second note";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains("<div class=\"footnote-definition\" id=\"a\">"));
+        assert!(document
+            .html
+            .contains("<div class=\"footnote-definition\" id=\"b\">"));
+        assert!(document.html.contains("<p>First note</p>"));
+        assert!(document.html.contains("<p>Second note</p>"));
+    }
+
+    #[test]
+    fn indented_footnote_continuation_then_stays_inside_footnote() {
+        // Arrange
+        let markdown = "A note[^1].\n\n[^1]: First paragraph.\n\n    Continuation paragraph.\n\nAfter footnote.";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            "<div class=\"footnote-definition\" id=\"1\"><sup class=\"footnote-definition-label\">1</sup>\n<p>First paragraph.</p>\n<p>Continuation paragraph.</p>\n</div>"
+        ));
+        assert!(document.html.contains("<p>After footnote.</p>"));
+    }
+
+    #[test]
+    fn heading_attribute_block_with_valid_id_and_classes_then_preserves_them() {
+        // Arrange
+        let markdown = "# Title {#intro .lead}";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains("<h1 id=\"intro\" class=\"lead\">Title</h1>"));
+    }
+
+    #[test]
+    fn html_comment_with_math_then_renders_escaped_comment_text() {
+        // Arrange
+        let markdown = "<!-- $x$ -->";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<!--"));
+        assert!(document.html.contains("&lt;!-- $x$ --&gt;"));
+    }
+
+    #[test]
+    fn strikethrough_tasklist_and_smart_quotes_then_render_as_before() {
+        // Arrange
+        let markdown = "~~strike~~\n\n- [ ] task\n\n\"quoted\"";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains("<del>strike</del>"));
+        assert!(document.html.contains(r#"type="checkbox""#));
+        assert!(document.html.contains("“quoted”"));
+    }
+
+    #[test]
+    fn inline_math_with_underscores_then_emits_span_with_verbatim_tex() {
+        // Arrange
+        let markdown = "The frame takes $T_{\\text{frame}}$.";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains(r#"<span class="math-inline" data-math-inline>T_{\text{frame}}</span>"#));
+        assert!(!document.html.contains("<em>"));
+    }
+
+    #[test]
+    fn inline_math_with_asterisks_then_emits_no_emphasis() {
+        // Arrange
+        let markdown = "$a*b*c$ and $x_1_2$";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains(r#"<span class="math-inline" data-math-inline>a*b*c</span>"#));
+        assert!(document
+            .html
+            .contains(r#"<span class="math-inline" data-math-inline>x_1_2</span>"#));
+        assert!(!document.html.contains("<em>"));
+        assert!(!document.html.contains("<strong>"));
+    }
+
+    #[test]
+    fn display_math_multiline_then_emits_display_span_preserving_newlines() {
+        // Arrange
+        let markdown = "$$\n\\begin{aligned}\na &= b\n\\end{aligned}\n$$";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            "<span class=\"math-display\" data-math-display>\n\\begin{aligned}\na &amp;= b\n\\end{aligned}\n</span>"
+        ));
+    }
+
+    #[test]
+    fn display_math_spanning_lines_then_keeps_line_breaks_in_span_text() {
+        // Arrange
+        let markdown = "$$\n\\begin{aligned}\na &= b\n\\end{aligned}\n$$";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            "<span class=\"math-display\" data-math-display>\n\\begin{aligned}\na &amp;= b\n\\end{aligned}\n</span>"
+        ));
+    }
+
+    #[test]
+    fn math_in_heading_then_emits_span_inside_heading() {
+        // Arrange
+        let markdown = "# Chapter $1$: $x + y$";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            r#"<h1>Chapter <span class="math-inline" data-math-inline>1</span>: <span class="math-inline" data-math-inline>x + y</span></h1>"#
+        ));
+    }
+
+    #[test]
+    fn math_in_blockquote_and_list_item_then_emits_spans_in_place() {
+        // Arrange
+        let markdown = "> $x$\n\n- $y$";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            r#"<blockquote>
+<p><span class="math-inline" data-math-inline>x</span></p>
+</blockquote>"#
+        ));
+        assert!(document
+            .html
+            .contains(r#"<li><span class="math-inline" data-math-inline>y</span></li>"#));
+    }
+
+    #[test]
+    fn math_in_heading_link_footnote_and_table_cell_then_emits_spans_in_place() {
+        // Arrange
+        let markdown = "# Heading $h$\n\n[$l$](https://example.com)\n\nNote[^1].\n\n[^1]: Footnote $f$\n\n| Col |\n| --- |\n| $c$ |";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains(r#"<h1>Heading <span class="math-inline" data-math-inline>h</span></h1>"#));
+        assert!(document.html.contains(
+            r#"<a href="https://example.com"><span class="math-inline" data-math-inline>l</span></a>"#
+        ));
+        assert!(document
+            .html
+            .contains(r#"Footnote <span class="math-inline" data-math-inline>f</span>"#));
+        assert!(document
+            .html
+            .contains(r#"<td><span class="math-inline" data-math-inline>c</span></td>"#));
+    }
+
+    #[test]
+    fn currency_range_without_escapes_then_renders_math_per_parser_rule() {
+        // Arrange
+        let markdown = "Range $5-$10";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        // D1: "5-" renders as math, followed by literal "10"
+        assert!(document
+            .html
+            .contains(r#"Range <span class="math-inline" data-math-inline>5-</span>10"#));
+    }
+
+    #[test]
+    fn digit_after_closing_dollar_then_renders_math_followed_by_digit() {
+        // Arrange
+        let markdown = "$y$2";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        // D2: "y" renders as math, followed by literal "2"
+        assert!(document
+            .html
+            .contains(r#"<span class="math-inline" data-math-inline>y</span>2"#));
+    }
+
+    #[test]
+    fn shell_expression_in_prose_then_renders_math_per_parser_rule() {
+        // Arrange
+        let markdown = "$(CC)$(FLAGS)";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        // D6: "(CC)" renders as math, followed by literal "(FLAGS)"
+        assert!(document
+            .html
+            .contains(r#"<span class="math-inline" data-math-inline>(CC)</span>(FLAGS)"#));
+    }
+
+    #[test]
+    fn math_tex_with_html_characters_then_escapes_span_text() {
+        // Arrange
+        let markdown = r#"$a<b \text{"q"}$"#;
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            r#"<span class="math-inline" data-math-inline>a&lt;b \text{&quot;q&quot;}</span>"#
+        ));
+    }
+
+    #[test]
+    fn display_math_in_table_cell_then_emits_display_span_inside_cell() {
+        // Arrange
+        let markdown = "| Col |\n| --- |\n| $$x$$ |";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains(r#"<td><span class="math-display" data-math-display>x</span></td>"#));
+    }
+
+    #[test]
+    fn display_math_paragraph_then_contains_no_block_element_inside_paragraph() {
+        // Arrange
+        let markdown = "$$x$$";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains(r#"<p><span class="math-display" data-math-display>x</span></p>"#));
+        assert!(!document.html.contains("<div"));
+    }
+
+    #[test]
+    fn fenced_math_block_then_emits_math_block_container_with_escaped_source() {
+        // Arrange
+        let markdown = "```math\n\\frac{1}{2}\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            r#"<div class="math-block" data-math-block><div class="math-target"></div><p class="math-error" hidden>Formula rendering failed. The source is shown below.</p><details class="math-source"><summary>Formula source</summary><pre><code>\frac{1}{2}
+</code></pre></details></div>"#
+        ));
+        assert!(!document.html.contains("language-math"));
+    }
+
+    #[test]
+    fn fenced_math_block_with_mixed_case_info_then_emits_math_block_container() {
+        // Arrange
+        let markdown = "```Math\n\\sum x\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            r#"<div class="math-block" data-math-block><div class="math-target"></div><p class="math-error" hidden>Formula rendering failed. The source is shown below.</p><details class="math-source"><summary>Formula source</summary><pre><code>\sum x
+</code></pre></details></div>"#
+        ));
+        assert!(!document.html.contains("language-Math"));
+    }
+
+    #[test]
+    fn fenced_math_block_inside_list_item_and_blockquote_then_emits_container_inside() {
+        // Arrange
+        let markdown = "> ```math\n> x\n> ```\n\n- ```math\n  y\n  ```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(
+            "<blockquote>\n<div class=\"math-block\" data-math-block><div class=\"math-target\"></div><p class=\"math-error\" hidden>Formula rendering failed. The source is shown below.</p><details class=\"math-source\"><summary>Formula source</summary><pre><code>x\n</code></pre></details></div></blockquote>"
+        ));
+        assert!(document.html.contains(
+            "<li><div class=\"math-block\" data-math-block><div class=\"math-target\"></div><p class=\"math-error\" hidden>Formula rendering failed. The source is shown below.</p><details class=\"math-source\"><summary>Formula source</summary><pre><code>y\n</code></pre></details></div></li>"
+        ));
+    }
+
+    #[test]
+    fn fenced_math_source_with_script_tag_then_escapes_source() {
+        // Arrange
+        let markdown = "```math\n<script>alert(1)</script>\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(!document.html.contains("<script>"));
+        assert!(document
+            .html
+            .contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+    }
+
+    #[test]
+    fn spaced_dollar_delimiters_then_render_literal_text() {
+        // Arrange
+        let markdown = "$ 100 and 200 $";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert_eq!(document.html, "<p>$ 100 and 200 $</p>\n");
+        assert!(!document.html.contains("data-math"));
+    }
+
+    #[test]
+    fn currency_amounts_then_render_literal_text() {
+        // Arrange
+        let markdown = "It costs $10 and $20.";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert_eq!(document.html, "<p>It costs $10 and $20.</p>\n");
+        assert!(!document.html.contains("data-math"));
+    }
+
+    #[test]
+    fn escaped_dollar_signs_then_render_literal_dollars() {
+        // Arrange
+        let markdown = r"\$50 and \$100";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert_eq!(document.html, "<p>$50 and $100</p>\n");
+        assert!(!document.html.contains("data-math"));
+    }
+
+    #[test]
+    fn code_span_with_dollars_then_preserves_code_without_math_span() {
+        // Arrange
+        let markdown = "`echo $PATH` and `$x$`";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains("<p><code>echo $PATH</code> and <code>$x$</code></p>"));
+        assert!(!document.html.contains("data-math"));
+    }
+
+    #[test]
+    fn code_span_and_code_block_with_dollar_math_then_emit_no_math_span() {
+        // Arrange
+        let markdown = "`$x$`\n\n```\n$y$\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains("<code>$x$</code>"));
+        assert!(document.html.contains("<pre><code>$y$\n</code></pre>"));
+        assert!(!document.html.contains("data-math"));
+    }
+
+    #[test]
+    fn nested_list_and_blockquote_fences_with_dollar_math_then_emit_no_math_span() {
+        // Arrange
+        let markdown = "> ```\n> $x$\n> ```\n\n- ```\n  $y$\n  ```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains("<pre><code>$x$\n</code></pre>"));
+        assert!(document.html.contains("<pre><code>$y$\n</code></pre>"));
+        assert!(!document.html.contains("data-math"));
+    }
+
+    #[test]
+    fn link_destination_and_autolink_with_dollars_then_preserve_urls() {
+        // Arrange
+        let markdown = "[l](https://a.example/$x$) and <https://a.example/$x$>";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains(r#"<a href="https://a.example/$x$">l</a>"#));
+        assert!(document
+            .html
+            .contains(r#"<a href="https://a.example/$x$">https://a.example/$x$</a>"#));
+        assert!(!document.html.contains("data-math"));
+    }
+
+    #[test]
+    fn diagram_fences_with_dollar_math_then_preserve_source_without_math_span() {
+        // Arrange
+        let markdown = "```mermaid\ngraph TD\n  A[$a$] --> B\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains("A[$a$] --&gt; B"));
+        assert!(!document.html.contains("data-math"));
+    }
+
+    #[test]
+    fn table_with_unescaped_pipe_in_math_then_splits_cell_per_parser_rule() {
+        // Arrange
+        let markdown = "| Parameter | Formula | Description |\n| :--- | :--- | :--- |\n| Normal | $|x|$ | Absolute value |";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        // D3: unescaped pipe inside $|x|$ splits the cell before math is parsed.
+        // It produces separate cells for "$" and "x", dropping trailing content beyond column count.
+        assert!(document.html.contains(
+            "<td style=\"text-align: left\">$</td><td style=\"text-align: left\">x</td>"
+        ));
+        assert!(!document.html.contains("data-math-inline"));
+    }
+
+    #[test]
+    fn table_with_escaped_pipe_in_math_then_preserves_cell_and_strips_escape() {
+        // Arrange
+        let markdown = "| Parameter | Formula | Description |\n| :--- | :--- | :--- |\n| Normal | $\\|x\\|$ | Absolute value |";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        // D3: escaped pipe keeps single cell, stripping backslash.
+        assert!(document.html.contains(
+            r#"<td style="text-align: left"><span class="math-inline" data-math-inline>|x|</span></td>"#
+        ));
+    }
+
+    #[test]
+    fn display_math_with_block_starter_then_terminates_paragraph() {
+        // Arrange
+        let markdown = "$$\n> quote\n$$";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        // D7: block starter line inside $$...$$ terminates paragraph; no display math
+        assert!(!document.html.contains("data-math-display"));
+        assert!(document.html.contains("<blockquote>"));
+    }
+
+    #[test]
+    fn image_alt_with_inline_math_then_contains_literal_dollar_source() {
+        // Arrange
+        let markdown = "![speed $v$](plot.png)";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(r#"alt="speed $v$""#));
+        assert!(!document.html.contains("data-math-inline"));
+    }
+
+    #[test]
+    fn image_alt_with_display_math_then_contains_literal_double_dollar_source() {
+        // Arrange
+        let markdown = "![area $$r^2$$](a.png)";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(r#"alt="area $$r^2$$""#));
+        assert!(!document.html.contains("data-math-display"));
+    }
+
+    #[test]
+    fn image_alt_with_html_and_math_then_escapes_without_math_span() {
+        // Arrange
+        let markdown = "![a <b> $x$](i.png)";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document.html.contains(r#"alt="a &lt;b&gt; $x$""#));
+        assert!(!document.html.contains("data-math-inline"));
+    }
+
+    #[test]
+    fn fenced_math_extra_block_then_remains_code_block() {
+        // Arrange
+        let markdown = "```math extra\nfoo\n```";
+
+        // Act
+        let document = render_test(markdown, 0, "document.md", &BTreeSet::new());
+
+        // Assert
+        assert!(document
+            .html
+            .contains("<pre><code class=\"language-math\">foo\n</code></pre>"));
+        assert!(!document.html.contains("data-math-block"));
     }
 
     fn temporary_source_link_root(name: &str) -> PathBuf {

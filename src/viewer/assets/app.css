@@ -42,6 +42,23 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
   color: #5a2712;
 }
 .diagram-source { margin-top: .75rem; }
+.math-inline { display: inline; }
+.math-block { margin: 1.5rem 0; padding: 1rem; border: 1px solid #b6b0a4; background: #fffdf8; overflow-x: auto; text-align: center; }
+.math-display { display: block; text-align: center; margin: 1em 0; overflow-x: auto; overflow-y: hidden; }
+.math-error { color: #9c2f19; font-family: system-ui, sans-serif; font-weight: 700; }
+.math-error[hidden],
+.math-block .math-error[hidden] {
+  display: none;
+}
+.math-display .math-error:not([hidden]),
+.math-block .math-error:not([hidden]) {
+  display: block;
+  margin: .5rem 0;
+}
+.math-inline .math-error { display: inline; margin: 0; }
+.math-source { margin-top: .75rem; text-align: left; }
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: .25rem 0; }
+.markdown-table .math-inline, .markdown-table .katex { font-size: .95em; }
 .document-metadata { margin: 0 0 1.5rem; border: 1px solid #b6b0a4; background: #fffdf8; font-family: system-ui, sans-serif; font-size: .9rem; }
 .document-metadata table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .document-metadata caption { padding: .55rem .8rem; color: #5c5a54; font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-align: left; text-transform: uppercase; }

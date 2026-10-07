@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -1104,6 +1104,521 @@ test("open_svg_link_clicked_then_navigates_to_uncorrupted_blob_url_and_scales_dy
     expect(expandedBox.width).toBeGreaterThan(initialBox.width);
   } finally {
     await fixture.stop();
+  }
+});
+
+test("inline_and_display_math_rendering_then_produces_katex_elements", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Math Rendering Test",
+    "",
+    "The energy equation is $E = mc^2$.",
+    "",
+    "$$",
+    "\\frac{a}{b} = c",
+    "$$",
+    "",
+    "```math",
+    "\\sum_{i=1}^n i = \\frac{n(n+1)}{2}",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Math Rendering Test" })).toBeVisible();
+    await expect(page.locator(".math-inline .katex")).toBeVisible();
+    await expect(page.locator(".math-display .katex-display")).toBeVisible();
+    await expect(page.locator(".math-block .katex-display")).toBeVisible();
+    await expect(page.locator(".math-block .math-error")).toBeHidden();
+    await expect(page.locator(".katex")).toHaveCount(3);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("untrusted_href_math_formula_then_renders_no_anchor_element", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Untrusted Href Test",
+    "",
+    "Formula with href: $\\href{javascript:alert(1)}{click}$",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Untrusted Href Test" })).toBeVisible();
+    await expect(page.locator(".math-inline")).toBeVisible();
+    await expect(page.locator("article a[href]")).toHaveCount(0);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("math_dimension_limit_exceeded_then_clamps_rule_size_safely", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Dimension Clamping Test",
+    "",
+    "$\\rule{9999em}{1em}$",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Dimension Clamping Test" })).toBeVisible();
+    const inlineMath = page.locator(".math-inline .katex");
+    await expect(inlineMath).toBeVisible();
+    const ruleElement = inlineMath.locator(".rule");
+    await expect(ruleElement).toBeVisible();
+    const borderRightWidth = await ruleElement.evaluate((el) => el.style.borderRightWidth);
+    expect(borderRightWidth).toBe("500em");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("math_macro_expansion_limit_exceeded_then_renders_error_fallback_without_hanging", async ({
+  page,
+}) => {
+  // Arrange
+  const readme = [
+    "# Macro Expansion Limit Test",
+    "",
+    "Formula with recursive macro: $\\def\\a{\\a\\a}\\a$",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Macro Expansion Limit Test" })).toBeVisible();
+    const errorFallback = page.locator(".math-inline .math-error");
+    await expect(errorFallback).toBeVisible();
+    await expect(errorFallback).toHaveAttribute("title", "Formula rendering failed");
+    await expect(errorFallback.locator("code")).toHaveText("\\def\\a{\\a\\a}\\a");
+    const paragraph = page.locator("article p").filter({ hasText: "Formula with recursive macro" });
+    await expect(paragraph.locator("div, p, details")).toHaveCount(0);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("malformed_math_span_in_paragraph_then_renders_phrasing_safe_fallback_without_block_elements", async ({
+  page,
+}) => {
+  // Arrange
+  const readme = [
+    "# Math Phrasing Safety Test",
+    "",
+    "Valid equation before: $a + b = c$",
+    "",
+    "Invalid inline: $\\frac{a}$ in paragraph text.",
+    "",
+    "Invalid display:",
+    "",
+    "$$\\frac{display}$$",
+    "",
+    "Valid equation after: $x = 1$",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Math Phrasing Safety Test" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(2);
+
+    const inlineError = page.locator(".math-inline .math-error");
+    await expect(inlineError).toBeVisible();
+    await expect(inlineError).toHaveAttribute("title", "Formula rendering failed");
+    await expect(inlineError.locator("code")).toHaveText("\\frac{a}");
+
+    const displayError = page.locator(".math-display .math-error");
+    await expect(displayError).toBeVisible();
+    await expect(displayError).toHaveAttribute("title", "Formula rendering failed");
+    await expect(displayError.locator("code")).toHaveText("\\frac{display}");
+
+    const paragraphs = page.locator("article p");
+    const count = await paragraphs.count();
+    for (let i = 0; i < count; i++) {
+      await expect(paragraphs.nth(i).locator("div, p, details, pre")).toHaveCount(0);
+    }
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("fenced_math_block_error_then_shows_error_message_and_expands_source", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Block Error Fallback Test",
+    "",
+    "```math",
+    "\\invalidCommand{unclosed",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Block Error Fallback Test" })).toBeVisible();
+    const mathBlock = page.locator(".math-block");
+    await expect(mathBlock.locator(".math-target")).toBeHidden();
+    await expect(mathBlock.locator(".math-error")).toBeVisible();
+    const sourceDetails = mathBlock.locator(".math-source");
+    await expect(sourceDetails).toBeVisible();
+    expect(await sourceDetails.evaluate((el) => el.open)).toBe(true);
+    await expect(sourceDetails.locator("code")).toContainText("\\invalidCommand{unclosed");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("katex_script_unavailable_then_shows_raw_tex_and_renders_rest_of_document", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Degradation Mode A",
+    "",
+    "The energy formula is $E = mc^2$.",
+    "",
+    "```mermaid",
+    "flowchart LR",
+    "A --> B",
+    "```",
+    "",
+    "```math",
+    "\\sum_{i=1}^n i",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.route("**/katex.js*", (route) => route.abort());
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Degradation Mode A" })).toBeVisible();
+    await expect(page.locator(".math-inline")).toHaveText("E = mc^2");
+    await expect(page.locator(".math-block .math-error")).toBeHidden();
+    const blockSource = page.locator(".math-block .math-source");
+    await expect(blockSource).toBeVisible();
+    await expect(blockSource.locator("code")).toContainText("\\sum_{i=1}^n i");
+    await expect(page.locator(".mermaid-target svg")).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("page_with_katex_element_id_when_engine_missing_then_does_not_throw", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Heading {#katex}",
+    "",
+    "Formula: $a + b = c$",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(err));
+
+  try {
+    // Act
+    await page.route("**/katex.js*", (route) => route.abort());
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Heading" })).toBeVisible();
+    expect(pageErrors).toEqual([]);
+    await expect(page.locator(".math-inline")).toHaveText("a + b = c");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("math_rendering_then_makes_zero_external_network_requests", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Offline Math Test",
+    "",
+    "Inline: $E = mc^2$",
+    "",
+    "Display:",
+    "$$\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$",
+    "",
+    "```math",
+    "\\int_0^1 x^2 dx",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  const offOriginRequests = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    if (!url.startsWith(fixture.lens.origin) && !url.startsWith("data:")) {
+      offOriginRequests.push(url);
+    }
+  });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Offline Math Test" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(3);
+    expect(offOriginRequests).toEqual([]);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("math_specification_fixture_then_renders_13_katex_formulas", async ({ page }) => {
+  // Arrange
+  const readme = await readFile(join(process.cwd(), "tests/fixtures/math-specification.md"), "utf8");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Mathematical Specification & Timing Analysis" }),
+    ).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(13);
+    await expect(page.locator(".math-inline .katex")).toHaveCount(10);
+    await expect(page.locator(".math-display .katex-display")).toHaveCount(2);
+    await expect(page.locator(".math-block .katex-display")).toHaveCount(1);
+    await expect(page.locator(".katex-display .mtable")).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("table_cell_with_lvert_absolute_value_then_renders_math_in_single_cell", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Table Cell Absolute Value Test",
+    "",
+    "| Formula | Description |",
+    "| --- | --- |",
+    "| $\\lvert x \\rvert$ | Absolute value |",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Table Cell Absolute Value Test" })).toBeVisible();
+    const rows = page.locator("article table tbody tr");
+    await expect(rows).toHaveCount(1);
+    const cells = rows.first().locator("td");
+    await expect(cells).toHaveCount(2);
+    await expect(cells.first().locator(".katex")).toBeVisible();
+    await expect(cells.nth(1)).toHaveText("Absolute value");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("currency_range_with_escapes_then_renders_literal_dollars", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Currency Guidance Test",
+    "",
+    "Price range: \\$5-\\$10. Unescaped: $10 and $20.",
+    "",
+    "Active formula: $x = 1$.",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Currency Guidance Test" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(1);
+    await expect(page.locator(".math-inline .katex")).toBeVisible();
+    await expect(page.locator("article")).toContainText("Price range: $5-$10. Unescaped: $10 and $20.");
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("mixed_document_with_mermaid_and_math_then_renders_both_cleanly", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Mixed Document Test",
+    "",
+    "Inline formula: $a^2 + b^2 = c^2$.",
+    "",
+    "Display formula:",
+    "$$E = mc^2$$",
+    "",
+    "```math",
+    "\\int_0^1 x\\,dx = \\frac{1}{2}",
+    "```",
+    "",
+    "```mermaid",
+    "flowchart TD",
+    "  A[Start] --> B[End]",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Mixed Document Test" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(3);
+    await expect(page.locator(".mermaid-target svg")).toBeVisible();
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("live_document_refresh_with_math_then_updates_formulas_automatically", async ({ page }) => {
+  // Arrange
+  const readme = "# Live Math\n\nInitial: $E = mc^2$\n";
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Live Math" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(1);
+    await expect(page.locator("article")).toContainText("Initial:");
+
+    // Act
+    await writeFile(
+      join(fixture.repository.directory, "README.md"),
+      "# Live Math\n\nUpdated: $E = mc^2$ and $F = ma$\n",
+    );
+
+    // Assert
+    await expect(page.locator("article")).toContainText("Updated:");
+    await expect(page.locator(".katex")).toHaveCount(2);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("image_alt_with_math_then_exposes_literal_alt_text", async ({ page }) => {
+  // Arrange
+  const readme = [
+    "# Image Alt Math Test",
+    "",
+    "![Formula: $E = mc^2$](plot.png)",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+
+  try {
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "Image Alt Math Test" })).toBeVisible();
+    const image = page.locator("article img");
+    await expect(image).toHaveAttribute("alt", "Formula: $E = mc^2$");
+    await expect(page.locator(".katex")).toHaveCount(0);
+    await expect(page.locator(".math-inline, .math-display, .math-block")).toHaveCount(0);
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test("javascript_disabled_then_preserves_readable_math_and_diagram_sources", async ({ browser }) => {
+  // Arrange
+  const readme = [
+    "# No-JS Degradation Test",
+    "",
+    "Inline: $E = mc^2$",
+    "",
+    "Display:",
+    "$$\\sum i$$",
+    "",
+    "```math",
+    "x + y",
+    "```",
+    "",
+    "```mermaid",
+    "flowchart TD",
+    "  Start --> Stop",
+    "```",
+    "",
+    "```plantuml",
+    "@startuml",
+    "Alice -> Bob: hello",
+    "@enduml",
+    "```",
+  ].join("\n");
+  const fixture = await startBrowserFixture({ readme });
+  let context;
+
+  try {
+    context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+
+    // Act
+    await page.goto(fixture.lens.url);
+
+    // Assert
+    await expect(page.getByRole("heading", { level: 1, name: "No-JS Degradation Test" })).toBeVisible();
+    await expect(page.locator(".katex")).toHaveCount(0);
+    await expect(page.locator(".math-inline")).toBeVisible();
+    await expect(page.locator(".math-inline")).toHaveText("E = mc^2");
+    await expect(page.locator(".math-display")).toBeVisible();
+    await expect(page.locator(".math-display")).toHaveText("\\sum i");
+
+    const mathBlockSource = page.locator(".math-block .math-source");
+    await expect(mathBlockSource).toBeVisible();
+    await expect(mathBlockSource).not.toHaveAttribute("open");
+    await expect(mathBlockSource.locator("code")).toContainText("x + y");
+
+    await expect(page.locator(".mermaid-target svg")).toHaveCount(0);
+    const mermaidSource = page.locator(".mermaid-diagram .diagram-source, .mermaid-block .mermaid-source");
+    await expect(mermaidSource).toBeVisible();
+    await expect(mermaidSource).not.toHaveAttribute("open");
+    await expect(mermaidSource.locator("code")).toContainText("Start --> Stop");
+
+    await expect.poll(() => fixture.renderer.requests).toBeGreaterThanOrEqual(1);
+    const plantumlImg = page.locator('img[src*="/diagrams/"]');
+    await expect(plantumlImg).toBeVisible();
+    await expect.poll(async () => plantumlImg.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
+  } finally {
+    try {
+      if (context) {
+        await context.close();
+      }
+    } finally {
+      await fixture.stop();
+    }
   }
 });
 
